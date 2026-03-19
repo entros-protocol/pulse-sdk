@@ -8,9 +8,9 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.cjs"
     }
   },
   "scripts": {
@@ -21,20 +21,28 @@
   },
   "dependencies": {
     "circomlibjs": "^0.1.7",
+    "meyda": "^5.6.3",
     "snarkjs": "^0.7.6"
   },
   "peerDependencies": {
     "@coral-xyz/anchor": "^0.32.1",
-    "@solana/web3.js": "^1.98.0",
-    "@solana/wallet-adapter-base": "^0.9.0"
+    "@solana/wallet-adapter-base": "^0.9.0",
+    "@solana/web3.js": "^1.98.0"
   },
   "peerDependenciesMeta": {
-    "@coral-xyz/anchor": { "optional": true },
-    "@solana/web3.js": { "optional": true },
-    "@solana/wallet-adapter-base": { "optional": true }
+    "@coral-xyz/anchor": {
+      "optional": true
+    },
+    "@solana/web3.js": {
+      "optional": true
+    },
+    "@solana/wallet-adapter-base": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@coral-xyz/anchor": "^0.32.1",
+    "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.0",
     "@types/node": "^22.0.0",
     "tsup": "^8.0.0",
