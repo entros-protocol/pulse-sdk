@@ -1,18 +1,26 @@
-import type { TouchSample } from "./types";
-
-const CAPTURE_DURATION_MS = 7000;
+import type { TouchSample, CaptureOptions } from "./types";
+import { MIN_CAPTURE_MS, MAX_CAPTURE_MS } from "../config";
 
 /**
- * Capture touch/pointer data (position, pressure, contact area) for the specified duration.
+ * Capture touch/pointer data (position, pressure, contact area) until signaled to stop.
  * Uses PointerEvent for cross-platform support (touch, pen, mouse).
  */
 export function captureTouch(
   element: HTMLElement,
-  durationMs: number = CAPTURE_DURATION_MS
+  options: CaptureOptions = {}
 ): Promise<TouchSample[]> {
+  const {
+    signal,
+    minDurationMs = MIN_CAPTURE_MS,
+    maxDurationMs = MAX_CAPTURE_MS,
+  } = options;
+
   const samples: TouchSample[] = [];
+  const startTime = performance.now();
 
   return new Promise((resolve) => {
+    let stopped = false;
+
     const handler = (e: PointerEvent) => {
       samples.push({
         timestamp: performance.now(),
@@ -24,13 +32,34 @@ export function captureTouch(
       });
     };
 
-    element.addEventListener("pointermove", handler);
-    element.addEventListener("pointerdown", handler);
-
-    setTimeout(() => {
+    function stopCapture() {
+      if (stopped) return;
+      stopped = true;
+      clearTimeout(maxTimer);
       element.removeEventListener("pointermove", handler);
       element.removeEventListener("pointerdown", handler);
       resolve(samples);
-    }, durationMs);
+    }
+
+    element.addEventListener("pointermove", handler);
+    element.addEventListener("pointerdown", handler);
+
+    const maxTimer = setTimeout(stopCapture, maxDurationMs);
+
+    if (signal) {
+      if (signal.aborted) {
+        setTimeout(stopCapture, minDurationMs);
+      } else {
+        signal.addEventListener(
+          "abort",
+          () => {
+            const elapsed = performance.now() - startTime;
+            const remaining = Math.max(0, minDurationMs - elapsed);
+            setTimeout(stopCapture, remaining);
+          },
+          { once: true }
+        );
+      }
+    }
   });
 }

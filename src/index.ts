@@ -1,9 +1,9 @@
 // Main SDK
-export { PulseSDK } from "./pulse";
+export { PulseSDK, PulseSession } from "./pulse";
 
 // Configuration
 export type { PulseConfig } from "./config";
-export { PROGRAM_IDS, DEFAULT_THRESHOLD, FINGERPRINT_BITS } from "./config";
+export { PROGRAM_IDS, DEFAULT_THRESHOLD, FINGERPRINT_BITS, MIN_CAPTURE_MS, MAX_CAPTURE_MS, DEFAULT_CAPTURE_MS } from "./config";
 
 // Hashing
 export type { TemporalFingerprint, TBH, PackedFingerprint } from "./hashing/types";
@@ -35,7 +35,7 @@ export type { IdentityState, StoredVerificationData } from "./identity/types";
 export { fetchIdentityState, storeVerificationData, loadVerificationData } from "./identity/anchor";
 
 // Sensor types
-export type { AudioCapture, MotionSample, TouchSample, SensorData } from "./sensor/types";
+export type { AudioCapture, MotionSample, TouchSample, SensorData, CaptureOptions, CaptureStage, StageState } from "./sensor/types";
 
 // Challenge
 export { generatePhrase } from "./challenge/phrase";
