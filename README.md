@@ -20,7 +20,7 @@ const pulse = new PulseSDK({
   zkeyUrl: '/circuits/iam_hamming_final.zkey',
 });
 
-// Verify (captures sensors for 7 seconds, generates proof, submits)
+// Verify (captures sensors, generates proof, submits)
 const result = await pulse.verify(touchElement);
 
 if (result.success) {
@@ -39,7 +39,7 @@ const result = await pulse.verify(touchElement, walletAdapter, connection);
 
 ## Pipeline
 
-1. **Capture** (7s): Audio (16kHz), IMU (accelerometer + gyroscope), touch (pressure + area)
+1. **Capture**: Audio (16kHz), IMU (accelerometer + gyroscope), touch (pressure + area) — event-driven, caller controls duration
 2. **Extract**: MFCC (voice), jerk/jounce (motion), velocity/pressure (touch)
 3. **Hash**: SimHash → 256-bit Temporal Fingerprint → Poseidon commitment
 4. **Prove**: Groth16 proof that new fingerprint is within Hamming distance of previous
