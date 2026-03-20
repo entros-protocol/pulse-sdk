@@ -26,7 +26,23 @@ export interface TouchSample {
   height: number;
 }
 
-/** Combined sensor data from a 7-second Pulse capture */
+/** Options for event-driven sensor capture */
+export interface CaptureOptions {
+  /** AbortSignal to stop capture. If omitted, captures for maxDurationMs. */
+  signal?: AbortSignal;
+  /** Minimum capture duration in ms. Capture continues until this even if signal fires early. Default: 2000 */
+  minDurationMs?: number;
+  /** Maximum capture duration in ms. Auto-stops if signal hasn't fired. Default: 60000 */
+  maxDurationMs?: number;
+}
+
+/** Stage of a capture session */
+export type CaptureStage = "audio" | "motion" | "touch";
+
+/** State of an individual capture stage */
+export type StageState = "idle" | "capturing" | "captured" | "skipped";
+
+/** Combined sensor data from a Pulse capture session */
 export interface SensorData {
   audio: AudioCapture | null;
   motion: MotionSample[];

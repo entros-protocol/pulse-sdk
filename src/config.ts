@@ -19,6 +19,11 @@ export const TOTAL_PROOF_SIZE = 256;
 
 export const SIMHASH_SEED = "IAM-PROTOCOL-SIMHASH-V1";
 
+// Capture duration bounds (ms)
+export const MIN_CAPTURE_MS = 2000;
+export const MAX_CAPTURE_MS = 60000;
+export const DEFAULT_CAPTURE_MS = 7000;
+
 export const PROGRAM_IDS = {
   iamAnchor: "GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2",
   iamVerifier: "4F97jNoxQzT2qRbkWpW3ztC3Nz2TtKj3rnKG8ExgnrfV",
