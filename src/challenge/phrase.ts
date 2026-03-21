@@ -17,7 +17,7 @@ const SYLLABLES = [
 export function generatePhrase(wordCount: number = 5): string {
   const words: string[] = [];
   for (let w = 0; w < wordCount; w++) {
-    const syllableCount = 2 + Math.floor(Math.random() * 2); // 2-3 syllables per word
+    const syllableCount = 2 + Math.floor(Math.random() * 2);
     let word = "";
     for (let s = 0; s < syllableCount; s++) {
       const idx = Math.floor(Math.random() * SYLLABLES.length);
@@ -26,4 +26,37 @@ export function generatePhrase(wordCount: number = 5): string {
     words.push(word);
   }
   return words.join(" ");
+}
+
+/**
+ * Generate a sequence of phrases for dynamic mid-session switching.
+ * Each phrase uses a different syllable subset to prevent pre-computation.
+ */
+export function generatePhraseSequence(
+  count: number = 3,
+  wordCount: number = 4
+): string[] {
+  const subsetSize = Math.floor(SYLLABLES.length / count);
+  const phrases: string[] = [];
+
+  for (let p = 0; p < count; p++) {
+    const start = (p * subsetSize) % SYLLABLES.length;
+    const subset = [
+      ...SYLLABLES.slice(start, start + subsetSize),
+      ...SYLLABLES.slice(0, Math.max(0, (start + subsetSize) - SYLLABLES.length)),
+    ];
+
+    const words: string[] = [];
+    for (let w = 0; w < wordCount; w++) {
+      const syllableCount = 2 + Math.floor(Math.random() * 2);
+      let word = "";
+      for (let s = 0; s < syllableCount; s++) {
+        word += subset[Math.floor(Math.random() * subset.length)];
+      }
+      words.push(word);
+    }
+    phrases.push(words.join(" "));
+  }
+
+  return phrases;
 }

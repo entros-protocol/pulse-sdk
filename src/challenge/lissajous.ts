@@ -54,3 +54,32 @@ export function generateLissajousPoints(params: LissajousParams): Point2D[] {
 
   return result;
 }
+
+/**
+ * Generate a sequence of Lissajous curves for dynamic mid-session switching.
+ * Each curve uses different parameters, preventing pre-computation.
+ */
+export function generateLissajousSequence(
+  count: number = 2
+): { params: LissajousParams; points: Point2D[] }[] {
+  const allRatios: [number, number][] = [
+    [1, 2], [2, 3], [3, 4], [3, 5], [4, 5],
+    [1, 3], [2, 5], [5, 6], [3, 7], [4, 7],
+  ];
+
+  const shuffled = [...allRatios].sort(() => Math.random() - 0.5);
+  const sequence: { params: LissajousParams; points: Point2D[] }[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const pair = shuffled[i % shuffled.length]!;
+    const params: LissajousParams = {
+      a: pair[0],
+      b: pair[1],
+      delta: Math.PI * (0.1 + Math.random() * 0.8),
+      points: 200,
+    };
+    sequence.push({ params, points: generateLissajousPoints(params) });
+  }
+
+  return sequence;
+}

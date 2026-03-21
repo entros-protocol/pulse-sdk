@@ -38,6 +38,6 @@ export { fetchIdentityState, storeVerificationData, loadVerificationData } from 
 export type { AudioCapture, MotionSample, TouchSample, SensorData, CaptureOptions, CaptureStage, StageState } from "./sensor/types";
 
 // Challenge
-export { generatePhrase } from "./challenge/phrase";
-export { randomLissajousParams, generateLissajousPoints } from "./challenge/lissajous";
+export { generatePhrase, generatePhraseSequence } from "./challenge/phrase";
+export { randomLissajousParams, generateLissajousPoints, generateLissajousSequence } from "./challenge/lissajous";
 export type { LissajousParams, Point2D } from "./challenge/lissajous";
