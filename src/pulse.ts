@@ -189,13 +189,14 @@ export class PulseSession {
 
   // --- Audio ---
 
-  async startAudio(): Promise<void> {
+  async startAudio(onAudioLevel?: (rms: number) => void): Promise<void> {
     if (this.audioStageState !== "idle")
       throw new Error("Audio capture already started");
     this.audioStageState = "capturing";
     this.audioController = new AbortController();
     this.audioPromise = captureAudio({
       signal: this.audioController.signal,
+      onAudioLevel,
     }).catch(() => null);
   }
 
