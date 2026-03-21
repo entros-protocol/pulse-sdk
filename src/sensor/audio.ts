@@ -19,6 +19,7 @@ export async function captureAudio(
     signal,
     minDurationMs = MIN_CAPTURE_MS,
     maxDurationMs = MAX_CAPTURE_MS,
+    onAudioLevel,
   } = options;
 
   const stream = await navigator.mediaDevices.getUserMedia({
@@ -42,7 +43,14 @@ export async function captureAudio(
     const processor = ctx.createScriptProcessor(bufferSize, 1, 1);
 
     processor.onaudioprocess = (e: AudioProcessingEvent) => {
-      chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      const data = e.inputBuffer.getChannelData(0);
+      chunks.push(new Float32Array(data));
+
+      if (onAudioLevel) {
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i]! * data[i]!;
+        onAudioLevel(Math.sqrt(sum / data.length));
+      }
     };
 
     source.connect(processor);

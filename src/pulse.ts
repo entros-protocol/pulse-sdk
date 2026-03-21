@@ -45,12 +45,45 @@ function extractFeatures(data: SensorData): number[] {
  * Shared pipeline: features → simhash → TBH → proof → submit.
  * Used by both PulseSDK.verify() and PulseSession.complete().
  */
+// Minimum sample counts for meaningful feature extraction
+const MIN_AUDIO_SAMPLES = 16000; // ~1 second at 16kHz
+const MIN_MOTION_SAMPLES = 10;
+const MIN_TOUCH_SAMPLES = 10;
+
 async function processSensorData(
   sensorData: SensorData,
   config: ResolvedConfig,
   wallet?: any,
   connection?: any
 ): Promise<VerificationResult> {
+  // Data quality gate: reject if insufficient behavioral data captured
+  const audioSamples = sensorData.audio?.samples.length ?? 0;
+  const motionSamples = sensorData.motion.length;
+  const touchSamples = sensorData.touch.length;
+
+  // Need at least audio OR (motion + touch) to produce a meaningful fingerprint
+  const hasAudio = audioSamples >= MIN_AUDIO_SAMPLES;
+  const hasMotion = motionSamples >= MIN_MOTION_SAMPLES;
+  const hasTouch = touchSamples >= MIN_TOUCH_SAMPLES;
+
+  if (!hasAudio && !hasMotion && !hasTouch) {
+    return {
+      success: false,
+      commitment: new Uint8Array(32),
+      isFirstVerification: true,
+      error: "Insufficient behavioral data. Please speak the phrase and trace the curve during capture.",
+    };
+  }
+
+  if (!hasAudio) {
+    return {
+      success: false,
+      commitment: new Uint8Array(32),
+      isFirstVerification: true,
+      error: "No voice data detected. Please speak the phrase clearly during capture.",
+    };
+  }
+
   // Extract features
   const features = extractFeatures(sensorData);
 
@@ -189,13 +222,14 @@ export class PulseSession {
 
   // --- Audio ---
 
-  async startAudio(): Promise<void> {
+  async startAudio(onAudioLevel?: (rms: number) => void): Promise<void> {
     if (this.audioStageState !== "idle")
       throw new Error("Audio capture already started");
     this.audioStageState = "capturing";
     this.audioController = new AbortController();
     this.audioPromise = captureAudio({
       signal: this.audioController.signal,
+      onAudioLevel,
     }).catch(() => null);
   }
 
