@@ -34,6 +34,8 @@ export interface CaptureOptions {
   minDurationMs?: number;
   /** Maximum capture duration in ms. Auto-stops if signal hasn't fired. Default: 60000 */
   maxDurationMs?: number;
+  /** Called with RMS audio level (0-1) on each buffer during audio capture (~4x per second). */
+  onAudioLevel?: (rms: number) => void;
 }
 
 /** Stage of a capture session */

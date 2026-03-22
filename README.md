@@ -1,5 +1,8 @@
 # @iam-protocol/pulse-sdk
 
+[![npm version](https://img.shields.io/npm/v/@iam-protocol/pulse-sdk.svg)](https://www.npmjs.com/package/@iam-protocol/pulse-sdk)
+[![npm downloads](https://img.shields.io/npm/dm/@iam-protocol/pulse-sdk.svg)](https://www.npmjs.com/package/@iam-protocol/pulse-sdk)
+
 Client-side SDK for the IAM Protocol. Captures behavioral biometrics (voice, motion, touch), generates a Temporal-Biometric Hash, produces a Groth16 zero-knowledge proof, and submits it for on-chain verification on Solana.
 
 ## Install
