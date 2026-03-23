@@ -28,11 +28,13 @@ export function randomLissajousParams(): LissajousParams {
     [3, 5],
     [4, 5],
   ];
-  const pair = ratios[Math.floor(Math.random() * ratios.length)]!;
+  const arr = new Uint32Array(2);
+  crypto.getRandomValues(arr);
+  const pair = ratios[arr[0]! % ratios.length]!;
   return {
     a: pair[0]!,
     b: pair[1]!,
-    delta: Math.PI * (0.25 + Math.random() * 0.5),
+    delta: Math.PI * (0.25 + (arr[1]! / 0xFFFFFFFF) * 0.5),
     points: 200,
   };
 }
@@ -67,15 +69,25 @@ export function generateLissajousSequence(
     [1, 3], [2, 5], [5, 6], [3, 7], [4, 7],
   ];
 
-  const shuffled = [...allRatios].sort(() => Math.random() - 0.5);
+  // Fisher-Yates shuffle with crypto randomness
+  const shuffled = [...allRatios];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const arr = new Uint32Array(1);
+    crypto.getRandomValues(arr);
+    const j = arr[0]! % (i + 1);
+    [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
+  }
+
   const sequence: { params: LissajousParams; points: Point2D[] }[] = [];
 
   for (let i = 0; i < count; i++) {
     const pair = shuffled[i % shuffled.length]!;
+    const deltaArr = new Uint32Array(1);
+    crypto.getRandomValues(deltaArr);
     const params: LissajousParams = {
       a: pair[0],
       b: pair[1],
-      delta: Math.PI * (0.1 + Math.random() * 0.8),
+      delta: Math.PI * (0.1 + (deltaArr[0]! / 0xFFFFFFFF) * 0.8),
       points: 200,
     };
     sequence.push({ params, points: generateLissajousPoints(params) });
