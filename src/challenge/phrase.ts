@@ -10,18 +10,25 @@ const SYLLABLES = [
   "fu", "gu", "ku", "lu", "mu", "nu", "pu", "ru", "su", "tu",
 ];
 
+/** Cryptographically random integer in [0, max) */
+function secureRandom(max: number): number {
+  const arr = new Uint32Array(1);
+  crypto.getRandomValues(arr);
+  return arr[0]! % max;
+}
+
 /**
  * Generate a random phonetically-balanced phrase for the voice challenge.
  * Each phrase is 5-6 syllable pairs, forming nonsensical but speakable words.
+ * Uses crypto.getRandomValues for unpredictable challenge generation.
  */
 export function generatePhrase(wordCount: number = 5): string {
   const words: string[] = [];
   for (let w = 0; w < wordCount; w++) {
-    const syllableCount = 2 + Math.floor(Math.random() * 2);
+    const syllableCount = 2 + secureRandom(2);
     let word = "";
     for (let s = 0; s < syllableCount; s++) {
-      const idx = Math.floor(Math.random() * SYLLABLES.length);
-      word += SYLLABLES[idx];
+      word += SYLLABLES[secureRandom(SYLLABLES.length)];
     }
     words.push(word);
   }
@@ -48,10 +55,10 @@ export function generatePhraseSequence(
 
     const words: string[] = [];
     for (let w = 0; w < wordCount; w++) {
-      const syllableCount = 2 + Math.floor(Math.random() * 2);
+      const syllableCount = 2 + secureRandom(2);
       let word = "";
       for (let s = 0; s < syllableCount; s++) {
-        word += subset[Math.floor(Math.random() * subset.length)];
+        word += subset[secureRandom(subset.length)];
       }
       words.push(word);
     }

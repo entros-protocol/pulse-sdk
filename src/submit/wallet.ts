@@ -97,7 +97,11 @@ export async function submitViaWallet(
 
     // 3. Mint or update anchor
     const anchorIdl = await anchor.Program.fetchIdl(anchorProgramId, provider);
-    if (anchorIdl) {
+    if (!anchorIdl) {
+      return { success: false, error: "Failed to fetch IAM Anchor program IDL" };
+    }
+
+    {
       const anchorProgram: any = new anchor.Program(anchorIdl, provider);
 
       if (options.isFirstVerification) {

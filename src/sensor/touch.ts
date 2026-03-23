@@ -38,11 +38,13 @@ export function captureTouch(
       clearTimeout(maxTimer);
       element.removeEventListener("pointermove", handler);
       element.removeEventListener("pointerdown", handler);
+      console.log(`[IAM SDK] Touch capture stopped: ${samples.length} samples collected`);
       resolve(samples);
     }
 
     element.addEventListener("pointermove", handler);
     element.addEventListener("pointerdown", handler);
+    console.log(`[IAM SDK] Touch capture started on <${element.tagName}>, listening for pointer events`);
 
     const maxTimer = setTimeout(stopCapture, maxDurationMs);
 

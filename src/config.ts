@@ -9,7 +9,7 @@ export const BN254_SCALAR_FIELD = BigInt(
 );
 
 export const FINGERPRINT_BITS = 256;
-export const DEFAULT_THRESHOLD = 30;
+export const DEFAULT_THRESHOLD = 96;
 export const DEFAULT_MIN_DISTANCE = 3;
 export const NUM_PUBLIC_INPUTS = 4;
 
@@ -35,6 +35,7 @@ export interface PulseConfig {
   cluster: "devnet" | "mainnet-beta" | "localnet";
   rpcEndpoint?: string;
   relayerUrl?: string;
+  relayerApiKey?: string;
   zkeyUrl?: string;
   wasmUrl?: string;
   threshold?: number;

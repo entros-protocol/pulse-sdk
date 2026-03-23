@@ -1,12 +1,12 @@
 import type { SolanaProof } from "../proof/types";
 import type { SubmissionResult } from "./types";
 
+const RELAYER_TIMEOUT_MS = 30_000;
+
 /**
  * Submit a proof via the IAM relayer API (walletless mode).
  * The relayer submits the on-chain transaction using the integrator's funded account.
  * The user needs no wallet, no SOL, no crypto knowledge.
- *
- * In Phase 3, the relayer endpoint is configurable (stub until executor-node in Phase 4).
  */
 export async function submitViaRelayer(
   proof: SolanaProof,
@@ -33,11 +33,17 @@ export async function submitViaRelayer(
       headers["X-API-Key"] = options.apiKey;
     }
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), RELAYER_TIMEOUT_MS);
+
     const response = await fetch(options.relayerUrl, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
+
+    clearTimeout(timer);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -48,11 +54,19 @@ export async function submitViaRelayer(
       success?: boolean;
       tx_signature?: string;
     };
+
+    if (result.success !== true) {
+      return { success: false, error: "Relayer returned unsuccessful response" };
+    }
+
     return {
-      success: result.success ?? true,
+      success: true,
       txSignature: result.tx_signature,
     };
   } catch (err: any) {
+    if (err.name === "AbortError") {
+      return { success: false, error: "Relayer request timed out" };
+    }
     return { success: false, error: err.message ?? String(err) };
   }
 }

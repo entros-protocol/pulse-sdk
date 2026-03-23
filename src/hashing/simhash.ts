@@ -52,9 +52,18 @@ function getHyperplanes(dimension: number): number[][] {
  * Uses deterministic random hyperplanes seeded from the protocol constant.
  * Similar feature vectors produce fingerprints with low Hamming distance.
  */
+const EXPECTED_FEATURE_DIMENSION = 134; // 44 speaker + 54 motion/mouse + 36 touch
+
 export function simhash(features: number[]): TemporalFingerprint {
   if (features.length === 0) {
     return new Array(FINGERPRINT_BITS).fill(0);
+  }
+
+  if (features.length !== EXPECTED_FEATURE_DIMENSION) {
+    console.warn(
+      `[IAM SDK] Feature vector has ${features.length} dimensions, expected ${EXPECTED_FEATURE_DIMENSION}. ` +
+      `Fingerprint quality may be degraded.`
+    );
   }
 
   const planes = getHyperplanes(features.length);
