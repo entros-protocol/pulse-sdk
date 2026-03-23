@@ -9,14 +9,15 @@ import type { StoredVerificationData } from "./identity/types";
 import { captureAudio } from "./sensor/audio";
 import { captureMotion } from "./sensor/motion";
 import { captureTouch } from "./sensor/touch";
-import { extractMFCC } from "./extraction/mfcc";
+import { extractSpeakerFeatures, SPEAKER_FEATURE_COUNT } from "./extraction/speaker";
 import {
   extractMotionFeatures,
   extractTouchFeatures,
+  extractMouseDynamics,
 } from "./extraction/kinematic";
 import { fuseFeatures } from "./extraction/statistics";
-import { simhash } from "./hashing/simhash";
-import { generateTBH } from "./hashing/poseidon";
+import { simhash, hammingDistance } from "./hashing/simhash";
+import { generateTBH, bigintToBytes32 } from "./hashing/poseidon";
 import { prepareCircuitInput, generateProof } from "./proof/prover";
 import { serializeProof } from "./proof/serializer";
 import { submitViaWallet } from "./submit/wallet";
@@ -32,11 +33,16 @@ type ResolvedConfig = Required<Pick<PulseConfig, "cluster" | "threshold">> &
 /**
  * Extract features from sensor data and fuse into a single vector.
  */
-function extractFeatures(data: SensorData): number[] {
+async function extractFeatures(data: SensorData): Promise<number[]> {
   const audioFeatures = data.audio
-    ? extractMFCC(data.audio)
-    : new Array(169).fill(0);
-  const motionFeatures = extractMotionFeatures(data.motion);
+    ? await extractSpeakerFeatures(data.audio)
+    : new Array(SPEAKER_FEATURE_COUNT).fill(0);
+
+  const hasMotion = data.motion.length >= MIN_MOTION_SAMPLES;
+  const motionFeatures = hasMotion
+    ? extractMotionFeatures(data.motion)
+    : extractMouseDynamics(data.touch);
+
   const touchFeatures = extractTouchFeatures(data.touch);
   return fuseFeatures(audioFeatures, motionFeatures, touchFeatures);
 }
@@ -85,7 +91,16 @@ async function processSensorData(
   }
 
   // Extract features
-  const features = extractFeatures(sensorData);
+  const features = await extractFeatures(sensorData);
+
+  // Diagnostic: log feature vector composition
+  const nonZero = features.filter((v) => v !== 0).length;
+  console.log(
+    `[IAM SDK] Feature vector: ${features.length} dimensions, ${nonZero} non-zero. ` +
+    `Audio[0..43]: ${features.slice(0, 44).filter((v) => v !== 0).length} non-zero. ` +
+    `Motion/Mouse[44..97]: ${features.slice(44, 98).filter((v) => v !== 0).length} non-zero. ` +
+    `Touch[98..133]: ${features.slice(98, 134).filter((v) => v !== 0).length} non-zero.`
+  );
 
   // Generate fingerprint via SimHash
   const fingerprint = simhash(features);
@@ -104,8 +119,13 @@ async function processSensorData(
       fingerprint: previousData.fingerprint,
       salt: BigInt(previousData.salt),
       commitment: BigInt(previousData.commitment),
-      commitmentBytes: new Uint8Array(32),
+      commitmentBytes: bigintToBytes32(BigInt(previousData.commitment)),
     };
+
+    const distance = hammingDistance(fingerprint, previousData.fingerprint);
+    console.log(
+      `[IAM SDK] Re-verification: Hamming distance = ${distance} / 256 bits (threshold = ${config.threshold})`
+    );
 
     const circuitInput = prepareCircuitInput(
       tbh,
@@ -113,8 +133,17 @@ async function processSensorData(
       config.threshold
     );
 
-    const wasmPath = config.wasmUrl ?? "";
-    const zkeyPath = config.zkeyUrl ?? "";
+    const wasmPath = config.wasmUrl;
+    const zkeyPath = config.zkeyUrl;
+
+    if (!wasmPath || !zkeyPath) {
+      return {
+        success: false,
+        commitment: tbh.commitmentBytes,
+        isFirstVerification: false,
+        error: "wasmUrl and zkeyUrl must be configured for re-verification proof generation",
+      };
+    }
 
     const { proof, publicSignals } = await generateProof(
       circuitInput,
@@ -146,7 +175,7 @@ async function processSensorData(
     submission = await submitViaRelayer(
       solanaProof ?? { proofBytes: new Uint8Array(0), publicInputs: [] },
       tbh.commitmentBytes,
-      { relayerUrl: config.relayerUrl, isFirstVerification }
+      { relayerUrl: config.relayerUrl, apiKey: config.relayerApiKey, isFirstVerification }
     );
   } else {
     return {

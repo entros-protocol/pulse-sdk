@@ -43,7 +43,7 @@ const result = await pulse.verify(touchElement, walletAdapter, connection);
 ## Pipeline
 
 1. **Capture**: Audio (16kHz), IMU (accelerometer + gyroscope), touch (pressure + area) — event-driven, caller controls duration
-2. **Extract**: MFCC (voice), jerk/jounce (motion), velocity/pressure (touch)
+2. **Extract**: Speaker features (F0, jitter, shimmer, HNR, formants, LTAS), jerk/jounce (motion), velocity/pressure (touch)
 3. **Hash**: SimHash → 256-bit Temporal Fingerprint → Poseidon commitment
 4. **Prove**: Groth16 proof that new fingerprint is within Hamming distance of previous
 5. **Submit**: On-chain verification via wallet or relayer

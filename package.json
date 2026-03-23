@@ -1,6 +1,6 @@
 {
   "name": "@iam-protocol/pulse-sdk",
-  "version": "0.2.2",
+  "version": "0.3.2",
   "description": "Client-side SDK for IAM Protocol — sensor capture, TBH generation, ZK proof construction",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -21,6 +21,7 @@
   "dependencies": {
     "circomlibjs": "^0.1.7",
     "meyda": "^5.6.3",
+    "pitchfinder": "^2.3.4",
     "snarkjs": "^0.7.6"
   },
   "peerDependencies": {

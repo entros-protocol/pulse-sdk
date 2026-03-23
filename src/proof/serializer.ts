@@ -41,6 +41,12 @@ export function serializeProof(
   proof: RawProof,
   publicSignals: string[]
 ): SolanaProof {
+  if (publicSignals.length !== NUM_PUBLIC_INPUTS) {
+    throw new Error(
+      `Expected ${NUM_PUBLIC_INPUTS} public signals, got ${publicSignals.length}`
+    );
+  }
+
   // proof_a: x (32 bytes) + negated y (32 bytes)
   const a0 = toBigEndian32(proof.pi_a[0]!);
   const a1 = negateG1Y(proof.pi_a[1]!);

@@ -33,6 +33,7 @@ export async function captureAudio(
   });
 
   const ctx = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
+  const capturedSampleRate = ctx.sampleRate;
   const source = ctx.createMediaStreamSource(stream);
   const chunks: Float32Array[] = [];
   const startTime = performance.now();
@@ -76,8 +77,8 @@ export async function captureAudio(
 
       resolve({
         samples,
-        sampleRate: ctx.sampleRate,
-        duration: totalLength / ctx.sampleRate,
+        sampleRate: capturedSampleRate,
+        duration: totalLength / capturedSampleRate,
       });
     }
 
