@@ -17,7 +17,6 @@ export async function submitViaWallet(
     wallet: any;
     connection: any;
     isFirstVerification: boolean;
-    trustScore?: number;
   }
 ): Promise<SubmissionResult> {
   try {
@@ -154,11 +153,19 @@ export async function submitViaWallet(
           anchorProgramId
         );
 
+        // Derive iam-registry ProtocolConfig PDA for trust score computation
+        const registryProgramId = new PublicKey(PROGRAM_IDS.iamRegistry);
+        const [protocolConfigPda] = PublicKey.findProgramAddressSync(
+          [new TextEncoder().encode("protocol_config")],
+          registryProgramId
+        );
+
         await anchorProgram.methods
-          .updateAnchor(Array.from(commitment), options.trustScore ?? 0)
+          .updateAnchor(Array.from(commitment))
           .accounts({
             authority: provider.wallet.publicKey,
             identityState: identityPda,
+            protocolConfig: protocolConfigPda,
           })
           .rpc();
       }
