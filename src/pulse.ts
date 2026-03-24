@@ -92,6 +92,19 @@ async function processSensorData(
     };
   }
 
+  // Re-verification requires audio + at least one other modality.
+  // Audio-only fingerprints lack inter-session variance from motion/touch,
+  // producing identical SimHash results that fail the min_distance constraint.
+  const hasPreviousData = loadVerificationData() !== null;
+  if (hasPreviousData && !hasMotion && !hasTouch) {
+    return {
+      success: false,
+      commitment: new Uint8Array(32),
+      isFirstVerification: false,
+      error: "Insufficient sensor data for re-verification. Please trace the curve and allow motion access.",
+    };
+  }
+
   // Extract features
   const features = await extractFeatures(sensorData);
 
@@ -432,19 +445,7 @@ export class PulseSDK {
       const session = this.createSession(touchElement);
       const stopPromises: Promise<void>[] = [];
 
-      // Audio
-      try {
-        await session.startAudio();
-        stopPromises.push(
-          new Promise<void>((r) => setTimeout(r, DEFAULT_CAPTURE_MS))
-            .then(() => session.stopAudio())
-            .then(() => {})
-        );
-      } catch (err: any) {
-        throw new Error(`Audio capture failed: ${err?.message ?? "microphone unavailable"}`);
-      }
-
-      // Motion — startMotion auto-skips if permission denied (no throw)
+      // Motion first — requires user gesture on iOS (gesture expires after getUserMedia)
       try {
         await session.startMotion();
       } catch {
@@ -456,6 +457,18 @@ export class PulseSDK {
             .then(() => session.stopMotion())
             .then(() => {})
         );
+      }
+
+      // Audio second — getUserMedia works without a gesture on secure origins
+      try {
+        await session.startAudio();
+        stopPromises.push(
+          new Promise<void>((r) => setTimeout(r, DEFAULT_CAPTURE_MS))
+            .then(() => session.stopAudio())
+            .then(() => {})
+        );
+      } catch (err: any) {
+        throw new Error(`Audio capture failed: ${err?.message ?? "microphone unavailable"}`);
       }
 
       // Touch
