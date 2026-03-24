@@ -40,9 +40,18 @@ async function extractFeatures(data: SensorData): Promise<number[]> {
   const audioFeatures = await extractSpeakerFeatures(data.audio);
 
   const hasMotion = data.motion.length >= MIN_MOTION_SAMPLES;
-  const motionFeatures = hasMotion
-    ? extractMotionFeatures(data.motion)
-    : extractMouseDynamics(data.touch);
+  const hasTouch = data.touch.length >= MIN_TOUCH_SAMPLES;
+
+  // On mobile (both IMU and touch available), use touch/pointer dynamics for
+  // kinematic features. Stationary IMU reads constant gravity — the derivatives
+  // are near-zero and produce identical features across sessions. Finger tracing
+  // has natural inter-session variance because no two paths are identical.
+  const motionFeatures =
+    hasMotion && hasTouch
+      ? extractMouseDynamics(data.touch)
+      : hasMotion
+        ? extractMotionFeatures(data.motion)
+        : extractMouseDynamics(data.touch);
 
   const touchFeatures = extractTouchFeatures(data.touch);
   return fuseFeatures(audioFeatures, motionFeatures, touchFeatures);
