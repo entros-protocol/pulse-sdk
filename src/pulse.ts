@@ -181,11 +181,16 @@ async function processSensorData(
       const audioNZ = features.slice(0, 44).filter((v) => v !== 0).length;
       const motionNZ = features.slice(44, 98).filter((v) => v !== 0).length;
       const touchNZ = features.slice(98, 134).filter((v) => v !== 0).length;
+      const rawAudio = sensorData.audio?.samples.length ?? 0;
+      const rawMotion = sensorData.motion.length;
+      const rawTouch = sensorData.touch.length;
+      // First 3 feature values as a fingerprint to detect identical data
+      const sig = features.slice(0, 3).map((v) => v.toFixed(4)).join(",");
       return {
         success: false,
         commitment: tbh.commitmentBytes,
         isFirstVerification: false,
-        error: `Proof failed (distance=${distance}, audio=${audioNZ}/44, motion=${motionNZ}/54, touch=${touchNZ}/36): ${proofErr?.message ?? proofErr}`,
+        error: `Proof failed (dist=${distance}, feat=${audioNZ}/${motionNZ}/${touchNZ}, raw=${rawAudio}/${rawMotion}/${rawTouch}, sig=${sig}): ${proofErr?.message ?? proofErr}`,
       };
     }
   }
