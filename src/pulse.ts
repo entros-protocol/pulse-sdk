@@ -40,9 +40,18 @@ async function extractFeatures(data: SensorData): Promise<number[]> {
   const audioFeatures = await extractSpeakerFeatures(data.audio);
 
   const hasMotion = data.motion.length >= MIN_MOTION_SAMPLES;
-  const motionFeatures = hasMotion
-    ? extractMotionFeatures(data.motion)
-    : extractMouseDynamics(data.touch);
+  const hasTouch = data.touch.length >= MIN_TOUCH_SAMPLES;
+
+  // On mobile (both IMU and touch available), use touch/pointer dynamics for
+  // kinematic features. Stationary IMU reads constant gravity — the derivatives
+  // are near-zero and produce identical features across sessions. Finger tracing
+  // has natural inter-session variance because no two paths are identical.
+  const motionFeatures =
+    hasMotion && hasTouch
+      ? extractMouseDynamics(data.touch)
+      : hasMotion
+        ? extractMotionFeatures(data.motion)
+        : extractMouseDynamics(data.touch);
 
   const touchFeatures = extractTouchFeatures(data.touch);
   return fuseFeatures(audioFeatures, motionFeatures, touchFeatures);
@@ -89,6 +98,19 @@ async function processSensorData(
       commitment: new Uint8Array(32),
       isFirstVerification: true,
       error: "No voice data detected. Please speak the phrase clearly during capture.",
+    };
+  }
+
+  // Re-verification requires audio + at least one other modality.
+  // Audio-only fingerprints lack inter-session variance from motion/touch,
+  // producing identical SimHash results that fail the min_distance constraint.
+  const hasPreviousData = loadVerificationData() !== null;
+  if (hasPreviousData && !hasMotion && !hasTouch) {
+    return {
+      success: false,
+      commitment: new Uint8Array(32),
+      isFirstVerification: false,
+      error: "Insufficient sensor data for re-verification. Please trace the curve and allow motion access.",
     };
   }
 
@@ -147,13 +169,30 @@ async function processSensorData(
       };
     }
 
-    const { proof, publicSignals } = await generateProof(
-      circuitInput,
-      wasmPath,
-      zkeyPath
-    );
-
-    solanaProof = serializeProof(proof, publicSignals);
+    try {
+      const { proof, publicSignals } = await generateProof(
+        circuitInput,
+        wasmPath,
+        zkeyPath
+      );
+      solanaProof = serializeProof(proof, publicSignals);
+    } catch (proofErr: any) {
+      // Include diagnostics in error for mobile debugging (no devtools)
+      const audioNZ = features.slice(0, 44).filter((v) => v !== 0).length;
+      const motionNZ = features.slice(44, 98).filter((v) => v !== 0).length;
+      const touchNZ = features.slice(98, 134).filter((v) => v !== 0).length;
+      const rawAudio = sensorData.audio?.samples.length ?? 0;
+      const rawMotion = sensorData.motion.length;
+      const rawTouch = sensorData.touch.length;
+      // First 3 feature values as a fingerprint to detect identical data
+      const sig = features.slice(0, 3).map((v) => v.toFixed(4)).join(",");
+      return {
+        success: false,
+        commitment: tbh.commitmentBytes,
+        isFirstVerification: false,
+        error: `Proof failed (dist=${distance}, feat=${audioNZ}/${motionNZ}/${touchNZ}, raw=${rawAudio}/${rawMotion}/${rawTouch}, sig=${sig}): ${proofErr?.message ?? proofErr}`,
+      };
+    }
   }
 
   // Submit
@@ -432,19 +471,7 @@ export class PulseSDK {
       const session = this.createSession(touchElement);
       const stopPromises: Promise<void>[] = [];
 
-      // Audio
-      try {
-        await session.startAudio();
-        stopPromises.push(
-          new Promise<void>((r) => setTimeout(r, DEFAULT_CAPTURE_MS))
-            .then(() => session.stopAudio())
-            .then(() => {})
-        );
-      } catch (err: any) {
-        throw new Error(`Audio capture failed: ${err?.message ?? "microphone unavailable"}`);
-      }
-
-      // Motion — startMotion auto-skips if permission denied (no throw)
+      // Motion first — requires user gesture on iOS (gesture expires after getUserMedia)
       try {
         await session.startMotion();
       } catch {
@@ -456,6 +483,18 @@ export class PulseSDK {
             .then(() => session.stopMotion())
             .then(() => {})
         );
+      }
+
+      // Audio second — getUserMedia works without a gesture on secure origins
+      try {
+        await session.startAudio();
+        stopPromises.push(
+          new Promise<void>((r) => setTimeout(r, DEFAULT_CAPTURE_MS))
+            .then(() => session.stopAudio())
+            .then(() => {})
+        );
+      } catch (err: any) {
+        throw new Error(`Audio capture failed: ${err?.message ?? "microphone unavailable"}`);
       }
 
       // Touch
