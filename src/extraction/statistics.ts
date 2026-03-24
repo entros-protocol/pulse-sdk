@@ -108,16 +108,21 @@ export function autocorrelation(values: number[], lag: number = 1): number {
 function normalizeGroup(features: number[]): number[] {
   if (features.length === 0) return features;
 
+  // Sanitize NaN/Infinity to 0 before computing stats.
+  // Meyda spectral features can produce NaN on near-silent frames (0/0),
+  // and a single NaN would poison the entire modality group.
+  const clean = features.map((v) => (Number.isFinite(v) ? v : 0));
+
   let sum = 0;
-  for (const v of features) sum += v;
-  const mean = sum / features.length;
+  for (const v of clean) sum += v;
+  const mean = sum / clean.length;
 
   let sqSum = 0;
-  for (const v of features) sqSum += (v - mean) * (v - mean);
-  const std = Math.sqrt(sqSum / features.length);
+  for (const v of clean) sqSum += (v - mean) * (v - mean);
+  const std = Math.sqrt(sqSum / clean.length);
 
-  if (std === 0) return features.map(() => 0);
-  return features.map((v) => (v - mean) / std);
+  if (std === 0) return clean.map(() => 0);
+  return clean.map((v) => (v - mean) / std);
 }
 
 export function fuseFeatures(

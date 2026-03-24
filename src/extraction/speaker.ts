@@ -20,12 +20,14 @@ const SPEAKER_FEATURE_COUNT = 44;
 
 // Dynamic imports for browser compatibility
 let pitchDetector: ((buf: Float32Array) => number | null) | null = null;
+let pitchDetectorRate = 0;
 let meydaModule: any = null;
 
-async function getPitchDetector(): Promise<(buf: Float32Array) => number | null> {
-  if (!pitchDetector) {
+async function getPitchDetector(sampleRate: number): Promise<(buf: Float32Array) => number | null> {
+  if (!pitchDetector || pitchDetectorRate !== sampleRate) {
     const PitchFinder = await import("pitchfinder");
-    pitchDetector = PitchFinder.YIN({ sampleRate: 16000 });
+    pitchDetector = PitchFinder.YIN({ sampleRate });
+    pitchDetectorRate = sampleRate;
   }
   return pitchDetector;
 }
@@ -48,7 +50,7 @@ async function detectF0Contour(
   samples: Float32Array,
   sampleRate: number
 ): Promise<{ f0: number[]; amplitudes: number[]; periods: number[] }> {
-  const detect = await getPitchDetector();
+  const detect = await getPitchDetector(sampleRate);
   const f0: number[] = [];
   const amplitudes: number[] = [];
   const periods: number[] = [];
@@ -244,10 +246,10 @@ async function computeLTAS(
     );
 
     if (features) {
-      if (typeof features.spectralCentroid === "number") centroids.push(features.spectralCentroid);
-      if (typeof features.spectralRolloff === "number") rolloffs.push(features.spectralRolloff);
-      if (typeof features.spectralFlatness === "number") flatnesses.push(features.spectralFlatness);
-      if (typeof features.spectralSpread === "number") spreads.push(features.spectralSpread);
+      if (Number.isFinite(features.spectralCentroid)) centroids.push(features.spectralCentroid);
+      if (Number.isFinite(features.spectralRolloff)) rolloffs.push(features.spectralRolloff);
+      if (Number.isFinite(features.spectralFlatness)) flatnesses.push(features.spectralFlatness);
+      if (Number.isFinite(features.spectralSpread)) spreads.push(features.spectralSpread);
     }
   }
 
