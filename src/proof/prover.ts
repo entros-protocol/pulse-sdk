@@ -76,14 +76,13 @@ export async function generateSolanaProof(
 
 /**
  * Verify a proof locally using snarkjs (for debugging/testing).
+ * Caller is responsible for loading the verification key.
  */
 export async function verifyProofLocally(
   proof: any,
   publicSignals: string[],
-  vkeyPath: string
+  vkey: Record<string, unknown>
 ): Promise<boolean> {
   const snarkjs = await getSnarkjs();
-  const fs = await import("fs");
-  const vk = JSON.parse(fs.readFileSync(vkeyPath, "utf-8"));
-  return snarkjs.groth16.verify(vk, publicSignals, proof);
+  return snarkjs.groth16.verify(vkey, publicSignals, proof);
 }

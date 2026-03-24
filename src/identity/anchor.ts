@@ -16,7 +16,7 @@ export async function fetchIdentityState(
 
     const programId = new PublicKey(PROGRAM_IDS.iamAnchor);
     const [identityPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("identity"), new PublicKey(walletPubkey).toBuffer()],
+      [new TextEncoder().encode("identity"), new PublicKey(walletPubkey).toBuffer()],
       programId
     );
 

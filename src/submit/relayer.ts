@@ -53,6 +53,8 @@ export async function submitViaRelayer(
     const result = (await response.json()) as {
       success?: boolean;
       tx_signature?: string;
+      verified?: boolean;
+      registered?: boolean;
     };
 
     if (result.success !== true) {

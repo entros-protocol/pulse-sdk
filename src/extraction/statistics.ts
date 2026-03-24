@@ -57,8 +57,12 @@ export function condense(values: number[]): StatsSummary {
  */
 export function entropy(values: number[], bins: number = 16): number {
   if (values.length < 2) return 0;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  let min = values[0]!;
+  let max = values[0]!;
+  for (let i = 1; i < values.length; i++) {
+    if (values[i]! < min) min = values[i]!;
+    if (values[i]! > max) max = values[i]!;
+  }
   if (min === max) return 0;
 
   const counts = new Array(bins).fill(0);
@@ -96,10 +100,30 @@ export function autocorrelation(values: number[], lag: number = 1): number {
   return sum / ((values.length - lag) * v);
 }
 
+/**
+ * Normalize a feature group to zero mean and unit variance.
+ * Ensures each modality (audio, motion, touch) contributes equally
+ * to SimHash hyperplane projections regardless of raw magnitude scale.
+ */
+function normalizeGroup(features: number[]): number[] {
+  if (features.length === 0) return features;
+
+  let sum = 0;
+  for (const v of features) sum += v;
+  const mean = sum / features.length;
+
+  let sqSum = 0;
+  for (const v of features) sqSum += (v - mean) * (v - mean);
+  const std = Math.sqrt(sqSum / features.length);
+
+  if (std === 0) return features.map(() => 0);
+  return features.map((v) => (v - mean) / std);
+}
+
 export function fuseFeatures(
   audio: number[],
   motion: number[],
   touch: number[]
 ): number[] {
-  return [...audio, ...motion, ...touch];
+  return [...normalizeGroup(audio), ...normalizeGroup(motion), ...normalizeGroup(touch)];
 }

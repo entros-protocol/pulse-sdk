@@ -1,6 +1,6 @@
 {
   "name": "@iam-protocol/pulse-sdk",
-  "version": "0.3.2",
+  "version": "0.3.4",
   "description": "Client-side SDK for IAM Protocol — sensor capture, TBH generation, ZK proof construction",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -26,11 +26,15 @@
   },
   "peerDependencies": {
     "@coral-xyz/anchor": "^0.32.1",
+    "@solana/spl-token": "^0.4.0",
     "@solana/wallet-adapter-base": "^0.9.0",
     "@solana/web3.js": "^1.98.0"
   },
   "peerDependenciesMeta": {
     "@coral-xyz/anchor": {
+      "optional": true
+    },
+    "@solana/spl-token": {
       "optional": true
     },
     "@solana/web3.js": {

@@ -7,7 +7,7 @@ import type { VerificationResult } from "./submit/types";
 import type { StoredVerificationData } from "./identity/types";
 
 import { captureAudio } from "./sensor/audio";
-import { captureMotion } from "./sensor/motion";
+import { captureMotion, requestMotionPermission } from "./sensor/motion";
 import { captureTouch } from "./sensor/touch";
 import { extractSpeakerFeatures, SPEAKER_FEATURE_COUNT } from "./extraction/speaker";
 import {
@@ -34,9 +34,10 @@ type ResolvedConfig = Required<Pick<PulseConfig, "cluster" | "threshold">> &
  * Extract features from sensor data and fuse into a single vector.
  */
 async function extractFeatures(data: SensorData): Promise<number[]> {
-  const audioFeatures = data.audio
-    ? await extractSpeakerFeatures(data.audio)
-    : new Array(SPEAKER_FEATURE_COUNT).fill(0);
+  if (!data.audio) {
+    throw new Error("Audio data required for feature extraction");
+  }
+  const audioFeatures = await extractSpeakerFeatures(data.audio);
 
   const hasMotion = data.motion.length >= MIN_MOTION_SAMPLES;
   const motionFeatures = hasMotion
@@ -59,6 +60,7 @@ const MIN_TOUCH_SAMPLES = 10;
 async function processSensorData(
   sensorData: SensorData,
   config: ResolvedConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Solana types are optional peer deps
   wallet?: any,
   connection?: any
 ): Promise<VerificationResult> {
@@ -254,12 +256,30 @@ export class PulseSession {
   async startAudio(onAudioLevel?: (rms: number) => void): Promise<void> {
     if (this.audioStageState !== "idle")
       throw new Error("Audio capture already started");
+
+    // Acquire microphone permission within the user gesture context.
+    // Awaited so the caller knows audio is ready before proceeding.
+    // State transitions happen AFTER permission succeeds to avoid zombie state.
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: 16000,
+        channelCount: 1,
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+    });
+
     this.audioStageState = "capturing";
     this.audioController = new AbortController();
     this.audioPromise = captureAudio({
       signal: this.audioController.signal,
       onAudioLevel,
-    }).catch(() => null);
+      stream,
+    }).catch(() => {
+      stream.getTracks().forEach((t) => t.stop());
+      return null;
+    });
   }
 
   async stopAudio(): Promise<AudioCapture | null> {
@@ -271,21 +291,28 @@ export class PulseSession {
     return this.audioData;
   }
 
-  skipAudio(): void {
-    if (this.audioStageState !== "idle")
-      throw new Error("Audio capture already started");
-    this.audioStageState = "skipped";
-  }
+  // Audio is mandatory — no skipAudio() method.
+  // If startAudio() fails, the verification cannot proceed.
 
   // --- Motion ---
 
   async startMotion(): Promise<void> {
     if (this.motionStageState !== "idle")
       throw new Error("Motion capture already started");
+
+    // Request motion permission within the user gesture context (iOS 13+).
+    // Awaited so the capture timer doesn't start before the user approves.
+    const hasPermission = await requestMotionPermission();
+    if (!hasPermission) {
+      this.motionStageState = "skipped";
+      return;
+    }
+
     this.motionStageState = "capturing";
     this.motionController = new AbortController();
     this.motionPromise = captureMotion({
       signal: this.motionController.signal,
+      permissionGranted: true,
     }).catch(() => []);
   }
 
@@ -302,6 +329,10 @@ export class PulseSession {
     if (this.motionStageState !== "idle")
       throw new Error("Motion capture already started");
     this.motionStageState = "skipped";
+  }
+
+  isMotionCapturing(): boolean {
+    return this.motionStageState === "capturing";
   }
 
   // --- Touch ---
@@ -335,6 +366,7 @@ export class PulseSession {
 
   // --- Complete ---
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Solana types are optional peer deps
   async complete(wallet?: any, connection?: any): Promise<VerificationResult> {
     const active: string[] = [];
     if (this.audioStageState === "capturing") active.push("audio");
@@ -404,28 +436,26 @@ export class PulseSDK {
       try {
         await session.startAudio();
         stopPromises.push(
-          new Promise<void>((r) => setTimeout(r, DEFAULT_CAPTURE_MS)).then(
-            () => {
-              session.stopAudio();
-            }
-          )
+          new Promise<void>((r) => setTimeout(r, DEFAULT_CAPTURE_MS))
+            .then(() => session.stopAudio())
+            .then(() => {})
         );
-      } catch {
-        session.skipAudio();
+      } catch (err: any) {
+        throw new Error(`Audio capture failed: ${err?.message ?? "microphone unavailable"}`);
       }
 
-      // Motion
+      // Motion — startMotion auto-skips if permission denied (no throw)
       try {
         await session.startMotion();
-        stopPromises.push(
-          new Promise<void>((r) => setTimeout(r, DEFAULT_CAPTURE_MS)).then(
-            () => {
-              session.stopMotion();
-            }
-          )
-        );
       } catch {
-        session.skipMotion();
+        /* unexpected error — motion already skipped or idle */
+      }
+      if (session.isMotionCapturing()) {
+        stopPromises.push(
+          new Promise<void>((r) => setTimeout(r, DEFAULT_CAPTURE_MS))
+            .then(() => session.stopMotion())
+            .then(() => {})
+        );
       }
 
       // Touch
@@ -433,11 +463,9 @@ export class PulseSDK {
         try {
           await session.startTouch();
           stopPromises.push(
-            new Promise<void>((r) => setTimeout(r, DEFAULT_CAPTURE_MS)).then(
-              () => {
-                session.stopTouch();
-              }
-            )
+            new Promise<void>((r) => setTimeout(r, DEFAULT_CAPTURE_MS))
+              .then(() => session.stopTouch())
+              .then(() => {})
           );
         } catch {
           session.skipTouch();

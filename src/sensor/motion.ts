@@ -31,7 +31,7 @@ export async function captureMotion(
     maxDurationMs = MAX_CAPTURE_MS,
   } = options;
 
-  const hasPermission = await requestMotionPermission();
+  const hasPermission = options.permissionGranted ?? await requestMotionPermission();
   if (!hasPermission) return [];
 
   const samples: MotionSample[] = [];
