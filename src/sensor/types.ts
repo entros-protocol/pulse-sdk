@@ -36,6 +36,10 @@ export interface CaptureOptions {
   maxDurationMs?: number;
   /** Called with RMS audio level (0-1) on each buffer during audio capture (~4x per second). */
   onAudioLevel?: (rms: number) => void;
+  /** Pre-acquired MediaStream. If provided, captureAudio skips getUserMedia. */
+  stream?: MediaStream;
+  /** If true, captureMotion skips requestMotionPermission (already acquired). */
+  permissionGranted?: boolean;
 }
 
 /** Stage of a capture session */

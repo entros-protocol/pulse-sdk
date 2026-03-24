@@ -20,9 +20,10 @@ export async function captureAudio(
     minDurationMs = MIN_CAPTURE_MS,
     maxDurationMs = MAX_CAPTURE_MS,
     onAudioLevel,
+    stream: preAcquiredStream,
   } = options;
 
-  const stream = await navigator.mediaDevices.getUserMedia({
+  const stream = preAcquiredStream ?? await navigator.mediaDevices.getUserMedia({
     audio: {
       sampleRate: TARGET_SAMPLE_RATE,
       channelCount: 1,
@@ -33,6 +34,7 @@ export async function captureAudio(
   });
 
   const ctx = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
+  await ctx.resume(); // Required on iOS — AudioContext may be suspended outside user gesture
   const capturedSampleRate = ctx.sampleRate;
   const source = ctx.createMediaStreamSource(stream);
   const chunks: Float32Array[] = [];

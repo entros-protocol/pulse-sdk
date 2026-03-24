@@ -7,7 +7,7 @@ import type { VerificationResult } from "./submit/types";
 import type { StoredVerificationData } from "./identity/types";
 
 import { captureAudio } from "./sensor/audio";
-import { captureMotion } from "./sensor/motion";
+import { captureMotion, requestMotionPermission } from "./sensor/motion";
 import { captureTouch } from "./sensor/touch";
 import { extractSpeakerFeatures, SPEAKER_FEATURE_COUNT } from "./extraction/speaker";
 import {
@@ -256,12 +256,30 @@ export class PulseSession {
   async startAudio(onAudioLevel?: (rms: number) => void): Promise<void> {
     if (this.audioStageState !== "idle")
       throw new Error("Audio capture already started");
+
+    // Acquire microphone permission within the user gesture context.
+    // Awaited so the caller knows audio is ready before proceeding.
+    // State transitions happen AFTER permission succeeds to avoid zombie state.
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: 16000,
+        channelCount: 1,
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+    });
+
     this.audioStageState = "capturing";
     this.audioController = new AbortController();
     this.audioPromise = captureAudio({
       signal: this.audioController.signal,
       onAudioLevel,
-    }).catch(() => null);
+      stream,
+    }).catch(() => {
+      stream.getTracks().forEach((t) => t.stop());
+      return null;
+    });
   }
 
   async stopAudio(): Promise<AudioCapture | null> {
@@ -281,10 +299,20 @@ export class PulseSession {
   async startMotion(): Promise<void> {
     if (this.motionStageState !== "idle")
       throw new Error("Motion capture already started");
+
+    // Request motion permission within the user gesture context (iOS 13+).
+    // Awaited so the capture timer doesn't start before the user approves.
+    const hasPermission = await requestMotionPermission();
+    if (!hasPermission) {
+      this.motionStageState = "skipped";
+      return;
+    }
+
     this.motionStageState = "capturing";
     this.motionController = new AbortController();
     this.motionPromise = captureMotion({
       signal: this.motionController.signal,
+      permissionGranted: true,
     }).catch(() => []);
   }
 
@@ -301,6 +329,10 @@ export class PulseSession {
     if (this.motionStageState !== "idle")
       throw new Error("Motion capture already started");
     this.motionStageState = "skipped";
+  }
+
+  isMotionCapturing(): boolean {
+    return this.motionStageState === "capturing";
   }
 
   // --- Touch ---
@@ -412,16 +444,18 @@ export class PulseSDK {
         throw new Error(`Audio capture failed: ${err?.message ?? "microphone unavailable"}`);
       }
 
-      // Motion
+      // Motion — startMotion auto-skips if permission denied (no throw)
       try {
         await session.startMotion();
+      } catch {
+        /* unexpected error — motion already skipped or idle */
+      }
+      if (session.isMotionCapturing()) {
         stopPromises.push(
           new Promise<void>((r) => setTimeout(r, DEFAULT_CAPTURE_MS))
             .then(() => session.stopMotion())
             .then(() => {})
         );
-      } catch {
-        session.skipMotion();
       }
 
       // Touch
