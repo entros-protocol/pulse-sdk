@@ -10,6 +10,9 @@ import {
 const STORAGE_KEY = "iam-protocol-verification-data";
 const ENCRYPTED_VERSION = 2;
 
+// In-memory fallback for environments without localStorage (Node.js, SSR,
+// private browsing on some browsers). Data is lost on page reload — users
+// in private browsing mode must re-enroll on each session.
 let inMemoryStore: StoredVerificationData | null = null;
 
 // --- Envelope detection ---

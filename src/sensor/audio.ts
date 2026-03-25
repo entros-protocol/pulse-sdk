@@ -7,6 +7,12 @@ const TARGET_SAMPLE_RATE = 16000;
  * Capture audio at 16kHz until signaled to stop.
  * Uses ScriptProcessorNode for raw PCM sample access.
  *
+ * NOTE: ScriptProcessorNode is deprecated in favor of AudioWorklet.
+ * Migration planned for v1.0. ScriptProcessorNode is used because it
+ * provides synchronous access to raw PCM samples without requiring a
+ * separate worker file, which simplifies SDK distribution. All current
+ * browsers still support it.
+ *
  * Stop behavior:
  * - If signal fires before minDurationMs, capture continues until minimum is reached.
  * - If signal never fires, capture auto-stops at maxDurationMs.
