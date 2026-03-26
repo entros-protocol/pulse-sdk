@@ -2,6 +2,7 @@
   "name": "@iam-protocol/pulse-sdk",
   "version": "0.5.0",
   "description": "Client-side SDK for IAM Protocol — sensor capture, TBH generation, ZK proof construction",
+  "license": "MIT",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
