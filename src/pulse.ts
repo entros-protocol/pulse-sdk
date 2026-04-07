@@ -23,6 +23,7 @@ import { serializeProof } from "./proof/serializer";
 import { submitViaWallet } from "./submit/wallet";
 import { submitViaRelayer } from "./submit/relayer";
 import {
+  fetchIdentityState,
   storeVerificationData,
   loadVerificationData,
 } from "./identity/anchor";
@@ -104,7 +105,15 @@ async function processSensorData(
   // Re-verification requires audio + at least one other modality.
   // Audio-only fingerprints lack inter-session variance from motion/touch,
   // producing identical SimHash results that fail the min_distance constraint.
-  const hasPreviousData = (await loadVerificationData()) !== null;
+  let hasPreviousData: boolean;
+  if (wallet && connection) {
+    const walletPubkey = wallet.adapter?.publicKey ?? wallet.publicKey;
+    hasPreviousData = walletPubkey
+      ? (await fetchIdentityState(walletPubkey.toBase58(), connection)) !== null
+      : (await loadVerificationData()) !== null;
+  } else {
+    hasPreviousData = (await loadVerificationData()) !== null;
+  }
   if (hasPreviousData && !hasMotion && !hasTouch) {
     return {
       success: false,
@@ -132,9 +141,23 @@ async function processSensorData(
   // Generate TBH (Poseidon commitment)
   const tbh = await generateTBH(fingerprint);
 
-  // Check for previous verification data
+  // Determine if this is a first verification.
+  // Wallet-connected: check on-chain IdentityState PDA (source of truth).
+  // Walletless: check localStorage for stored fingerprint.
+  let isFirstVerification: boolean;
   const previousData = await loadVerificationData();
-  const isFirstVerification = !previousData;
+
+  if (wallet && connection) {
+    const walletPubkey = wallet.adapter?.publicKey ?? wallet.publicKey;
+    if (walletPubkey) {
+      const onChainState = await fetchIdentityState(walletPubkey.toBase58(), connection);
+      isFirstVerification = !onChainState;
+    } else {
+      isFirstVerification = !previousData;
+    }
+  } else {
+    isFirstVerification = !previousData;
+  }
 
   let solanaProof: SolanaProof | null = null;
 
