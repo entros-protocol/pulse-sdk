@@ -182,6 +182,18 @@ async function processSensorData(
     isFirstVerification = !previousData;
   }
 
+  // Edge case: on-chain identity exists but local fingerprint is missing
+  // (cleared browser data, new device, different browser). Can't generate
+  // Hamming distance proof without the previous fingerprint.
+  if (!isFirstVerification && !previousData) {
+    return {
+      success: false,
+      commitment: tbh.commitmentBytes,
+      isFirstVerification: false,
+      error: "Previous behavioral fingerprint not found on this device. Your IAM Anchor exists on-chain but the local baseline data is missing. Please verify from the original device, or contact the integrator for a baseline reset.",
+    };
+  }
+
   let solanaProof: SolanaProof | null = null;
 
   if (!isFirstVerification && previousData) {
