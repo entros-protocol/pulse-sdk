@@ -1,5 +1,5 @@
 import type { PulseConfig } from "./config";
-import { DEFAULT_THRESHOLD, DEFAULT_CAPTURE_MS } from "./config";
+import { DEFAULT_THRESHOLD, DEFAULT_CAPTURE_MS, PROGRAM_IDS } from "./config";
 import type { SensorData, AudioCapture, MotionSample, TouchSample, StageState } from "./sensor/types";
 import type { TBH } from "./hashing/types";
 import type { SolanaProof } from "./proof/types";
@@ -23,7 +23,6 @@ import { serializeProof } from "./proof/serializer";
 import { submitViaWallet } from "./submit/wallet";
 import { submitViaRelayer } from "./submit/relayer";
 import {
-  fetchIdentityState,
   storeVerificationData,
   loadVerificationData,
 } from "./identity/anchor";
@@ -108,9 +107,22 @@ async function processSensorData(
   let hasPreviousData: boolean;
   if (wallet && connection) {
     const walletPubkey = wallet.adapter?.publicKey ?? wallet.publicKey;
-    hasPreviousData = walletPubkey
-      ? (await fetchIdentityState(walletPubkey.toBase58(), connection)) !== null
-      : (await loadVerificationData()) !== null;
+    if (walletPubkey) {
+      try {
+        const { PublicKey } = await import("@solana/web3.js");
+        const programId = new PublicKey(PROGRAM_IDS.iamAnchor);
+        const [identityPda] = PublicKey.findProgramAddressSync(
+          [new TextEncoder().encode("identity"), walletPubkey.toBuffer()],
+          programId
+        );
+        const accountInfo = await connection.getAccountInfo(identityPda);
+        hasPreviousData = !!accountInfo;
+      } catch {
+        hasPreviousData = (await loadVerificationData()) !== null;
+      }
+    } else {
+      hasPreviousData = (await loadVerificationData()) !== null;
+    }
   } else {
     hasPreviousData = (await loadVerificationData()) !== null;
   }
@@ -150,8 +162,19 @@ async function processSensorData(
   if (wallet && connection) {
     const walletPubkey = wallet.adapter?.publicKey ?? wallet.publicKey;
     if (walletPubkey) {
-      const onChainState = await fetchIdentityState(walletPubkey.toBase58(), connection);
-      isFirstVerification = !onChainState;
+      // Check if IdentityState PDA exists on-chain (simple existence check, no IDL needed)
+      try {
+        const { PublicKey } = await import("@solana/web3.js");
+        const programId = new PublicKey(PROGRAM_IDS.iamAnchor);
+        const [identityPda] = PublicKey.findProgramAddressSync(
+          [new TextEncoder().encode("identity"), walletPubkey.toBuffer()],
+          programId
+        );
+        const accountInfo = await connection.getAccountInfo(identityPda);
+        isFirstVerification = !accountInfo;
+      } catch {
+        isFirstVerification = !previousData;
+      }
     } else {
       isFirstVerification = !previousData;
     }
