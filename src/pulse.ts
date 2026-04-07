@@ -1,5 +1,5 @@
 import type { PulseConfig } from "./config";
-import { DEFAULT_THRESHOLD, DEFAULT_CAPTURE_MS } from "./config";
+import { DEFAULT_THRESHOLD, DEFAULT_CAPTURE_MS, PROGRAM_IDS } from "./config";
 import type { SensorData, AudioCapture, MotionSample, TouchSample, StageState } from "./sensor/types";
 import type { TBH } from "./hashing/types";
 import type { SolanaProof } from "./proof/types";
@@ -104,7 +104,28 @@ async function processSensorData(
   // Re-verification requires audio + at least one other modality.
   // Audio-only fingerprints lack inter-session variance from motion/touch,
   // producing identical SimHash results that fail the min_distance constraint.
-  const hasPreviousData = (await loadVerificationData()) !== null;
+  let hasPreviousData: boolean;
+  if (wallet && connection) {
+    const walletPubkey = wallet.adapter?.publicKey ?? wallet.publicKey;
+    if (walletPubkey) {
+      try {
+        const { PublicKey } = await import("@solana/web3.js");
+        const programId = new PublicKey(PROGRAM_IDS.iamAnchor);
+        const [identityPda] = PublicKey.findProgramAddressSync(
+          [new TextEncoder().encode("identity"), walletPubkey.toBuffer()],
+          programId
+        );
+        const accountInfo = await connection.getAccountInfo(identityPda);
+        hasPreviousData = !!accountInfo;
+      } catch {
+        hasPreviousData = (await loadVerificationData()) !== null;
+      }
+    } else {
+      hasPreviousData = (await loadVerificationData()) !== null;
+    }
+  } else {
+    hasPreviousData = (await loadVerificationData()) !== null;
+  }
   if (hasPreviousData && !hasMotion && !hasTouch) {
     return {
       success: false,
@@ -132,9 +153,34 @@ async function processSensorData(
   // Generate TBH (Poseidon commitment)
   const tbh = await generateTBH(fingerprint);
 
-  // Check for previous verification data
+  // Determine if this is a first verification.
+  // Wallet-connected: check on-chain IdentityState PDA (source of truth).
+  // Walletless: check localStorage for stored fingerprint.
+  let isFirstVerification: boolean;
   const previousData = await loadVerificationData();
-  const isFirstVerification = !previousData;
+
+  if (wallet && connection) {
+    const walletPubkey = wallet.adapter?.publicKey ?? wallet.publicKey;
+    if (walletPubkey) {
+      // Check if IdentityState PDA exists on-chain (simple existence check, no IDL needed)
+      try {
+        const { PublicKey } = await import("@solana/web3.js");
+        const programId = new PublicKey(PROGRAM_IDS.iamAnchor);
+        const [identityPda] = PublicKey.findProgramAddressSync(
+          [new TextEncoder().encode("identity"), walletPubkey.toBuffer()],
+          programId
+        );
+        const accountInfo = await connection.getAccountInfo(identityPda);
+        isFirstVerification = !accountInfo;
+      } catch {
+        isFirstVerification = !previousData;
+      }
+    } else {
+      isFirstVerification = !previousData;
+    }
+  } else {
+    isFirstVerification = !previousData;
+  }
 
   let solanaProof: SolanaProof | null = null;
 
@@ -203,13 +249,15 @@ async function processSensorData(
       submission = await submitViaWallet(
         solanaProof ?? { proofBytes: new Uint8Array(0), publicInputs: [] },
         tbh.commitmentBytes,
-        { wallet, connection, isFirstVerification: true }
+        { wallet, connection, isFirstVerification: true, relayerUrl: config.relayerUrl, relayerApiKey: config.relayerApiKey }
       );
     } else {
       submission = await submitViaWallet(solanaProof!, tbh.commitmentBytes, {
         wallet,
         connection,
         isFirstVerification: false,
+        relayerUrl: config.relayerUrl,
+        relayerApiKey: config.relayerApiKey,
       });
     }
   } else if (config.relayerUrl) {
@@ -241,6 +289,7 @@ async function processSensorData(
     success: submission.success,
     commitment: tbh.commitmentBytes,
     txSignature: submission.txSignature,
+    attestationTx: submission.attestationTx,
     isFirstVerification,
     error: submission.error,
   };

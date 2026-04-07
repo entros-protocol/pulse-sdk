@@ -31,6 +31,12 @@ export const PROGRAM_IDS = {
   iamRegistry: "6VBs3zr9KrfFPGd6j7aGBPQWwZa5tajVfA7HN6MMV9VW",
 } as const;
 
+export const SAS_CONFIG = {
+  programId: "22zoJMtdu4tQc2PzL74ZUT7FrwgB1Udec8DdW4yw4BdG",
+  iamCredentialPda: "GaPTkZC6JEGds1G5h645qyUrogx7NWghR2JgjvKQwTDo",
+  iamSchemaPda: "EPkajiGQjycPwcc3pupqExVdAmSfxWd31tRYZezd8c5g",
+} as const;
+
 export interface PulseConfig {
   cluster: "devnet" | "mainnet-beta" | "localnet";
   rpcEndpoint?: string;

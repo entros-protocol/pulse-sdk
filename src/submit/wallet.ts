@@ -17,6 +17,8 @@ export async function submitViaWallet(
     wallet: any;
     connection: any;
     isFirstVerification: boolean;
+    relayerUrl?: string;
+    relayerApiKey?: string;
   }
 ): Promise<SubmissionResult> {
   try {
@@ -69,30 +71,39 @@ export async function submitViaWallet(
       provider
     );
 
-    // 1. Create challenge
-    await verifierProgram.methods
-      .createChallenge(nonce)
-      .accounts({
-        challenger: provider.wallet.publicKey,
-        challenge: challengePda,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+    // For re-verification: create challenge → verify proof → update anchor
+    // For first verification: skip challenge/proof → mint anchor directly
+    let txSig: string | undefined;
+    const { Buffer: SolBuffer } = await import("buffer");
 
-    // 2. Verify proof
-    const txSig = await verifierProgram.methods
-      .verifyProof(
-        Array.from(proof.proofBytes),
-        proof.publicInputs.map((pi) => Array.from(pi)),
-        nonce
-      )
-      .accounts({
-        verifier: provider.wallet.publicKey,
-        challenge: challengePda,
-        verificationResult: verificationPda,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+    if (!options.isFirstVerification) {
+      // 1. Create challenge
+      await verifierProgram.methods
+        .createChallenge(nonce)
+        .accounts({
+          challenger: provider.wallet.publicKey,
+          challenge: challengePda,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      // 2. Verify proof
+      // Anchor 0.32.1 uses buffer-layout v1.2 which requires Node.js Buffer
+      // (not Uint8Array) for Blob.encode on Vec<u8> fields.
+      txSig = await verifierProgram.methods
+        .verifyProof(
+          SolBuffer.from(proof.proofBytes),
+          proof.publicInputs.map((pi) => SolBuffer.from(pi)),
+          nonce
+        )
+        .accounts({
+          verifier: provider.wallet.publicKey,
+          challenge: challengePda,
+          verificationResult: verificationPda,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+    }
 
     // 3. Mint or update anchor
     const anchorIdl = await anchor.Program.fetchIdl(anchorProgramId, provider);
@@ -171,7 +182,50 @@ export async function submitViaWallet(
       }
     }
 
-    return { success: true, txSignature: txSig };
+    // 4. Request SAS attestation from executor (best-effort, non-fatal)
+    let attestationTx: string | undefined;
+    if (options.relayerUrl) {
+      try {
+        const attestHeaders: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+        if (options.relayerApiKey) {
+          attestHeaders["X-API-Key"] = options.relayerApiKey;
+        }
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 15_000);
+
+        // Derive base URL from relayerUrl (which may include a path like /verify)
+        const baseUrl = new URL(options.relayerUrl);
+        const attestUrl = `${baseUrl.origin}/attest`;
+
+        const attestRes = await fetch(attestUrl, {
+          method: "POST",
+          headers: attestHeaders,
+          body: JSON.stringify({
+            wallet_address: provider.wallet.publicKey.toBase58(),
+          }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timer);
+
+        if (attestRes.ok) {
+          const attestData = (await attestRes.json()) as {
+            success?: boolean;
+            attestation_tx?: string;
+          };
+          if (attestData.success && attestData.attestation_tx) {
+            attestationTx = attestData.attestation_tx;
+          }
+        }
+      } catch {
+        // Attestation is best-effort; verification already succeeded
+      }
+    }
+
+    return { success: true, txSignature: txSig, attestationTx };
   } catch (err: any) {
     return { success: false, error: err.message ?? String(err) };
   }

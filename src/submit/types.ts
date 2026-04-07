@@ -2,6 +2,7 @@
 export interface SubmissionResult {
   success: boolean;
   txSignature?: string;
+  attestationTx?: string;
   error?: string;
 }
 
@@ -10,6 +11,7 @@ export interface VerificationResult {
   success: boolean;
   commitment: Uint8Array;
   txSignature?: string;
+  attestationTx?: string;
   isFirstVerification: boolean;
   error?: string;
 }

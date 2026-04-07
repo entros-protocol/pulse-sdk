@@ -32,6 +32,10 @@ export type { SubmissionResult, VerificationResult } from "./submit/types";
 export { submitViaWallet } from "./submit/wallet";
 export { submitViaRelayer } from "./submit/relayer";
 
+// Attestation (SAS)
+export type { IAMAttestation } from "./attestation/sas";
+export { verifyIAMAttestation } from "./attestation/sas";
+
 // Identity
 export type { IdentityState, StoredVerificationData } from "./identity/types";
 export { fetchIdentityState, storeVerificationData, loadVerificationData } from "./identity/anchor";
