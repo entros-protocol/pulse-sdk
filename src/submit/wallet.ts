@@ -71,33 +71,39 @@ export async function submitViaWallet(
       provider
     );
 
-    // 1. Create challenge
-    await verifierProgram.methods
-      .createChallenge(nonce)
-      .accounts({
-        challenger: provider.wallet.publicKey,
-        challenge: challengePda,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
-
-    // 2. Verify proof
-    // Anchor 0.32.1 uses buffer-layout v1.2 which requires Node.js Buffer
-    // (not Uint8Array) for Blob.encode on Vec<u8> fields.
+    // For re-verification: create challenge → verify proof → update anchor
+    // For first verification: skip challenge/proof → mint anchor directly
+    let txSig: string | undefined;
     const { Buffer: SolBuffer } = await import("buffer");
-    const txSig = await verifierProgram.methods
-      .verifyProof(
-        SolBuffer.from(proof.proofBytes),
-        proof.publicInputs.map((pi) => SolBuffer.from(pi)),
-        nonce
-      )
-      .accounts({
-        verifier: provider.wallet.publicKey,
-        challenge: challengePda,
-        verificationResult: verificationPda,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+
+    if (!options.isFirstVerification) {
+      // 1. Create challenge
+      await verifierProgram.methods
+        .createChallenge(nonce)
+        .accounts({
+          challenger: provider.wallet.publicKey,
+          challenge: challengePda,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      // 2. Verify proof
+      // Anchor 0.32.1 uses buffer-layout v1.2 which requires Node.js Buffer
+      // (not Uint8Array) for Blob.encode on Vec<u8> fields.
+      txSig = await verifierProgram.methods
+        .verifyProof(
+          SolBuffer.from(proof.proofBytes),
+          proof.publicInputs.map((pi) => SolBuffer.from(pi)),
+          nonce
+        )
+        .accounts({
+          verifier: provider.wallet.publicKey,
+          challenge: challengePda,
+          verificationResult: verificationPda,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+    }
 
     // 3. Mint or update anchor
     const anchorIdl = await anchor.Program.fetchIdl(anchorProgramId, provider);
