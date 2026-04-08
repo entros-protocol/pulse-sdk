@@ -31,6 +31,12 @@ export const PROGRAM_IDS = {
   iamRegistry: "6VBs3zr9KrfFPGd6j7aGBPQWwZa5tajVfA7HN6MMV9VW",
 } as const;
 
+export const AGENT_REGISTRY_CONFIG = {
+  programIdDevnet: "8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C",
+  programIdMainnet: "8oo4dC4JvBLwy5tGgiH3WwK4B9PWxL9Z4XjA2jzkQMbQ",
+  metadataKey: "iam:human-operator",
+} as const;
+
 export const SAS_CONFIG = {
   programId: "22zoJMtdu4tQc2PzL74ZUT7FrwgB1Udec8DdW4yw4BdG",
   iamCredentialPda: "GaPTkZC6JEGds1G5h645qyUrogx7NWghR2JgjvKQwTDo",
