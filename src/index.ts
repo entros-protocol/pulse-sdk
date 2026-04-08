@@ -36,6 +36,10 @@ export { submitViaRelayer } from "./submit/relayer";
 export type { IAMAttestation } from "./attestation/sas";
 export { verifyIAMAttestation } from "./attestation/sas";
 
+// Agent Anchor (Solana Agent Registry)
+export type { AgentHumanOperator } from "./agent/anchor";
+export { attestAgentOperator, getAgentHumanOperator } from "./agent/anchor";
+
 // Identity
 export type { IdentityState, StoredVerificationData } from "./identity/types";
 export { fetchIdentityState, storeVerificationData, loadVerificationData } from "./identity/anchor";
