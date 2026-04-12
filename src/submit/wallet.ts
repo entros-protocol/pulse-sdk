@@ -73,6 +73,10 @@ export async function submitViaWallet(
         [new TextEncoder().encode("protocol_config")],
         registryProgramId
       );
+      const [treasuryPda] = PublicKey.findProgramAddressSync(
+        [new TextEncoder().encode("protocol_treasury")],
+        registryProgramId
+      );
 
       // Fetch both IDLs
       const [verifierIdl, anchorIdl] = await Promise.all([
@@ -122,6 +126,8 @@ export async function submitViaWallet(
           authority: provider.wallet.publicKey,
           identityState: identityPda,
           protocolConfig: protocolConfigPda,
+          treasury: treasuryPda,
+          systemProgram: SystemProgram.programId,
         })
         .instruction();
 
@@ -164,6 +170,16 @@ export async function submitViaWallet(
         anchorProgramId
       );
 
+      const registryProgramId = new PublicKey(PROGRAM_IDS.iamRegistry);
+      const [protocolConfigPda] = PublicKey.findProgramAddressSync(
+        [new TextEncoder().encode("protocol_config")],
+        registryProgramId
+      );
+      const [treasuryPda] = PublicKey.findProgramAddressSync(
+        [new TextEncoder().encode("protocol_treasury")],
+        registryProgramId
+      );
+
       const TOKEN_2022_PROGRAM_ID = new PublicKey(
         "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
       );
@@ -189,6 +205,8 @@ export async function submitViaWallet(
           ),
           tokenProgram: TOKEN_2022_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
+          protocolConfig: protocolConfigPda,
+          treasury: treasuryPda,
         })
         .rpc();
     }
