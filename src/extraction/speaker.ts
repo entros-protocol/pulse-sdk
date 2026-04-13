@@ -14,8 +14,27 @@ import type { AudioCapture } from "../sensor/types";
 import { condense, entropy } from "./statistics";
 import { extractFormantRatios } from "./lpc";
 
-const FRAME_SIZE = 512; // ~32ms at 16kHz, power of 2 for FFT
-const HOP_SIZE = 160; // ~10ms hop
+/**
+ * Compute frame size adaptive to actual sample rate.
+ * YIN pitch detection requires: frameSize >= 4 * sampleRate / minF0
+ * (because YIN halves the buffer twice internally).
+ * Returns next power of 2 for FFT compatibility.
+ */
+function getFrameSize(sampleRate: number): number {
+  const MIN_F0 = 50; // lowest detectable pitch (Hz)
+  const minSize = Math.ceil(4 * sampleRate / MIN_F0);
+  let size = 512; // minimum
+  while (size < minSize) size *= 2;
+  return size;
+}
+
+/**
+ * Compute hop size as ~10ms at the given sample rate.
+ */
+function getHopSize(sampleRate: number): number {
+  return Math.max(1, Math.round(sampleRate * 0.01));
+}
+
 const SPEAKER_FEATURE_COUNT = 44;
 
 // Dynamic imports for browser compatibility
@@ -26,7 +45,7 @@ let meydaModule: any = null;
 async function getPitchDetector(sampleRate: number): Promise<(buf: Float32Array) => number | null> {
   if (!pitchDetector || pitchDetectorRate !== sampleRate) {
     const PitchFinder = await import("pitchfinder");
-    pitchDetector = PitchFinder.YIN({ sampleRate });
+    pitchDetector = PitchFinder.YIN({ sampleRate, threshold: 0.15 });
     pitchDetectorRate = sampleRate;
   }
   return pitchDetector;
@@ -51,14 +70,20 @@ async function detectF0Contour(
   sampleRate: number
 ): Promise<{ f0: number[]; amplitudes: number[]; periods: number[] }> {
   const detect = await getPitchDetector(sampleRate);
+  const frameSize = getFrameSize(sampleRate);
+  const hopSize = getHopSize(sampleRate);
   const f0: number[] = [];
   const amplitudes: number[] = [];
   const periods: number[] = [];
-  const numFrames = Math.floor((samples.length - FRAME_SIZE) / HOP_SIZE) + 1;
+  const numFrames = Math.floor((samples.length - frameSize) / hopSize) + 1;
+
+  if (sampleRate !== 16000) {
+    console.warn(`[IAM SDK] Audio captured at ${sampleRate}Hz (requested 16kHz). Frame size adjusted to ${frameSize}.`);
+  }
 
   for (let i = 0; i < numFrames; i++) {
-    const start = i * HOP_SIZE;
-    const frame = samples.slice(start, start + FRAME_SIZE);
+    const start = i * hopSize;
+    const frame = samples.slice(start, start + frameSize);
 
     // F0 detection
     const pitch = detect(frame);
@@ -185,15 +210,17 @@ function computeHNR(
   sampleRate: number,
   f0Contour: number[]
 ): number[] {
+  const frameSize = getFrameSize(sampleRate);
+  const hopSize = getHopSize(sampleRate);
   const hnr: number[] = [];
-  const numFrames = Math.floor((samples.length - FRAME_SIZE) / HOP_SIZE) + 1;
+  const numFrames = Math.floor((samples.length - frameSize) / hopSize) + 1;
 
   for (let i = 0; i < numFrames && i < f0Contour.length; i++) {
     const f0 = f0Contour[i]!;
     if (f0 <= 0) continue; // Skip unvoiced frames
 
-    const start = i * HOP_SIZE;
-    const frame = samples.slice(start, start + FRAME_SIZE);
+    const start = i * hopSize;
+    const frame = samples.slice(start, start + frameSize);
     const period = Math.round(sampleRate / f0);
 
     if (period <= 0 || period >= frame.length) continue;
@@ -224,6 +251,8 @@ async function computeLTAS(
   samples: Float32Array,
   sampleRate: number
 ): Promise<number[]> {
+  const frameSize = getFrameSize(sampleRate);
+  const hopSize = getHopSize(sampleRate);
   const Meyda = await getMeyda();
   if (!Meyda) return new Array(8).fill(0);
 
@@ -231,18 +260,18 @@ async function computeLTAS(
   const rolloffs: number[] = [];
   const flatnesses: number[] = [];
   const spreads: number[] = [];
-  const numFrames = Math.floor((samples.length - FRAME_SIZE) / HOP_SIZE) + 1;
+  const numFrames = Math.floor((samples.length - frameSize) / hopSize) + 1;
 
   for (let i = 0; i < numFrames; i++) {
-    const start = i * HOP_SIZE;
-    const frame = samples.slice(start, start + FRAME_SIZE);
-    const paddedFrame = new Float32Array(FRAME_SIZE);
+    const start = i * hopSize;
+    const frame = samples.slice(start, start + frameSize);
+    const paddedFrame = new Float32Array(frameSize);
     paddedFrame.set(frame);
 
     const features = Meyda.extract(
       ["spectralCentroid", "spectralRolloff", "spectralFlatness", "spectralSpread"],
       paddedFrame,
-      { sampleRate, bufferSize: FRAME_SIZE }
+      { sampleRate, bufferSize: frameSize }
     );
 
     if (features) {
@@ -291,14 +320,50 @@ function derivative(values: number[]): number[] {
 export async function extractSpeakerFeatures(audio: AudioCapture): Promise<number[]> {
   const { samples, sampleRate } = audio;
 
-  const numFrames = Math.floor((samples.length - FRAME_SIZE) / HOP_SIZE) + 1;
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0 || samples.length === 0) {
+    console.warn("[IAM SDK] Invalid audio data. Speaker features will be zeros.");
+    return new Array(SPEAKER_FEATURE_COUNT).fill(0);
+  }
+
+  const frameSize = getFrameSize(sampleRate);
+  const hopSize = getHopSize(sampleRate);
+
+  const numFrames = Math.floor((samples.length - frameSize) / hopSize) + 1;
   if (numFrames < 5) {
     console.warn(`[IAM SDK] Too few audio frames (${numFrames}). Speaker features will be zeros.`);
     return new Array(SPEAKER_FEATURE_COUNT).fill(0);
   }
 
-  // 1. F0 detection + amplitude contour
-  const { f0, amplitudes, periods } = await detectF0Contour(samples, sampleRate);
+  // Peak-normalize audio for robust pitch detection.
+  // Raw mic input (especially desktop without AGC) can be very quiet,
+  // causing autocorrelation-based pitch detectors to fail.
+  // All relative features (jitter, shimmer, HNR, F0) are unaffected
+  // since they measure ratios, not absolute levels.
+  // Absolute amplitude is computed from the original samples below.
+  let peakAmp = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const abs = Math.abs(samples[i] ?? 0);
+    if (abs > peakAmp) peakAmp = abs;
+  }
+
+  const normalizedSamples = peakAmp > 1e-6
+    ? new Float32Array(samples.map((s) => (s / peakAmp) * 0.9))
+    : samples;
+
+  // 1. F0 detection + amplitude contour (on normalized audio)
+  const { f0, amplitudes: normalizedAmplitudes, periods } = await detectF0Contour(normalizedSamples, sampleRate);
+
+  // Compute amplitude from ORIGINAL samples (pre-normalization) for biometric consistency
+  const amplitudes: number[] = [];
+  for (let i = 0; i < numFrames; i++) {
+    const start = i * hopSize;
+    let sum = 0;
+    const end = Math.min(start + frameSize, samples.length);
+    for (let j = start; j < end; j++) {
+      sum += (samples[j] ?? 0) * (samples[j] ?? 0);
+    }
+    amplitudes.push(Math.sqrt(sum / (end - start)));
+  }
 
   const voicedF0 = f0.filter((v) => v > 0);
   const voicedRatio = voicedF0.length / f0.length;
@@ -320,13 +385,13 @@ export async function extractSpeakerFeatures(audio: AudioCapture): Promise<numbe
   const shimmerFeatures = computeShimmer(amplitudes, f0);
 
   // 6. HNR statistics (5 values)
-  const hnrValues = computeHNR(samples, sampleRate, f0);
+  const hnrValues = computeHNR(normalizedSamples, sampleRate, f0);
   const hnrStats = condense(hnrValues);
   const hnrEntropy = entropy(hnrValues);
   const hnrFeatures = [hnrStats.mean, hnrStats.variance, hnrStats.skewness, hnrStats.kurtosis, hnrEntropy];
 
   // 7. Formant ratios (8 values)
-  const { f1f2, f2f3 } = extractFormantRatios(samples, sampleRate, FRAME_SIZE, HOP_SIZE);
+  const { f1f2, f2f3 } = extractFormantRatios(normalizedSamples, sampleRate, frameSize, hopSize);
   const f1f2Stats = condense(f1f2);
   const f2f3Stats = condense(f2f3);
   const formantFeatures = [

@@ -15,7 +15,7 @@ import {
   extractTouchFeatures,
   extractMouseDynamics,
 } from "./extraction/kinematic";
-import { fuseFeatures } from "./extraction/statistics";
+import { fuseFeatures, fuseRawFeatures } from "./extraction/statistics";
 import { simhash, hammingDistance } from "./hashing/simhash";
 import { generateTBH, bigintToBytes32 } from "./hashing/poseidon";
 import { prepareCircuitInput, generateProof } from "./proof/prover";
@@ -30,10 +30,18 @@ import {
 type ResolvedConfig = Required<Pick<PulseConfig, "cluster" | "threshold">> &
   PulseConfig;
 
+interface ExtractedFeatures {
+  /** Raw features in physical units (Hz, ratios, dB, px/frame). For server-side validation. */
+  raw: number[];
+  /** Z-score normalized features. For SimHash fingerprint computation. */
+  normalized: number[];
+}
+
 /**
- * Extract features from sensor data and fuse into a single vector.
+ * Extract features from sensor data. Returns both raw (physical units)
+ * and normalized (z-scored) feature vectors.
  */
-async function extractFeatures(data: SensorData): Promise<number[]> {
+async function extractFeatures(data: SensorData): Promise<ExtractedFeatures> {
   if (!data.audio) {
     throw new Error("Audio data required for feature extraction");
   }
@@ -42,10 +50,6 @@ async function extractFeatures(data: SensorData): Promise<number[]> {
   const hasMotion = data.motion.length >= MIN_MOTION_SAMPLES;
   const hasTouch = data.touch.length >= MIN_TOUCH_SAMPLES;
 
-  // On mobile (both IMU and touch available), use touch/pointer dynamics for
-  // kinematic features. Stationary IMU reads constant gravity — the derivatives
-  // are near-zero and produce identical features across sessions. Finger tracing
-  // has natural inter-session variance because no two paths are identical.
   const motionFeatures =
     hasMotion && hasTouch
       ? extractMouseDynamics(data.touch)
@@ -54,7 +58,11 @@ async function extractFeatures(data: SensorData): Promise<number[]> {
         : extractMouseDynamics(data.touch);
 
   const touchFeatures = extractTouchFeatures(data.touch);
-  return fuseFeatures(audioFeatures, motionFeatures, touchFeatures);
+
+  return {
+    raw: fuseRawFeatures(audioFeatures, motionFeatures, touchFeatures),
+    normalized: fuseFeatures(audioFeatures, motionFeatures, touchFeatures),
+  };
 }
 
 /**
@@ -135,8 +143,8 @@ async function processSensorData(
     };
   }
 
-  // Extract features
-  const features = await extractFeatures(sensorData);
+  // Extract features: raw (physical units) for validation, normalized (z-scored) for SimHash
+  const { raw: features, normalized: normalizedFeatures } = await extractFeatures(sensorData);
 
   // Diagnostic: log feature vector composition
   const nonZero = features.filter((v) => v !== 0).length;
@@ -147,8 +155,52 @@ async function processSensorData(
     `Touch[98..133]: ${features.slice(98, 134).filter((v) => v !== 0).length} non-zero.`
   );
 
-  // Generate fingerprint via SimHash
-  const fingerprint = simhash(features);
+  // Server-side feature validation (if executor is configured)
+  if (config.relayerUrl && wallet) {
+    const walletPubkey = wallet.adapter?.publicKey ?? wallet.publicKey;
+    if (walletPubkey) {
+      try {
+        const baseUrl = new URL(config.relayerUrl);
+        const validateUrl = `${baseUrl.origin}/validate-features`;
+        const validateHeaders: Record<string, string> = { "Content-Type": "application/json" };
+        if (config.relayerApiKey) {
+          validateHeaders["X-API-Key"] = config.relayerApiKey;
+        }
+
+        const validateController = new AbortController();
+        const validateTimer = setTimeout(() => validateController.abort(), 10_000);
+
+        const validateResponse = await fetch(validateUrl, {
+          method: "POST",
+          headers: validateHeaders,
+          body: JSON.stringify({
+            features,
+            wallet_id: walletPubkey.toBase58(),
+          }),
+          signal: validateController.signal,
+        });
+
+        clearTimeout(validateTimer);
+
+        if (!validateResponse.ok) {
+          const errorBody = await validateResponse.json().catch(() => ({}));
+          console.warn("[IAM SDK] Feature validation rejected by server");
+          return {
+            success: false,
+            commitment: new Uint8Array(32),
+            isFirstVerification: false,
+            error: (errorBody as Record<string, string>).error || "Feature validation failed",
+          };
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[IAM SDK] Feature validation unavailable: ${msg}, proceeding without server validation`);
+      }
+    }
+  }
+
+  // Generate fingerprint via SimHash (uses normalized features)
+  const fingerprint = simhash(normalizedFeatures);
 
   // Generate TBH (Poseidon commitment)
   const tbh = await generateTBH(fingerprint);

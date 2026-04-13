@@ -105,7 +105,12 @@ export function autocorrelation(values: number[], lag: number = 1): number {
  * Ensures each modality (audio, motion, touch) contributes equally
  * to SimHash hyperplane projections regardless of raw magnitude scale.
  */
-function normalizeGroup(features: number[]): number[] {
+/**
+ * Z-score normalize a feature group to zero mean and unit variance.
+ * Ensures each modality contributes equally to SimHash hyperplane
+ * projections regardless of raw magnitude scale.
+ */
+export function normalizeGroup(features: number[]): number[] {
   if (features.length === 0) return features;
 
   // Sanitize NaN/Infinity to 0 before computing stats.
@@ -121,10 +126,26 @@ function normalizeGroup(features: number[]): number[] {
   for (const v of clean) sqSum += (v - mean) * (v - mean);
   const std = Math.sqrt(sqSum / clean.length);
 
-  if (std === 0) return clean.map(() => 0);
+  if (std < 1e-8) return clean.map(() => 0);
   return clean.map((v) => (v - mean) / std);
 }
 
+/**
+ * Concatenate raw features without normalization.
+ * Used for server-side validation where physical units matter.
+ */
+export function fuseRawFeatures(
+  audio: number[],
+  motion: number[],
+  touch: number[]
+): number[] {
+  const sanitize = (v: number) => (Number.isFinite(v) ? v : 0);
+  return [...audio.map(sanitize), ...motion.map(sanitize), ...touch.map(sanitize)];
+}
+
+/**
+ * Normalize and concatenate features for SimHash computation.
+ */
 export function fuseFeatures(
   audio: number[],
   motion: number[],
