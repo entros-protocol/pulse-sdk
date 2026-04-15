@@ -3,6 +3,7 @@
 import type { SolanaProof } from "../proof/types";
 import type { SubmissionResult } from "./types";
 import { PROGRAM_IDS } from "../config";
+import { sdkLog, sdkWarn } from "../log";
 
 /**
  * Submit a proof on-chain via a connected wallet (wallet-connected mode).
@@ -37,13 +38,51 @@ export async function submitViaWallet(
     const anchorProgramId = new PublicKey(PROGRAM_IDS.iamAnchor);
 
     let txSig: string | undefined;
+    let serverNonce = false;
+    let nonce: number[] = [];
 
     if (!options.isFirstVerification) {
       // Re-verification: batch create_challenge + verify_proof + update_anchor
       // into a single transaction (1 wallet prompt instead of 3)
       const verifierProgramId = new PublicKey(PROGRAM_IDS.iamVerifier);
 
-      const nonce = Array.from(crypto.getRandomValues(new Uint8Array(32)));
+      // Fetch server-generated nonce (prevents pre-computation attacks).
+      // Falls back to client-generated nonce if executor is unreachable.
+      if (options.relayerUrl) {
+        try {
+          const baseUrl = new URL(options.relayerUrl);
+          const challengeHeaders: Record<string, string> = {};
+          if (options.relayerApiKey) {
+            challengeHeaders["X-API-Key"] = options.relayerApiKey;
+          }
+          const challengeController = new AbortController();
+          const challengeTimer = setTimeout(() => challengeController.abort(), 5_000);
+          const challengeRes = await fetch(
+            `${baseUrl.origin}/challenge?wallet=${provider.wallet.publicKey.toBase58()}`,
+            { headers: challengeHeaders, signal: challengeController.signal }
+          );
+          clearTimeout(challengeTimer);
+          if (challengeRes.ok) {
+            const challengeData = (await challengeRes.json()) as { nonce?: number[] };
+            if (challengeData.nonce && challengeData.nonce.length === 32) {
+              nonce = challengeData.nonce;
+              serverNonce = true;
+              sdkLog("Using server-generated challenge nonce");
+            } else {
+              nonce = Array.from(crypto.getRandomValues(new Uint8Array(32)));
+              sdkWarn("Server returned invalid nonce, using client-generated");
+            }
+          } else {
+            nonce = Array.from(crypto.getRandomValues(new Uint8Array(32)));
+            sdkWarn("Challenge endpoint returned error, using client-generated nonce");
+          }
+        } catch {
+          nonce = Array.from(crypto.getRandomValues(new Uint8Array(32)));
+          sdkWarn("Challenge fetch failed, using client-generated nonce");
+        }
+      } else {
+        nonce = Array.from(crypto.getRandomValues(new Uint8Array(32)));
+      }
 
       const [challengePda] = PublicKey.findProgramAddressSync(
         [
@@ -229,12 +268,38 @@ export async function submitViaWallet(
         const baseUrl = new URL(options.relayerUrl);
         const attestUrl = `${baseUrl.origin}/attest`;
 
+        // Build attestation request body with optional nonce and ownership proof
+        const attestBody: Record<string, unknown> = {
+          wallet_address: provider.wallet.publicKey.toBase58(),
+        };
+
+        // Include server-issued nonce if available
+        if (serverNonce) {
+          attestBody.nonce = nonce;
+        }
+
+        // Sign attestation message to prove wallet ownership (best-effort)
+        if (options.wallet.signMessage) {
+          try {
+            const timestamp = Math.floor(Date.now() / 1000);
+            const attestMessage = `IAM-ATTEST:${provider.wallet.publicKey.toBase58()}:${timestamp}`;
+            const messageBytes = new TextEncoder().encode(attestMessage);
+            const sigBytes: Uint8Array = await options.wallet.signMessage(messageBytes);
+            // Encode signature as hex (unambiguous, no base58 edge cases)
+            const sigHex = Array.from(sigBytes)
+              .map((b) => b.toString(16).padStart(2, "0"))
+              .join("");
+            attestBody.signature = sigHex;
+            attestBody.message = attestMessage;
+          } catch {
+            sdkWarn("Wallet signMessage failed, skipping ownership proof");
+          }
+        }
+
         const attestRes = await fetch(attestUrl, {
           method: "POST",
           headers: attestHeaders,
-          body: JSON.stringify({
-            wallet_address: provider.wallet.publicKey.toBase58(),
-          }),
+          body: JSON.stringify(attestBody),
           signal: controller.signal,
         });
 
