@@ -1,5 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { PROGRAM_IDS, AGENT_REGISTRY_CONFIG } from "../config";
+import type { PulseConfig } from "../config";
+
+function getRegistryProgramId(cluster?: PulseConfig["cluster"]): string {
+  return cluster === "mainnet-beta"
+    ? AGENT_REGISTRY_CONFIG.programIdMainnet
+    : AGENT_REGISTRY_CONFIG.programIdDevnet;
+}
 
 /** Metadata written to an AI agent linking it to a verified human operator */
 export interface AgentHumanOperator {
@@ -36,6 +43,7 @@ export async function attestAgentOperator(
   options: {
     wallet: any;
     connection: any;
+    cluster?: PulseConfig["cluster"];
   }
 ): Promise<{ success: boolean; signature?: string; error?: string }> {
   try {
@@ -81,7 +89,7 @@ export async function attestAgentOperator(
 
     // 4. Derive PDAs for the 8004 Agent Registry
     const registryProgramId = new PublicKey(
-      AGENT_REGISTRY_CONFIG.programIdDevnet
+      getRegistryProgramId(options.cluster)
     );
     const assetPubkey = new PublicKey(agentAsset);
 
@@ -213,12 +221,13 @@ export async function attestAgentOperator(
 export async function getAgentHumanOperator(
   agentAsset: string,
   connection?: any,
+  cluster?: PulseConfig["cluster"],
 ): Promise<AgentHumanOperator | null> {
   try {
     const { PublicKey } = await import("@solana/web3.js");
 
     const registryProgramId = new PublicKey(
-      AGENT_REGISTRY_CONFIG.programIdDevnet
+      getRegistryProgramId(cluster)
     );
     const assetPubkey = new PublicKey(agentAsset);
     const metadataKey = AGENT_REGISTRY_CONFIG.metadataKey;
