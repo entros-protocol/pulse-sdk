@@ -53,7 +53,10 @@ export async function attestAgentOperator(
     const walletPubkey =
       options.wallet.adapter?.publicKey ?? options.wallet.publicKey;
     if (!walletPubkey) {
-      return { success: false, error: "Wallet not connected" };
+      return {
+        success: false,
+        error: "Wallet not connected. Call wallet.connect() before attestAgentOperator().",
+      };
     }
 
     // 1. Read IAM IdentityState PDA
@@ -187,7 +190,7 @@ export async function attestAgentOperator(
     if (!signFn) {
       return {
         success: false,
-        error: "Wallet does not support transaction signing",
+        error: "Wallet adapter does not expose signTransaction. Use a wallet that implements the standard Solana Wallet Adapter interface (Phantom, Solflare, Backpack).",
       };
     }
     const signed = await signFn.call(
