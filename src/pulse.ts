@@ -10,11 +10,12 @@ import type { StoredVerificationData } from "./identity/types";
 import { captureAudio } from "./sensor/audio";
 import { captureMotion, requestMotionPermission } from "./sensor/motion";
 import { captureTouch } from "./sensor/touch";
-import { extractSpeakerFeatures, SPEAKER_FEATURE_COUNT } from "./extraction/speaker";
+import { extractSpeakerFeaturesDetailed, SPEAKER_FEATURE_COUNT } from "./extraction/speaker";
 import {
   extractMotionFeatures,
   extractTouchFeatures,
   extractMouseDynamics,
+  extractAccelerationMagnitude,
 } from "./extraction/kinematic";
 import { fuseFeatures, fuseRawFeatures } from "./extraction/statistics";
 import { simhash, hammingDistance } from "./hashing/simhash";
@@ -36,6 +37,18 @@ interface ExtractedFeatures {
   raw: number[];
   /** Z-score normalized features. For SimHash fingerprint computation. */
   normalized: number[];
+  /**
+   * F0 (fundamental frequency) contour per audio frame (~10ms hop).
+   * Sent to the validation service for cross-modal temporal analysis.
+   * Empty array when audio is invalid or too short.
+   */
+  f0Contour: number[];
+  /**
+   * Acceleration magnitude (√(ax²+ay²+az²)) resampled to match the F0 frame count.
+   * Paired with `f0Contour` for server-side lagged cross-correlation.
+   * Empty array when motion data is absent.
+   */
+  accelMagnitude: number[];
 }
 
 /**
@@ -44,9 +57,13 @@ interface ExtractedFeatures {
  */
 async function extractFeatures(data: SensorData): Promise<ExtractedFeatures> {
   if (!data.audio) {
-    throw new Error("Audio data required for feature extraction");
+    throw new Error(
+      "Audio data missing. Capture audio via session.startAudio() before extracting features.",
+    );
   }
-  const audioFeatures = await extractSpeakerFeatures(data.audio);
+  const { features: audioFeatures, f0Contour } = await extractSpeakerFeaturesDetailed(
+    data.audio,
+  );
 
   const hasMotion = data.motion.length >= MIN_MOTION_SAMPLES;
   const hasTouch = data.touch.length >= MIN_TOUCH_SAMPLES;
@@ -60,9 +77,18 @@ async function extractFeatures(data: SensorData): Promise<ExtractedFeatures> {
 
   const touchFeatures = extractTouchFeatures(data.touch);
 
+  // Align acceleration magnitude to the F0 frame count for direct cross-correlation.
+  // Empty if motion absent or F0 extraction produced no frames (e.g. silent capture).
+  const accelMagnitude =
+    hasMotion && f0Contour.length > 0
+      ? extractAccelerationMagnitude(data.motion, f0Contour.length)
+      : [];
+
   return {
     raw: fuseRawFeatures(audioFeatures, motionFeatures, touchFeatures),
     normalized: fuseFeatures(audioFeatures, motionFeatures, touchFeatures),
+    f0Contour,
+    accelMagnitude,
   };
 }
 
@@ -144,8 +170,14 @@ async function processSensorData(
     };
   }
 
-  // Extract features: raw (physical units) for validation, normalized (z-scored) for SimHash
-  const { raw: features, normalized: normalizedFeatures } = await extractFeatures(sensorData);
+  // Extract features: raw (physical units) for validation, normalized (z-scored) for SimHash.
+  // f0Contour + accelMagnitude time-series are sent alongside for Tier 2 cross-modal analysis.
+  const {
+    raw: features,
+    normalized: normalizedFeatures,
+    f0Contour,
+    accelMagnitude,
+  } = await extractFeatures(sensorData);
 
   // Diagnostic: log feature vector composition
   const nonZero = features.filter((v) => v !== 0).length;
@@ -176,6 +208,8 @@ async function processSensorData(
           headers: validateHeaders,
           body: JSON.stringify({
             features,
+            f0_contour: f0Contour,
+            accel_magnitude: accelMagnitude,
             wallet_id: walletPubkey.toBase58(),
           }),
           signal: validateController.signal,
@@ -276,7 +310,7 @@ async function processSensorData(
         success: false,
         commitment: tbh.commitmentBytes,
         isFirstVerification: false,
-        error: "wasmUrl and zkeyUrl must be configured for re-verification proof generation",
+        error: "Re-verification requires wasmUrl and zkeyUrl in PulseConfig. Host the iam_hamming.wasm and iam_hamming_final.zkey circuit artifacts at public URLs.",
       };
     }
 
@@ -301,7 +335,7 @@ async function processSensorData(
         success: false,
         commitment: tbh.commitmentBytes,
         isFirstVerification: false,
-        error: `Proof failed (dist=${distance}, feat=${audioNZ}/${motionNZ}/${touchNZ}, raw=${rawAudio}/${rawMotion}/${rawTouch}, sig=${sig}): ${proofErr?.message ?? proofErr}`,
+        error: `Proof generation failed: ${proofErr?.message ?? proofErr}. Check wasmUrl/zkeyUrl reachability. Diagnostics: dist=${distance}, nz=${audioNZ}/${motionNZ}/${touchNZ}, raw=${rawAudio}/${rawMotion}/${rawTouch}, sig=${sig}`,
       };
     }
   }
@@ -336,7 +370,7 @@ async function processSensorData(
       success: false,
       commitment: tbh.commitmentBytes,
       isFirstVerification,
-      error: "No wallet or relayer configured",
+      error: "No submission path available. Pass wallet+connection to verify() for wallet-connected mode, or set relayerUrl in PulseConfig for walletless mode.",
     };
   }
 
@@ -408,7 +442,9 @@ export class PulseSession {
 
   async startAudio(onAudioLevel?: (rms: number) => void): Promise<void> {
     if (this.audioStageState !== "idle")
-      throw new Error("Audio capture already started");
+      throw new Error(
+        "Audio capture already in progress. Call stopAudio() before starting a new capture.",
+      );
 
     // Acquire microphone permission within the user gesture context.
     // Awaited so the caller knows audio is ready before proceeding.
@@ -437,7 +473,9 @@ export class PulseSession {
 
   async stopAudio(): Promise<AudioCapture | null> {
     if (this.audioStageState !== "capturing")
-      throw new Error("Audio capture not active");
+      throw new Error(
+        "No active audio capture to stop. Call startAudio() first.",
+      );
     this.audioController!.abort();
     this.audioData = await this.audioPromise!;
     this.audioStageState = "captured";
@@ -451,7 +489,9 @@ export class PulseSession {
 
   async startMotion(): Promise<void> {
     if (this.motionStageState !== "idle")
-      throw new Error("Motion capture already started");
+      throw new Error(
+        "Motion capture already in progress. Call stopMotion() before starting a new capture.",
+      );
 
     // Request motion permission within the user gesture context (iOS 13+).
     // Awaited so the capture timer doesn't start before the user approves.
@@ -471,7 +511,9 @@ export class PulseSession {
 
   async stopMotion(): Promise<MotionSample[]> {
     if (this.motionStageState !== "capturing")
-      throw new Error("Motion capture not active");
+      throw new Error(
+        "No active motion capture to stop. Call startMotion() first.",
+      );
     this.motionController!.abort();
     this.motionData = await this.motionPromise!;
     this.motionStageState = "captured";
@@ -480,7 +522,9 @@ export class PulseSession {
 
   skipMotion(): void {
     if (this.motionStageState !== "idle")
-      throw new Error("Motion capture already started");
+      throw new Error(
+        "Cannot skip motion: capture already started. skipMotion() must be called before startMotion().",
+      );
     this.motionStageState = "skipped";
   }
 
@@ -492,9 +536,13 @@ export class PulseSession {
 
   async startTouch(): Promise<void> {
     if (this.touchStageState !== "idle")
-      throw new Error("Touch capture already started");
+      throw new Error(
+        "Touch capture already in progress. Call stopTouch() before starting a new capture.",
+      );
     if (!this.touchElement)
-      throw new Error("No touch element provided to session");
+      throw new Error(
+        "No touch element provided to session. Pass an HTMLElement to createSession() to enable touch capture.",
+      );
     this.touchStageState = "capturing";
     this.touchController = new AbortController();
     this.touchPromise = captureTouch(this.touchElement, {
@@ -504,7 +552,9 @@ export class PulseSession {
 
   async stopTouch(): Promise<TouchSample[]> {
     if (this.touchStageState !== "capturing")
-      throw new Error("Touch capture not active");
+      throw new Error(
+        "No active touch capture to stop. Call startTouch() first.",
+      );
     this.touchController!.abort();
     this.touchData = await this.touchPromise!;
     this.touchStageState = "captured";
@@ -513,7 +563,9 @@ export class PulseSession {
 
   skipTouch(): void {
     if (this.touchStageState !== "idle")
-      throw new Error("Touch capture already started");
+      throw new Error(
+        "Cannot skip touch: capture already started. skipTouch() must be called before startTouch().",
+      );
     this.touchStageState = "skipped";
   }
 
@@ -609,7 +661,9 @@ export class PulseSDK {
             .then(() => {})
         );
       } catch (err: any) {
-        throw new Error(`Audio capture failed: ${err?.message ?? "microphone unavailable"}`);
+        throw new Error(
+          `Audio capture failed: ${err?.message ?? "microphone unavailable"}. Ensure microphone permission is granted and no other app is using it.`,
+        );
       }
 
       // Touch
