@@ -2,6 +2,38 @@ import type { MotionSample, TouchSample } from "../sensor/types";
 import { condense, variance, entropy } from "./statistics";
 
 /**
+ * Compute per-sample acceleration magnitude |a| = √(ax² + ay² + az²) and
+ * linearly resample to a target frame count. Used for Tier 2 cross-modal
+ * temporal analysis against the F0 contour; the two time-series must share
+ * the same frame count for direct correlation.
+ *
+ * Returns an empty array if motion data is absent or too short.
+ */
+export function extractAccelerationMagnitude(
+  samples: MotionSample[],
+  targetFrameCount: number,
+): number[] {
+  if (samples.length < 2 || targetFrameCount < 2) return [];
+
+  const magnitudes = samples.map((s) => Math.sqrt(s.ax * s.ax + s.ay * s.ay + s.az * s.az));
+
+  if (magnitudes.length === targetFrameCount) return magnitudes;
+
+  // Linear resample: map target index i to source position (i / (target-1)) * (source-1)
+  const out = new Array<number>(targetFrameCount);
+  const srcLen = magnitudes.length;
+  const scale = (srcLen - 1) / (targetFrameCount - 1);
+  for (let i = 0; i < targetFrameCount; i++) {
+    const pos = i * scale;
+    const lo = Math.floor(pos);
+    const hi = Math.min(lo + 1, srcLen - 1);
+    const t = pos - lo;
+    out[i] = magnitudes[lo]! * (1 - t) + magnitudes[hi]! * t;
+  }
+  return out;
+}
+
+/**
  * Extract kinematic features from motion (IMU) data.
  * Computes jerk (3rd derivative) and jounce (4th derivative) of acceleration,
  * then condenses each axis into statistics.

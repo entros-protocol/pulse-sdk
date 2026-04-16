@@ -47,7 +47,10 @@ export async function submitViaRelayer(
 
     if (!response.ok) {
       const errorText = await response.text();
-      return { success: false, error: `Relayer error: ${response.status} ${errorText}` };
+      return {
+        success: false,
+        error: `Relayer returned HTTP ${response.status} from ${options.relayerUrl}: ${errorText}. Check relayerUrl and apiKey in PulseConfig.`,
+      };
     }
 
     const result = (await response.json()) as {
@@ -58,7 +61,10 @@ export async function submitViaRelayer(
     };
 
     if (result.success !== true) {
-      return { success: false, error: "Relayer returned unsuccessful response" };
+      return {
+        success: false,
+        error: "Relayer accepted the request but reported failure. Typically means proof verification failed on-chain — check the relayer logs.",
+      };
     }
 
     return {
@@ -67,7 +73,10 @@ export async function submitViaRelayer(
     };
   } catch (err: any) {
     if (err.name === "AbortError") {
-      return { success: false, error: "Relayer request timed out" };
+      return {
+        success: false,
+        error: `Relayer request timed out after ${RELAYER_TIMEOUT_MS / 1000}s. Check network connectivity and relayerUrl reachability.`,
+      };
     }
     return { success: false, error: err.message ?? String(err) };
   }

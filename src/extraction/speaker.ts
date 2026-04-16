@@ -318,12 +318,20 @@ function derivative(values: number[]): number[] {
  *
  * Returns 44 values.
  */
-export async function extractSpeakerFeatures(audio: AudioCapture): Promise<number[]> {
+/**
+ * Extracts 44 speaker features AND the raw F0 contour.
+ * The F0 contour is surfaced so Tier 2 cross-modal temporal analysis can be
+ * performed server-side against the motion time-series. Feature vector shape
+ * and semantics are unchanged.
+ */
+export async function extractSpeakerFeaturesDetailed(
+  audio: AudioCapture,
+): Promise<{ features: number[]; f0Contour: number[] }> {
   const { samples, sampleRate } = audio;
 
   if (!Number.isFinite(sampleRate) || sampleRate <= 0 || samples.length === 0) {
     sdkWarn("[IAM SDK] Invalid audio data. Speaker features will be zeros.");
-    return new Array(SPEAKER_FEATURE_COUNT).fill(0);
+    return { features: new Array(SPEAKER_FEATURE_COUNT).fill(0), f0Contour: [] };
   }
 
   const frameSize = getFrameSize(sampleRate);
@@ -332,7 +340,7 @@ export async function extractSpeakerFeatures(audio: AudioCapture): Promise<numbe
   const numFrames = Math.floor((samples.length - frameSize) / hopSize) + 1;
   if (numFrames < 5) {
     sdkWarn(`[IAM SDK] Too few audio frames (${numFrames}). Speaker features will be zeros.`);
-    return new Array(SPEAKER_FEATURE_COUNT).fill(0);
+    return { features: new Array(SPEAKER_FEATURE_COUNT).fill(0), f0Contour: [] };
   }
 
   // Peak-normalize audio for robust pitch detection.
@@ -423,6 +431,16 @@ export async function extractSpeakerFeatures(audio: AudioCapture): Promise<numbe
     ...ampFeatures,       // 5
   ]; // = 44
 
+  return { features, f0Contour: f0 };
+}
+
+/**
+ * Extracts 44 speaker features. Backward-compatible wrapper that discards
+ * the F0 contour; use `extractSpeakerFeaturesDetailed` when the contour is
+ * needed (e.g. for Tier 2 server-side cross-modal analysis).
+ */
+export async function extractSpeakerFeatures(audio: AudioCapture): Promise<number[]> {
+  const { features } = await extractSpeakerFeaturesDetailed(audio);
   return features;
 }
 

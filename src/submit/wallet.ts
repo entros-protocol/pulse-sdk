@@ -123,10 +123,16 @@ export async function submitViaWallet(
         anchor.Program.fetchIdl(anchorProgramId, provider),
       ]);
       if (!verifierIdl) {
-        return { success: false, error: "Failed to fetch verifier IDL" };
+        return {
+          success: false,
+          error: `Failed to fetch iam-verifier IDL from Solana (program ${PROGRAM_IDS.iamVerifier}). Check your RPC endpoint is reachable and on the correct cluster.`,
+        };
       }
       if (!anchorIdl) {
-        return { success: false, error: "Failed to fetch IAM Anchor program IDL" };
+        return {
+          success: false,
+          error: `Failed to fetch iam-anchor IDL from Solana (program ${PROGRAM_IDS.iamAnchor}). Check your RPC endpoint is reachable and on the correct cluster.`,
+        };
       }
 
       const verifierProgram: any = new anchor.Program(verifierIdl, provider);
@@ -191,7 +197,10 @@ export async function submitViaWallet(
       // First verification: mint anchor (already 1 transaction, no batching needed)
       const anchorIdl = await anchor.Program.fetchIdl(anchorProgramId, provider);
       if (!anchorIdl) {
-        return { success: false, error: "Failed to fetch IAM Anchor program IDL" };
+        return {
+          success: false,
+          error: `Failed to fetch iam-anchor IDL from Solana (program ${PROGRAM_IDS.iamAnchor}). Check your RPC endpoint is reachable and on the correct cluster.`,
+        };
       }
 
       const anchorProgram: any = new anchor.Program(anchorIdl, provider);
