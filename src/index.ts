@@ -19,8 +19,9 @@ export {
 // Feature extraction
 export type { StatsSummary, FeatureVector, FusedFeatureVector } from "./extraction/types";
 export { mean, variance, skewness, kurtosis, condense, entropy, autocorrelation, fuseFeatures } from "./extraction/statistics";
-export { extractSpeakerFeatures, SPEAKER_FEATURE_COUNT } from "./extraction/speaker";
-export { extractMotionFeatures, extractTouchFeatures, extractMouseDynamics } from "./extraction/kinematic";
+export { extractSpeakerFeatures, extractSpeakerFeaturesDetailed, SPEAKER_FEATURE_COUNT } from "./extraction/speaker";
+export { extractMotionFeatures, extractTouchFeatures, extractMouseDynamics, extractAccelerationMagnitude } from "./extraction/kinematic";
+export { fuseRawFeatures } from "./extraction/statistics";
 
 // Proof generation
 export type { SolanaProof, CircuitInput, ProofResult } from "./proof/types";
