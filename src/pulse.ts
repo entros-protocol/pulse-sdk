@@ -106,7 +106,8 @@ async function processSensorData(
   config: ResolvedConfig,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Solana types are optional peer deps
   wallet?: any,
-  connection?: any
+  connection?: any,
+  onProgress?: (stage: string) => void,
 ): Promise<VerificationResult> {
   // Data quality gate: reject if insufficient behavioral data captured
   const audioSamples = sensorData.audio?.samples.length ?? 0;
@@ -172,6 +173,7 @@ async function processSensorData(
 
   // Extract features: raw (physical units) for validation, normalized (z-scored) for SimHash.
   // f0Contour + accelMagnitude time-series are sent alongside for Tier 2 cross-modal analysis.
+  onProgress?.("Extracting features...");
   const {
     raw: features,
     normalized: normalizedFeatures,
@@ -189,6 +191,7 @@ async function processSensorData(
   );
 
   // Server-side feature validation (if executor is configured)
+  onProgress?.("Validating...");
   if (config.relayerUrl && wallet) {
     const walletPubkey = wallet.adapter?.publicKey ?? wallet.publicKey;
     if (walletPubkey) {
@@ -284,6 +287,7 @@ async function processSensorData(
   let solanaProof: SolanaProof | null = null;
 
   if (!isFirstVerification && previousData) {
+    onProgress?.("Computing proof...");
     const previousTBH: TBH = {
       fingerprint: previousData.fingerprint,
       salt: BigInt(previousData.salt),
@@ -341,6 +345,7 @@ async function processSensorData(
   }
 
   // Submit
+  onProgress?.("Submitting to Solana...");
   let submission;
 
   if (wallet && connection) {
@@ -572,7 +577,7 @@ export class PulseSession {
   // --- Complete ---
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Solana types are optional peer deps
-  async complete(wallet?: any, connection?: any): Promise<VerificationResult> {
+  async complete(wallet?: any, connection?: any, onProgress?: (stage: string) => void): Promise<VerificationResult> {
     const active: string[] = [];
     if (this.audioStageState === "capturing") active.push("audio");
     if (this.motionStageState === "capturing") active.push("motion");
@@ -594,7 +599,7 @@ export class PulseSession {
       },
     };
 
-    return processSensorData(sensorData, this.config, wallet, connection);
+    return processSensorData(sensorData, this.config, wallet, connection, onProgress);
   }
 }
 
