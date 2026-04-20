@@ -9,7 +9,7 @@ const isInternalBuild = process.env.IAM_INTERNAL_TEST === "1";
 export default defineConfig({
   entry: ["src/index.ts"],
   format: ["esm", "cjs"],
-  dts: { compilerOptions: { stripInternal: true } },
+  dts: { compilerOptions: { stripInternal: !isInternalBuild } },
   splitting: false,
   sourcemap: true,
   clean: true,
