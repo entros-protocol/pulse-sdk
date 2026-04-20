@@ -165,11 +165,16 @@ export async function submitViaWallet(
         })
         .instruction();
 
+      // updateAnchor post-2026-04-20 binding patch takes the verification
+      // nonce as a second arg and requires the VerificationResult PDA as an
+      // account. Without these, the instruction would accept any commitment
+      // with no biometric proof — see protocol-core AUDIT.md for details.
       const updateAnchorIx = await anchorProgram.methods
-        .updateAnchor(Array.from(commitment))
+        .updateAnchor(Array.from(commitment), nonce)
         .accounts({
           authority: provider.wallet.publicKey,
           identityState: identityPda,
+          verificationResult: verificationPda,
           protocolConfig: protocolConfigPda,
           treasury: treasuryPda,
           systemProgram: SystemProgram.programId,
