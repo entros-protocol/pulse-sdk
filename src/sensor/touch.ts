@@ -39,13 +39,13 @@ export function captureTouch(
       clearTimeout(maxTimer);
       element.removeEventListener("pointermove", handler);
       element.removeEventListener("pointerdown", handler);
-      sdkLog(`[IAM SDK] Touch capture stopped: ${samples.length} samples collected`);
+      sdkLog(`[Entros SDK] Touch capture stopped: ${samples.length} samples collected`);
       resolve(samples);
     }
 
     element.addEventListener("pointermove", handler);
     element.addEventListener("pointerdown", handler);
-    sdkLog(`[IAM SDK] Touch capture started on <${element.tagName}>, listening for pointer events`);
+    sdkLog(`[Entros SDK] Touch capture started on <${element.tagName}>, listening for pointer events`);
 
     const maxTimer = setTimeout(stopCapture, maxDurationMs);
 

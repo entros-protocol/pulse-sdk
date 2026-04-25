@@ -62,7 +62,7 @@ export function simhash(features: number[]): TemporalFingerprint {
 
   if (features.length !== EXPECTED_FEATURE_DIMENSION) {
     sdkWarn(
-      `[IAM SDK] Feature vector has ${features.length} dimensions, expected ${EXPECTED_FEATURE_DIMENSION}. ` +
+      `[Entros SDK] Feature vector has ${features.length} dimensions, expected ${EXPECTED_FEATURE_DIMENSION}. ` +
       `Fingerprint quality may be degraded.`
     );
   }

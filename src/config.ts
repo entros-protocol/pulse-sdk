@@ -18,6 +18,10 @@ export const PROOF_B_SIZE = 128;
 export const PROOF_C_SIZE = 64;
 export const TOTAL_PROOF_SIZE = 256;
 
+// Frozen at the original v1 string for backward compatibility — every existing
+// user's baseline projects features into bit positions derived from this seed,
+// so changing it would invalidate every prior fingerprint and force a global
+// baseline reset. Kerckhoffs-compliant either way (the seed is public).
 export const SIMHASH_SEED = "IAM-PROTOCOL-SIMHASH-V1";
 
 // Capture duration bounds (ms)
@@ -26,9 +30,9 @@ export const MAX_CAPTURE_MS = 60000;
 export const DEFAULT_CAPTURE_MS = 7000;
 
 export const PROGRAM_IDS = {
-  iamAnchor: "GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2",
-  iamVerifier: "4F97jNoxQzT2qRbkWpW3ztC3Nz2TtKj3rnKG8ExgnrfV",
-  iamRegistry: "6VBs3zr9KrfFPGd6j7aGBPQWwZa5tajVfA7HN6MMV9VW",
+  entrosAnchor: "GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2",
+  entrosVerifier: "4F97jNoxQzT2qRbkWpW3ztC3Nz2TtKj3rnKG8ExgnrfV",
+  entrosRegistry: "6VBs3zr9KrfFPGd6j7aGBPQWwZa5tajVfA7HN6MMV9VW",
 } as const;
 
 export const AGENT_REGISTRY_CONFIG = {
@@ -39,8 +43,8 @@ export const AGENT_REGISTRY_CONFIG = {
 
 export const SAS_CONFIG = {
   programId: "22zoJMtdu4tQc2PzL74ZUT7FrwgB1Udec8DdW4yw4BdG",
-  iamCredentialPda: "GaPTkZC6JEGds1G5h645qyUrogx7NWghR2JgjvKQwTDo",
-  iamSchemaPda: "EPkajiGQjycPwcc3pupqExVdAmSfxWd31tRYZezd8c5g",
+  entrosCredentialPda: "GaPTkZC6JEGds1G5h645qyUrogx7NWghR2JgjvKQwTDo",
+  entrosSchemaPda: "EPkajiGQjycPwcc3pupqExVdAmSfxWd31tRYZezd8c5g",
 } as const;
 
 export interface PulseConfig {

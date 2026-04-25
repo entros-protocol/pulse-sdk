@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { SAS_CONFIG } from "../config";
 
-/** Decoded IAM attestation from the Solana Attestation Service */
-export interface IAMAttestation {
+/** Decoded Entros attestation from the Solana Attestation Service */
+export interface EntrosAttestation {
   isHuman: boolean;
   trustScore: number;
   verifiedAt: number;
@@ -11,7 +11,7 @@ export interface IAMAttestation {
 }
 
 /**
- * Check if a wallet has a valid IAM attestation via SAS.
+ * Check if a wallet has a valid Entros attestation via SAS.
  *
  * Derives the attestation PDA, fetches the account, deserializes
  * the attestation data, and checks expiry.
@@ -20,16 +20,16 @@ export interface IAMAttestation {
  * @param connection - Solana web3.js Connection instance
  * @returns Decoded attestation or null if none exists
  */
-export async function verifyIAMAttestation(
+export async function verifyEntrosAttestation(
   walletAddress: string,
   connection: any
-): Promise<IAMAttestation | null> {
+): Promise<EntrosAttestation | null> {
   try {
     const { PublicKey } = await import("@solana/web3.js");
 
     const sasProgramId = new PublicKey(SAS_CONFIG.programId);
-    const credentialPda = new PublicKey(SAS_CONFIG.iamCredentialPda);
-    const schemaPda = new PublicKey(SAS_CONFIG.iamSchemaPda);
+    const credentialPda = new PublicKey(SAS_CONFIG.entrosCredentialPda);
+    const schemaPda = new PublicKey(SAS_CONFIG.entrosSchemaPda);
     const userWallet = new PublicKey(walletAddress);
 
     // Derive attestation PDA: ["attestation", credential, schema, nonce(wallet)]
@@ -77,7 +77,7 @@ function readI64LE(data: Uint8Array, offset: number): number {
 }
 
 /**
- * Deserialize a SAS Attestation account into IAMAttestation fields.
+ * Deserialize a SAS Attestation account into EntrosAttestation fields.
  *
  * SAS Attestation account layout (borsh):
  *   1 byte:  discriminator (u8)
@@ -89,13 +89,13 @@ function readI64LE(data: Uint8Array, offset: number): number {
  *   8 bytes: expiry (i64 LE)
  *  32 bytes: token_account (Pubkey)
  *
- * IAM attestation data layout (inside the data Vec):
+ * Entros attestation data layout (inside the data Vec):
  *   1 byte:  isHuman (bool)
  *   2 bytes: trustScore (u16 LE)
  *   8 bytes: verifiedAt (i64 LE)
  *   4 bytes: mode length (u32 LE) + N bytes: mode (UTF-8 string)
  */
-function deserializeSasAttestation(raw: Uint8Array): IAMAttestation | null {
+function deserializeSasAttestation(raw: Uint8Array): EntrosAttestation | null {
   // Minimum account size: 1 + 32 + 32 + 32 + 4 + 0 + 32 + 8 + 32 = 173 bytes
   if (raw.length < 173) return null;
 
@@ -122,7 +122,7 @@ function deserializeSasAttestation(raw: Uint8Array): IAMAttestation | null {
   // Read expiry (i64 LE)
   const expiry = readI64LE(raw, offset);
 
-  // Parse IAM attestation data: [bool, u16, i64, string]
+  // Parse Entros attestation data: [bool, u16, i64, string]
   if (attestationData.length < 11) return null;
 
   let dataOffset = 0;

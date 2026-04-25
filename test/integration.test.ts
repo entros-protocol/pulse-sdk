@@ -10,11 +10,11 @@ import { TOTAL_PROOF_SIZE, NUM_PUBLIC_INPUTS } from "../src/config";
 // Circuit artifacts from adjacent circuits repo
 const WASM_PATH = path.resolve(
   __dirname,
-  "../../circuits/build/iam_hamming_js/iam_hamming.wasm"
+  "../../circuits/build/entros_hamming_js/entros_hamming.wasm"
 );
 const ZKEY_PATH = path.resolve(
   __dirname,
-  "../../circuits/build/iam_hamming_final.zkey"
+  "../../circuits/build/entros_hamming_final.zkey"
 );
 const VK_PATH = path.resolve(
   __dirname,

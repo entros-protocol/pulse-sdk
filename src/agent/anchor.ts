@@ -26,13 +26,13 @@ async function sha256(data: Uint8Array): Promise<Uint8Array> {
 }
 
 /**
- * Attest that a verified IAM human operates an AI agent on the Solana Agent Registry.
+ * Attest that a verified Entros human operates an AI agent on the Solana Agent Registry.
  *
  * Reads the user's on-chain IdentityState PDA, builds metadata JSON, and writes
  * it to the agent's metadata via a manually constructed set_metadata_pda instruction.
  * The metadata is immutable once set, permanently linking the agent to its human operator.
  *
- * The wallet must own both the IAM Anchor and the agent's Metaplex Core NFT.
+ * The wallet must own both the Entros Anchor and the agent's Metaplex Core NFT.
  *
  * @param agentAsset - Base58 pubkey of the agent's Metaplex Core NFT
  * @param options - Wallet adapter and Solana connection
@@ -59,8 +59,8 @@ export async function attestAgentOperator(
       };
     }
 
-    // 1. Read IAM IdentityState PDA
-    const programId = new PublicKey(PROGRAM_IDS.iamAnchor);
+    // 1. Read Entros IdentityState PDA
+    const programId = new PublicKey(PROGRAM_IDS.entrosAnchor);
     const [identityPda] = PublicKey.findProgramAddressSync(
       [new TextEncoder().encode("identity"), walletPubkey.toBuffer()],
       programId
@@ -70,7 +70,7 @@ export async function attestAgentOperator(
     if (!accountInfo || accountInfo.data.length < 62) {
       return {
         success: false,
-        error: "No IAM Anchor found. Complete a verification first.",
+        error: "No Entros Anchor found. Complete a verification first.",
       };
     }
 
@@ -212,14 +212,14 @@ export async function attestAgentOperator(
 }
 
 /**
- * Query whether an AI agent has a verified human operator via IAM.
+ * Query whether an AI agent has a verified human operator via Entros.
  *
  * Reads the "iam:human-operator" metadata from the agent's on-chain record
- * and returns the operator's IAM Anchor details.
+ * and returns the operator's Entros Anchor details.
  *
  * @param agentAsset - Base58 pubkey of the agent's Metaplex Core NFT
  * @param connection - Solana connection (optional, defaults to devnet)
- * @returns Operator metadata or null if no IAM attestation exists
+ * @returns Operator metadata or null if no Entros attestation exists
  */
 export async function getAgentHumanOperator(
   agentAsset: string,

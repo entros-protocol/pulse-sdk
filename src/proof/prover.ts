@@ -38,8 +38,8 @@ export function prepareCircuitInput(
  * Generate a Groth16 proof for the Hamming distance circuit.
  *
  * @param input - Circuit input (fingerprints, salts, commitments, threshold)
- * @param wasmPath - Path or URL to iam_hamming.wasm
- * @param zkeyPath - Path or URL to iam_hamming_final.zkey
+ * @param wasmPath - Path or URL to entros_hamming.wasm
+ * @param zkeyPath - Path or URL to entros_hamming_final.zkey
  */
 export async function generateProof(
   input: CircuitInput,

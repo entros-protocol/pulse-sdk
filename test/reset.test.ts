@@ -71,7 +71,7 @@ describe("baseline-missing error message: stable detection sentinel", () => {
     // straightforward guard: re-declare the expected phrase and assert
     // nothing in the module has drifted.
     const expectedPhrase =
-      "Your IAM Anchor exists on-chain but the local baseline is missing.";
+      "Your Entros Anchor exists on-chain but the local baseline is missing.";
     const src = mod.toString?.() ?? "";
     // `toString()` on a module object returns `[object Module]` — that's
     // not useful. Read the TS source via fs instead.
