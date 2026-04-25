@@ -2,7 +2,7 @@
 //
 // The authoritative challenge phrase is server-issued by the executor's
 // `/challenge` endpoint (a 5-word phrase drawn from a curated English-word
-// dictionary — see `iam-validation/src/word_dict.rs` for the source of truth).
+// dictionary — see `entros-validation/src/word_dict.rs` for the source of truth).
 // This client-side generator only fires when the executor is unreachable; in
 // that path the server has no record of the phrase and validation skips
 // phrase content binding entirely (Tier 1 acoustic + Tier 2 cross-modal still

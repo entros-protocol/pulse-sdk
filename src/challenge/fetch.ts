@@ -4,7 +4,7 @@
  * The executor's `/challenge` endpoint returns a fresh nonce + 5-word phrase
  * bound to the wallet for a short TTL (default 60s). The phrase is drawn from
  * a curated English-word dictionary (source of truth at
- * `iam-validation/src/word_dict.rs`); shown to the user as the voice challenge
+ * `entros-validation/src/word_dict.rs`); shown to the user as the voice challenge
  * and looked up server-side at `/validate-features` to verify the audio
  * matches the issued phrase (master-list #89, phrase content binding).
  *
