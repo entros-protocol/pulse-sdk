@@ -1,11 +1,12 @@
 /**
  * Fetch the server-issued challenge from the executor.
  *
- * The executor's `/challenge` endpoint returns a fresh nonce + nonsense phrase
- * bound to the wallet for a short TTL (default 60s). The phrase is shown to
- * the user as the voice challenge and is looked up server-side at
- * `/validate-features` to run phoneme-distance matching against the submitted
- * audio (master-list #89, phrase content binding via STT).
+ * The executor's `/challenge` endpoint returns a fresh nonce + 5-word phrase
+ * bound to the wallet for a short TTL (default 60s). The phrase is drawn from
+ * a curated English-word dictionary (source of truth at
+ * `iam-validation/src/word_dict.rs`); shown to the user as the voice challenge
+ * and looked up server-side at `/validate-features` to verify the audio
+ * matches the issued phrase (master-list #89, phrase content binding).
  *
  * Server-issued phrases are the only safe design for content binding: if the
  * client generated the phrase and sent it to the server alongside the audio,
@@ -22,7 +23,7 @@ import { sdkWarn } from "../log";
 export interface ChallengeResponse {
   /** 32-byte nonce used for on-chain `create_challenge` and the `/attest` handshake. */
   nonce: Uint8Array;
-  /** Nonsense phrase (5 space-separated words of 2-3 syllables each) the user must speak aloud. */
+  /** Server-issued 5-word challenge phrase (drawn from a curated English-word dictionary) the user must speak aloud. */
   phrase: string;
   /** Nonce TTL in seconds (default 60). */
   expiresIn: number;
@@ -32,7 +33,7 @@ export interface ChallengeResponse {
  * Fetch a fresh nonce + phrase from the executor. Throws on network error or
  * non-2xx response so the caller can surface a retry UX.
  *
- * @param executorUrl - Base URL of the executor (e.g. `https://executor.iamprotocol.io`).
+ * @param executorUrl - Base URL of the executor (e.g. `https://executor.entros.io`).
  * @param walletAddress - Base58-encoded wallet public key.
  * @param apiKey - Optional executor API key (`X-API-Key` header).
  */
@@ -59,7 +60,7 @@ export async function fetchChallenge(
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    sdkWarn(`[IAM SDK] /challenge fetch failed: ${msg}`);
+    sdkWarn(`[Entros SDK] /challenge fetch failed: ${msg}`);
     throw new Error(`Unable to fetch challenge from executor: ${msg}`);
   } finally {
     clearTimeout(timer);

@@ -142,7 +142,7 @@ async function extractFingerprintAndValidate(
   // Diagnostic: log feature vector composition
   const nonZero = features.filter((v) => v !== 0).length;
   sdkLog(
-    `[IAM SDK] Feature vector: ${features.length} dimensions, ${nonZero} non-zero. ` +
+    `[Entros SDK] Feature vector: ${features.length} dimensions, ${nonZero} non-zero. ` +
     `Audio[0..43]: ${features.slice(0, 44).filter((v) => v !== 0).length} non-zero. ` +
     `Motion/Mouse[44..97]: ${features.slice(44, 98).filter((v) => v !== 0).length} non-zero. ` +
     `Touch[98..133]: ${features.slice(98, 134).filter((v) => v !== 0).length} non-zero.`
@@ -200,7 +200,7 @@ async function extractFingerprintAndValidate(
 
       if (!validateResponse.ok) {
         const errorBody = await validateResponse.json().catch(() => ({}));
-        sdkWarn("[IAM SDK] Feature validation rejected by server");
+        sdkWarn("[Entros SDK] Feature validation rejected by server");
         return {
           ok: false,
           error: (errorBody as Record<string, string>).error || "Feature validation failed",
@@ -208,7 +208,7 @@ async function extractFingerprintAndValidate(
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      sdkWarn(`[IAM SDK] Feature validation unavailable: ${msg}, proceeding without server validation`);
+      sdkWarn(`[Entros SDK] Feature validation unavailable: ${msg}, proceeding without server validation`);
     }
   }
 
@@ -263,7 +263,7 @@ async function processSensorData(
     if (walletPubkey) {
       try {
         const { PublicKey } = await import("@solana/web3.js");
-        const programId = new PublicKey(PROGRAM_IDS.iamAnchor);
+        const programId = new PublicKey(PROGRAM_IDS.entrosAnchor);
         const [identityPda] = PublicKey.findProgramAddressSync(
           [new TextEncoder().encode("identity"), walletPubkey.toBuffer()],
           programId
@@ -318,7 +318,7 @@ async function processSensorData(
       // Check if IdentityState PDA exists on-chain (simple existence check, no IDL needed)
       try {
         const { PublicKey } = await import("@solana/web3.js");
-        const programId = new PublicKey(PROGRAM_IDS.iamAnchor);
+        const programId = new PublicKey(PROGRAM_IDS.entrosAnchor);
         const [identityPda] = PublicKey.findProgramAddressSync(
           [new TextEncoder().encode("identity"), walletPubkey.toBuffer()],
           programId
@@ -343,7 +343,7 @@ async function processSensorData(
       success: false,
       commitment: tbh.commitmentBytes,
       isFirstVerification: false,
-      error: "Previous behavioral fingerprint not found on this device. Your IAM Anchor exists on-chain but the local baseline is missing. Reset your baseline to re-enroll from this device, or verify from the device that has the original baseline.",
+      error: "Previous behavioral fingerprint not found on this device. Your Entros Anchor exists on-chain but the local baseline is missing. Reset your baseline to re-enroll from this device, or verify from the device that has the original baseline.",
     };
   }
 
@@ -360,7 +360,7 @@ async function processSensorData(
 
     const distance = hammingDistance(fingerprint, previousData.fingerprint);
     sdkLog(
-      `[IAM SDK] Re-verification: Hamming distance = ${distance} / 256 bits (threshold = ${config.threshold})`
+      `[Entros SDK] Re-verification: Hamming distance = ${distance} / 256 bits (threshold = ${config.threshold})`
     );
 
     const circuitInput = prepareCircuitInput(
@@ -377,7 +377,7 @@ async function processSensorData(
         success: false,
         commitment: tbh.commitmentBytes,
         isFirstVerification: false,
-        error: "Re-verification requires wasmUrl and zkeyUrl in PulseConfig. Host the iam_hamming.wasm and iam_hamming_final.zkey circuit artifacts at public URLs.",
+        error: "Re-verification requires wasmUrl and zkeyUrl in PulseConfig. Host the entros_hamming.wasm and entros_hamming_final.zkey circuit artifacts at public URLs.",
       };
     }
 
@@ -557,7 +557,7 @@ async function processResetSensorData(
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      sdkWarn(`[IAM SDK] Reset succeeded on chain but local baseline persistence failed: ${msg}`);
+      sdkWarn(`[Entros SDK] Reset succeeded on chain but local baseline persistence failed: ${msg}`);
       return {
         success: false,
         commitment: tbh.commitmentBytes,
@@ -843,7 +843,7 @@ export class PulseSession {
 }
 
 /**
- * PulseSDK — main entry point for IAM Protocol verification.
+ * PulseSDK — main entry point for Entros Protocol verification.
  *
  * Two usage modes:
  *   1. Simple (backward-compatible): pulse.verify(touchElement) — captures all sensors

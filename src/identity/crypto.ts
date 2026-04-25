@@ -7,7 +7,7 @@
  * on the same origin.
  */
 
-const DB_NAME = "iam-protocol-keystore";
+const DB_NAME = "entros-protocol-keystore";
 // Bumped to 2 on 2026-04-20 to force `onupgradeneeded` on pre-existing DBs
 // whose `keys` object store went missing (observed in the wild — browser
 // interrupted an earlier upgrade or a concurrent-tab race left the DB

@@ -79,7 +79,7 @@ async function detectF0Contour(
   const numFrames = Math.floor((samples.length - frameSize) / hopSize) + 1;
 
   if (sampleRate !== 16000) {
-    sdkWarn(`[IAM SDK] Audio captured at ${sampleRate}Hz (requested 16kHz). Frame size adjusted to ${frameSize}.`);
+    sdkWarn(`[Entros SDK] Audio captured at ${sampleRate}Hz (requested 16kHz). Frame size adjusted to ${frameSize}.`);
   }
 
   for (let i = 0; i < numFrames; i++) {
@@ -330,7 +330,7 @@ export async function extractSpeakerFeaturesDetailed(
   const { samples, sampleRate } = audio;
 
   if (!Number.isFinite(sampleRate) || sampleRate <= 0 || samples.length === 0) {
-    sdkWarn("[IAM SDK] Invalid audio data. Speaker features will be zeros.");
+    sdkWarn("[Entros SDK] Invalid audio data. Speaker features will be zeros.");
     return { features: new Array(SPEAKER_FEATURE_COUNT).fill(0), f0Contour: [] };
   }
 
@@ -339,7 +339,7 @@ export async function extractSpeakerFeaturesDetailed(
 
   const numFrames = Math.floor((samples.length - frameSize) / hopSize) + 1;
   if (numFrames < 5) {
-    sdkWarn(`[IAM SDK] Too few audio frames (${numFrames}). Speaker features will be zeros.`);
+    sdkWarn(`[Entros SDK] Too few audio frames (${numFrames}). Speaker features will be zeros.`);
     return { features: new Array(SPEAKER_FEATURE_COUNT).fill(0), f0Contour: [] };
   }
 

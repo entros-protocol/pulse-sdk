@@ -8,7 +8,7 @@ import { sdkLog, sdkWarn } from "../log";
 /**
  * Best-effort SAS attestation request. POSTs to the executor's `/attest`
  * endpoint with the wallet's public key, an optional server-issued challenge
- * nonce, and an `IAM-ATTEST:{wallet}:{timestamp}` ownership signature.
+ * nonce, and an `Entros-ATTEST:{wallet}:{timestamp}` ownership signature.
  *
  * Returns the attestation tx signature on success, `undefined` on any
  * failure (attestation is non-fatal — the on-chain tx has already confirmed
@@ -41,7 +41,7 @@ async function requestSasAttestation(
     if (wallet?.signMessage) {
       try {
         const timestamp = Math.floor(Date.now() / 1000);
-        const attestMessage = `IAM-ATTEST:${walletAddress}:${timestamp}`;
+        const attestMessage = `Entros-ATTEST:${walletAddress}:${timestamp}`;
         const messageBytes = new TextEncoder().encode(attestMessage);
         const sigBytes: Uint8Array = await wallet.signMessage(messageBytes);
         const sigHex = Array.from(sigBytes)
@@ -108,7 +108,7 @@ export async function submitViaWallet(
       { commitment: "confirmed" }
     );
 
-    const anchorProgramId = new PublicKey(PROGRAM_IDS.iamAnchor);
+    const anchorProgramId = new PublicKey(PROGRAM_IDS.entrosAnchor);
 
     let txSig: string | undefined;
     let serverNonce = false;
@@ -117,7 +117,7 @@ export async function submitViaWallet(
     if (!options.isFirstVerification) {
       // Re-verification: batch create_challenge + verify_proof + update_anchor
       // into a single transaction (1 wallet prompt instead of 3)
-      const verifierProgramId = new PublicKey(PROGRAM_IDS.iamVerifier);
+      const verifierProgramId = new PublicKey(PROGRAM_IDS.entrosVerifier);
 
       // Fetch server-generated nonce (prevents pre-computation attacks).
       // Falls back to client-generated nonce if executor is unreachable.
@@ -180,7 +180,7 @@ export async function submitViaWallet(
         anchorProgramId
       );
 
-      const registryProgramId = new PublicKey(PROGRAM_IDS.iamRegistry);
+      const registryProgramId = new PublicKey(PROGRAM_IDS.entrosRegistry);
       const [protocolConfigPda] = PublicKey.findProgramAddressSync(
         [new TextEncoder().encode("protocol_config")],
         registryProgramId
@@ -198,13 +198,13 @@ export async function submitViaWallet(
       if (!verifierIdl) {
         return {
           success: false,
-          error: `Failed to fetch iam-verifier IDL from Solana (program ${PROGRAM_IDS.iamVerifier}). Check your RPC endpoint is reachable and on the correct cluster.`,
+          error: `Failed to fetch entros-verifier IDL from Solana (program ${PROGRAM_IDS.entrosVerifier}). Check your RPC endpoint is reachable and on the correct cluster.`,
         };
       }
       if (!anchorIdl) {
         return {
           success: false,
-          error: `Failed to fetch iam-anchor IDL from Solana (program ${PROGRAM_IDS.iamAnchor}). Check your RPC endpoint is reachable and on the correct cluster.`,
+          error: `Failed to fetch entros-anchor IDL from Solana (program ${PROGRAM_IDS.entrosAnchor}). Check your RPC endpoint is reachable and on the correct cluster.`,
         };
       }
 
@@ -277,7 +277,7 @@ export async function submitViaWallet(
       if (!anchorIdl) {
         return {
           success: false,
-          error: `Failed to fetch iam-anchor IDL from Solana (program ${PROGRAM_IDS.iamAnchor}). Check your RPC endpoint is reachable and on the correct cluster.`,
+          error: `Failed to fetch entros-anchor IDL from Solana (program ${PROGRAM_IDS.entrosAnchor}). Check your RPC endpoint is reachable and on the correct cluster.`,
         };
       }
 
@@ -296,7 +296,7 @@ export async function submitViaWallet(
         anchorProgramId
       );
 
-      const registryProgramId = new PublicKey(PROGRAM_IDS.iamRegistry);
+      const registryProgramId = new PublicKey(PROGRAM_IDS.entrosRegistry);
       const [protocolConfigPda] = PublicKey.findProgramAddressSync(
         [new TextEncoder().encode("protocol_config")],
         registryProgramId
@@ -389,8 +389,8 @@ export async function submitResetViaWallet(
       { commitment: "confirmed" }
     );
 
-    const anchorProgramId = new PublicKey(PROGRAM_IDS.iamAnchor);
-    const registryProgramId = new PublicKey(PROGRAM_IDS.iamRegistry);
+    const anchorProgramId = new PublicKey(PROGRAM_IDS.entrosAnchor);
+    const registryProgramId = new PublicKey(PROGRAM_IDS.entrosRegistry);
 
     const [identityPda] = PublicKey.findProgramAddressSync(
       [new TextEncoder().encode("identity"), provider.wallet.publicKey.toBuffer()],
@@ -409,7 +409,7 @@ export async function submitResetViaWallet(
     if (!anchorIdl) {
       return {
         success: false,
-        error: `Failed to fetch iam-anchor IDL from Solana (program ${PROGRAM_IDS.iamAnchor}). Check your RPC endpoint is reachable and on the correct cluster.`,
+        error: `Failed to fetch entros-anchor IDL from Solana (program ${PROGRAM_IDS.entrosAnchor}). Check your RPC endpoint is reachable and on the correct cluster.`,
       };
     }
     const anchorProgram: any = new anchor.Program(anchorIdl, provider);

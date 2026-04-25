@@ -8,7 +8,7 @@ import {
   decrypt,
 } from "./crypto";
 
-const STORAGE_KEY = "iam-protocol-verification-data";
+const STORAGE_KEY = "entros-protocol-verification-data";
 const ENCRYPTED_VERSION = 2;
 
 // In-memory fallback for environments without localStorage (Node.js, SSR,
@@ -55,7 +55,7 @@ export async function fetchIdentityState(
     const { PublicKey } = await import("@solana/web3.js");
     const anchor = await import("@coral-xyz/anchor");
 
-    const programId = new PublicKey(PROGRAM_IDS.iamAnchor);
+    const programId = new PublicKey(PROGRAM_IDS.entrosAnchor);
     const [identityPda] = PublicKey.findProgramAddressSync(
       [new TextEncoder().encode("identity"), new PublicKey(walletPubkey).toBuffer()],
       programId
@@ -98,14 +98,14 @@ export async function fetchIdentityState(
 export async function storeVerificationData(data: StoredVerificationData): Promise<void> {
   try {
     if (!hasCryptoSupport()) {
-      sdkWarn("[IAM SDK] Crypto unavailable — verification data stored unencrypted");
+      sdkWarn("[Entros SDK] Crypto unavailable — verification data stored unencrypted");
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
       return;
     }
 
     const key = await getOrCreateEncryptionKey();
     if (!key) {
-      sdkWarn("[IAM SDK] Encryption key unavailable — storing unencrypted");
+      sdkWarn("[Entros SDK] Encryption key unavailable — storing unencrypted");
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
       return;
     }
@@ -132,7 +132,7 @@ export async function loadVerificationData(): Promise<StoredVerificationData | n
     // Encrypted envelope
     if (isEncryptedEnvelope(parsed)) {
       if (!hasCryptoSupport()) {
-        sdkWarn("[IAM SDK] Encrypted data found but crypto unavailable");
+        sdkWarn("[Entros SDK] Encrypted data found but crypto unavailable");
         return inMemoryStore;
       }
       const key = await getOrCreateEncryptionKey();
@@ -146,7 +146,7 @@ export async function loadVerificationData(): Promise<StoredVerificationData | n
         // in crypto.ts now self-heals the store, but the envelope must
         // survive the broken window to benefit).
         sdkWarn(
-          "[IAM SDK] Encryption key unavailable — keeping envelope for recovery. " +
+          "[Entros SDK] Encryption key unavailable — keeping envelope for recovery. " +
             "If this persists across reloads, check IndexedDB state via DevTools."
         );
         return inMemoryStore;
@@ -162,7 +162,7 @@ export async function loadVerificationData(): Promise<StoredVerificationData | n
         // triggered baseline reset (or manual "Clear site data") is the
         // right path — not a silent delete on the SDK's initiative.
         sdkWarn(
-          "[IAM SDK] Decryption failed — keeping envelope for recovery. " +
+          "[Entros SDK] Decryption failed — keeping envelope for recovery. " +
             "Trigger a baseline reset or Clear site data if this is persistent."
         );
         return inMemoryStore;
@@ -176,7 +176,7 @@ export async function loadVerificationData(): Promise<StoredVerificationData | n
     }
 
     // Unrecognized format
-    sdkWarn("[IAM SDK] Unrecognized verification data format — clearing");
+    sdkWarn("[Entros SDK] Unrecognized verification data format — clearing");
     localStorage.removeItem(STORAGE_KEY);
     return inMemoryStore;
   } catch {

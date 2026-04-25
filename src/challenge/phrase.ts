@@ -1,5 +1,15 @@
-// Phonetically-balanced nonsense syllables for the voice challenge.
-// Designed to elicit diverse vocal patterns while preventing dictionary-based deepfake attacks.
+// Phonetically-balanced nonsense syllables for the voice challenge — FALLBACK ONLY.
+//
+// The authoritative challenge phrase is server-issued by the executor's
+// `/challenge` endpoint (a 5-word phrase drawn from a curated English-word
+// dictionary — see `iam-validation/src/word_dict.rs` for the source of truth).
+// This client-side generator only fires when the executor is unreachable; in
+// that path the server has no record of the phrase and validation skips
+// phrase content binding entirely (Tier 1 acoustic + Tier 2 cross-modal still
+// run). The fallback intentionally stays nonsense to avoid shipping the
+// curated dictionary client-side — the JS bundle stays lean, and a degraded
+// session is visually distinct from a normal one for users / contributors
+// debugging.
 const SYLLABLES = [
   "ba", "da", "fa", "ga", "ha", "ja", "ka", "la", "ma", "na",
   "pa", "ra", "sa", "ta", "wa", "za", "be", "de", "fe", "ge",
@@ -18,8 +28,13 @@ function secureRandom(max: number): number {
 }
 
 /**
- * Generate a random phonetically-balanced phrase for the voice challenge.
- * Each phrase is 5-6 syllable pairs, forming nonsensical but speakable words.
+ * FALLBACK challenge-phrase generator. Used only when the executor's
+ * `/challenge` endpoint is unreachable; the authoritative phrase comes from
+ * the server (5 real words drawn from a curated English-word dictionary). On
+ * this fallback path, validation skips server-side phrase content binding —
+ * Tier 1 acoustic + Tier 2 cross-modal still run.
+ *
+ * Output is 5-6 syllable pairs, forming nonsensical but speakable words.
  * Uses crypto.getRandomValues for unpredictable challenge generation.
  */
 export function generatePhrase(wordCount: number = 5): string {

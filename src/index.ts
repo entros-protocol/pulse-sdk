@@ -37,8 +37,8 @@ export { submitViaWallet, submitResetViaWallet } from "./submit/wallet";
 export { submitViaRelayer } from "./submit/relayer";
 
 // Attestation (SAS)
-export type { IAMAttestation } from "./attestation/sas";
-export { verifyIAMAttestation } from "./attestation/sas";
+export type { EntrosAttestation } from "./attestation/sas";
+export { verifyEntrosAttestation } from "./attestation/sas";
 
 // Agent Anchor (Solana Agent Registry)
 export type { AgentHumanOperator } from "./agent/anchor";

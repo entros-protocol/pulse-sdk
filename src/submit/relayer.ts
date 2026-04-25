@@ -4,7 +4,7 @@ import type { SubmissionResult } from "./types";
 const RELAYER_TIMEOUT_MS = 30_000;
 
 /**
- * Submit a proof via the IAM relayer API (walletless mode).
+ * Submit a proof via the Entros relayer API (walletless mode).
  * The relayer submits the on-chain transaction using the integrator's funded account.
  * The user needs no wallet, no SOL, no crypto knowledge.
  */

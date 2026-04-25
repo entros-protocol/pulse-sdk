@@ -1,8 +1,16 @@
 {
-  "name": "@iam-protocol/pulse-sdk",
-  "version": "0.10.0",
-  "description": "Client-side SDK for IAM Protocol — sensor capture, TBH generation, ZK proof construction",
+  "name": "@entros/pulse-sdk",
+  "version": "1.0.1",
+  "description": "Client-side SDK for Entros Protocol — sensor capture, TBH generation, ZK proof construction",
   "license": "MIT",
+  "homepage": "https://entros.io",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/entros-protocol/pulse-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/entros-protocol/pulse-sdk/issues"
+  },
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
