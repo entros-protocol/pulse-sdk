@@ -38,7 +38,7 @@ export const PROGRAM_IDS = {
 export const AGENT_REGISTRY_CONFIG = {
   programIdDevnet: "8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C",
   programIdMainnet: "8oo4dC4JvBLwy5tGgiH3WwK4B9PWxL9Z4XjA2jzkQMbQ",
-  metadataKey: "iam:human-operator",
+  metadataKey: "entros:human-operator",
 } as const;
 
 export const SAS_CONFIG = {

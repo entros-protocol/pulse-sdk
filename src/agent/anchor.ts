@@ -214,7 +214,7 @@ export async function attestAgentOperator(
 /**
  * Query whether an AI agent has a verified human operator via Entros.
  *
- * Reads the "iam:human-operator" metadata from the agent's on-chain record
+ * Reads the "entros:human-operator" metadata from the agent's on-chain record
  * and returns the operator's Entros Anchor details.
  *
  * @param agentAsset - Base58 pubkey of the agent's Metaplex Core NFT
