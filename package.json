@@ -1,6 +1,6 @@
 {
   "name": "@entros/pulse-sdk",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Client-side SDK for Entros Protocol — sensor capture, TBH generation, ZK proof construction",
   "license": "MIT",
   "homepage": "https://entros.io",
@@ -26,7 +26,9 @@
   ],
   "scripts": {
     "build": "tsup",
+    "build:internal": "IAM_INTERNAL_TEST=1 tsup",
     "test": "vitest run",
+    "test:internal": "IAM_INTERNAL_TEST=1 vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "verify-publish-contents": "node scripts/verify-publish-contents.mjs",

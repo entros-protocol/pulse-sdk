@@ -1,5 +1,5 @@
 // Main SDK
-export { PulseSDK, PulseSession } from "./pulse";
+export { PulseSDK, PulseSession, MIN_AUDIO_SAMPLES, MIN_MOTION_SAMPLES, MIN_TOUCH_SAMPLES } from "./pulse";
 
 // Configuration
 export type { PulseConfig } from "./config";

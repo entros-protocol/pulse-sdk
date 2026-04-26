@@ -63,6 +63,12 @@ npm run build     # ESM + CJS output
 npm run typecheck # TypeScript strict mode
 ```
 
+## Migration history
+
+Originally published as `@iam-protocol/pulse-sdk` (deprecated). Renamed during
+the IAM → Entros Protocol rebrand on 2026-04-25; full commit history preserved
+on the current repository at `github.com/entros-protocol/pulse-sdk`.
+
 ## License
 
 MIT

@@ -30,6 +30,12 @@ import {
   loadVerificationData,
 } from "./identity/anchor";
 
+// Build-time constant. Replaced by tsup `define` (true when IAM_INTERNAL_TEST=1)
+// and by vitest `define`. In default builds (npm publish path) this is `false`
+// and any test hook short-circuits to throw — guaranteeing the harness-only
+// injection path is unreachable in published artifacts.
+declare const __IAM_INTERNAL_TEST__: boolean;
+
 type ResolvedConfig = Required<Pick<PulseConfig, "cluster" | "threshold">> &
   PulseConfig;
 
@@ -97,10 +103,13 @@ async function extractFeatures(data: SensorData): Promise<ExtractedFeatures> {
  * Shared pipeline: features → simhash → TBH → proof → submit.
  * Used by both PulseSDK.verify() and PulseSession.complete().
  */
-// Minimum sample counts for meaningful feature extraction
-const MIN_AUDIO_SAMPLES = 16000; // ~1 second at 16kHz
-const MIN_MOTION_SAMPLES = 10;
-const MIN_TOUCH_SAMPLES = 10;
+// Minimum sample counts for meaningful feature extraction.
+// Exported so consumers (including the internal-build-only red team harness)
+// can enforce the same thresholds upstream and surface clearer errors than
+// the SDK's data-quality gate would.
+export const MIN_AUDIO_SAMPLES = 16000; // ~1 second at 16 kHz
+export const MIN_MOTION_SAMPLES = 10;
+export const MIN_TOUCH_SAMPLES = 10;
 
 type ExtractionResult =
   | {
@@ -759,6 +768,64 @@ export class PulseSession {
         "Cannot skip touch: capture already started. skipTouch() must be called before startTouch().",
       );
     this.touchStageState = "skipped";
+  }
+
+  // --- Test hooks (internal builds only) ---
+
+  /**
+   * @internal Test-only. Primes the session with pre-captured sensor data,
+   * bypassing browser capture APIs. Throws unless built with IAM_INTERNAL_TEST=1.
+   * Stripped from the published .d.ts so npm consumers never see it. Used by the
+   * red team harness to drive the real verification pipeline (extraction →
+   * SimHash → TBH → proof → submit) against synthetic sensor data — never
+   * available to npm consumers.
+   */
+  __injectSensorData(data: {
+    audio: AudioCapture;
+    motion: MotionSample[];
+    touch: TouchSample[];
+  }): void {
+    // typeof guard tolerates the constant being undeclared at runtime (e.g.
+    // direct ts-node/tsx execution that bypasses tsup/vitest `define`).
+    // Without this, a missing build-time replacement throws ReferenceError
+    // before the user-facing message can fire.
+    if (typeof __IAM_INTERNAL_TEST__ !== "boolean" || !__IAM_INTERNAL_TEST__) {
+      throw new Error(
+        "PulseSession.__injectSensorData is only available in internal test builds. " +
+          "Set IAM_INTERNAL_TEST=1 when building pulse-sdk from source.",
+      );
+    }
+    const conflicts: string[] = [];
+    if (this.audioStageState === "capturing") conflicts.push("audio");
+    if (this.motionStageState === "capturing") conflicts.push("motion");
+    if (this.touchStageState === "capturing") conflicts.push("touch");
+    if (conflicts.length > 0) {
+      throw new Error(
+        `__injectSensorData: cannot inject while stages are capturing: ${conflicts.join(", ")}. ` +
+          `Create a fresh session via sdk.createSession() and inject before any startAudio/startMotion/startTouch call.`,
+      );
+    }
+    if (!data.audio || data.audio.samples.length < MIN_AUDIO_SAMPLES) {
+      throw new Error(
+        `__injectSensorData: audio required, minimum ${MIN_AUDIO_SAMPLES} samples (got ${data.audio?.samples.length ?? 0}).`,
+      );
+    }
+    if (data.motion.length < MIN_MOTION_SAMPLES) {
+      throw new Error(
+        `__injectSensorData: motion required, minimum ${MIN_MOTION_SAMPLES} samples (got ${data.motion.length}).`,
+      );
+    }
+    if (data.touch.length < MIN_TOUCH_SAMPLES) {
+      throw new Error(
+        `__injectSensorData: touch required, minimum ${MIN_TOUCH_SAMPLES} samples (got ${data.touch.length}).`,
+      );
+    }
+    this.audioData = data.audio;
+    this.motionData = data.motion;
+    this.touchData = data.touch;
+    this.audioStageState = "captured";
+    this.motionStageState = "captured";
+    this.touchStageState = "captured";
   }
 
   // --- Complete ---
