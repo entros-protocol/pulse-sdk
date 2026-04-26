@@ -120,7 +120,7 @@ type ExtractionResult =
       fingerprint: number[];
       tbh: TBH;
     }
-  | { ok: false; error: string };
+  | { ok: false; error: string; reason?: string };
 
 /**
  * Shared front half of the verification pipeline, covering feature
@@ -311,6 +311,7 @@ async function processSensorData(
       commitment: new Uint8Array(32),
       isFirstVerification: false,
       error: extraction.error,
+      reason: extraction.reason,
     };
   }
   const { fingerprint, tbh, features } = extraction;
@@ -539,6 +540,7 @@ async function processResetSensorData(
       commitment: new Uint8Array(32),
       isFirstVerification: true,
       error: extraction.error,
+      reason: extraction.reason,
     };
   }
   const { tbh } = extraction;
