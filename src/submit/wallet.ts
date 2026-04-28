@@ -72,8 +72,13 @@ async function requestSasAttestation(
         return attestData.attestation_tx;
       }
     }
-  } catch {
-    // Attestation is best-effort; on-chain tx already confirmed.
+  } catch (err) {
+    // Attestation is best-effort; on-chain tx already confirmed. Log the
+    // failure cause so operators / integrators can distinguish "not
+    // configured" (returned undefined silently) from "configured but
+    // failed" (network error, 5xx, malformed response).
+    const msg = err instanceof Error ? err.message : String(err);
+    sdkWarn(`[Entros SDK] SAS attestation request failed: ${msg}`);
   }
   return undefined;
 }

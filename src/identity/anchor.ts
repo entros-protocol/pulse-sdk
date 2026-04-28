@@ -37,21 +37,29 @@ interface EncryptedEnvelope {
 }
 
 function isEncryptedEnvelope(obj: unknown): obj is EncryptedEnvelope {
+  if (typeof obj !== "object" || obj === null) return false;
+  const o = obj as Record<string, unknown>;
   return (
-    typeof obj === "object" &&
-    obj !== null &&
-    (obj as Record<string, unknown>).v === ENCRYPTED_VERSION &&
-    typeof (obj as Record<string, unknown>).iv === "string" &&
-    typeof (obj as Record<string, unknown>).ct === "string"
+    o.v === ENCRYPTED_VERSION &&
+    typeof o.iv === "string" &&
+    o.iv.length > 0 &&
+    typeof o.ct === "string" &&
+    o.ct.length > 0
   );
 }
 
 function isPlaintextData(obj: unknown): obj is StoredVerificationData {
-  return (
-    typeof obj === "object" &&
-    obj !== null &&
-    Array.isArray((obj as Record<string, unknown>).fingerprint)
-  );
+  if (typeof obj !== "object" || obj === null) return false;
+  const o = obj as Record<string, unknown>;
+  // Require all four fields with correct types. The previous `Array.isArray`
+  // check on `fingerprint` alone passed envelopes with missing salt or
+  // wrong-typed timestamp, which would crash later during use.
+  if (!Array.isArray(o.fingerprint)) return false;
+  if (!o.fingerprint.every((bit) => typeof bit === "number")) return false;
+  if (typeof o.salt !== "string" || o.salt.length === 0) return false;
+  if (typeof o.commitment !== "string" || o.commitment.length === 0) return false;
+  if (typeof o.timestamp !== "number" || !Number.isFinite(o.timestamp)) return false;
+  return true;
 }
 
 // --- Public API ---
