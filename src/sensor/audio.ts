@@ -39,15 +39,33 @@ export async function captureAudio(
     },
   });
 
-  const ctx = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
-  await ctx.resume(); // Required on iOS — AudioContext may be suspended outside user gesture
-  const capturedSampleRate = ctx.sampleRate;
-  const source = ctx.createMediaStreamSource(stream);
+  // If anything between `getUserMedia` and the Promise constructor throws
+  // (AudioContext construction, ctx.resume(), createMediaStreamSource) the
+  // stream we just acquired would leak indefinitely. Wrap the setup in a
+  // try-on-error path that stops the stream tracks before re-throwing.
+  let ctx: AudioContext;
+  let source: MediaStreamAudioSourceNode;
+  let capturedSampleRate: number;
+  try {
+    ctx = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
+    await ctx.resume(); // Required on iOS — AudioContext may be suspended outside user gesture
+    capturedSampleRate = ctx.sampleRate;
+    source = ctx.createMediaStreamSource(stream);
+  } catch (err) {
+    // Stop tracks we already acquired; we can't acquire them again so leaks
+    // would persist for the page lifetime if we don't release here.
+    if (!preAcquiredStream) {
+      stream.getTracks().forEach((t: MediaStreamTrack) => t.stop());
+    }
+    throw err;
+  }
   const chunks: Float32Array[] = [];
   const startTime = performance.now();
 
   return new Promise((resolve) => {
     let stopped = false;
+    // See motion.ts for the abortTimer rationale.
+    let abortTimer: ReturnType<typeof setTimeout> | null = null;
     const bufferSize = 4096;
     const processor = ctx.createScriptProcessor(bufferSize, 1, 1);
 
@@ -69,6 +87,7 @@ export async function captureAudio(
       if (stopped) return;
       stopped = true;
       clearTimeout(maxTimer);
+      if (abortTimer !== null) clearTimeout(abortTimer);
 
       processor.disconnect();
       source.disconnect();
@@ -94,14 +113,14 @@ export async function captureAudio(
 
     if (signal) {
       if (signal.aborted) {
-        setTimeout(stopCapture, minDurationMs);
+        abortTimer = setTimeout(stopCapture, minDurationMs);
       } else {
         signal.addEventListener(
           "abort",
           () => {
             const elapsed = performance.now() - startTime;
             const remaining = Math.max(0, minDurationMs - elapsed);
-            setTimeout(stopCapture, remaining);
+            abortTimer = setTimeout(stopCapture, remaining);
           },
           { once: true }
         );

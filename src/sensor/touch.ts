@@ -21,6 +21,9 @@ export function captureTouch(
 
   return new Promise((resolve) => {
     let stopped = false;
+    // See motion.ts for the abortTimer rationale — same pattern across
+    // all three sensor modules.
+    let abortTimer: ReturnType<typeof setTimeout> | null = null;
 
     const handler = (e: PointerEvent) => {
       samples.push({
@@ -37,6 +40,7 @@ export function captureTouch(
       if (stopped) return;
       stopped = true;
       clearTimeout(maxTimer);
+      if (abortTimer !== null) clearTimeout(abortTimer);
       element.removeEventListener("pointermove", handler);
       element.removeEventListener("pointerdown", handler);
       sdkLog(`[Entros SDK] Touch capture stopped: ${samples.length} samples collected`);
@@ -51,14 +55,14 @@ export function captureTouch(
 
     if (signal) {
       if (signal.aborted) {
-        setTimeout(stopCapture, minDurationMs);
+        abortTimer = setTimeout(stopCapture, minDurationMs);
       } else {
         signal.addEventListener(
           "abort",
           () => {
             const elapsed = performance.now() - startTime;
             const remaining = Math.max(0, minDurationMs - elapsed);
-            setTimeout(stopCapture, remaining);
+            abortTimer = setTimeout(stopCapture, remaining);
           },
           { once: true }
         );

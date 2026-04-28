@@ -39,6 +39,12 @@ export async function captureMotion(
 
   return new Promise((resolve) => {
     let stopped = false;
+    // Tracks the abort-path setTimeout (when `signal` fires before
+    // `maxDurationMs`) so it can be cleared if `maxTimer` runs first.
+    // Without tracking, the abort-path timer fires later as a no-op via
+    // the `stopped` flag — not a memory leak per se, but explicit cleanup
+    // matches the rest of the SDK's resource-hygiene posture.
+    let abortTimer: ReturnType<typeof setTimeout> | null = null;
 
     const handler = (e: DeviceMotionEvent) => {
       samples.push({
@@ -56,6 +62,7 @@ export async function captureMotion(
       if (stopped) return;
       stopped = true;
       clearTimeout(maxTimer);
+      if (abortTimer !== null) clearTimeout(abortTimer);
       window.removeEventListener("devicemotion", handler);
       resolve(samples);
     }
@@ -66,14 +73,14 @@ export async function captureMotion(
 
     if (signal) {
       if (signal.aborted) {
-        setTimeout(stopCapture, minDurationMs);
+        abortTimer = setTimeout(stopCapture, minDurationMs);
       } else {
         signal.addEventListener(
           "abort",
           () => {
             const elapsed = performance.now() - startTime;
             const remaining = Math.max(0, minDurationMs - elapsed);
-            setTimeout(stopCapture, remaining);
+            abortTimer = setTimeout(stopCapture, remaining);
           },
           { once: true }
         );
