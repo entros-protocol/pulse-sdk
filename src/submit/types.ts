@@ -6,6 +6,27 @@ export interface SubmissionResult {
   error?: string;
 }
 
+/**
+ * Validator-signed receipt binding (wallet, commitment, validated_at) for the
+ * upcoming `mint_anchor` transaction (master-list #146 Phase 4). Returned in
+ * the `/validate-features` response when the request includes
+ * `commitment_new_hex` and the validator has a signing key configured.
+ *
+ * Wire fields are byte-identical to `entros_validation::SignedReceiptDto` and
+ * the executor's local mirror at `executor-node::validation::SignedReceiptDto`.
+ */
+export interface SignedReceiptDto {
+  /** Hex-encoded 32-byte Ed25519 public key of the validator. */
+  validator_pubkey_hex: string;
+  /**
+   * Hex-encoded 72-byte message:
+   *   wallet_pubkey (32) || commitment_new (32) || validated_at i64 LE (8)
+   */
+  message_hex: string;
+  /** Hex-encoded 64-byte Ed25519 signature over `message_hex`. */
+  signature_hex: string;
+}
+
 /** Result of a full Pulse verification */
 export interface VerificationResult {
   success: boolean;
