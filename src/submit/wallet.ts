@@ -372,30 +372,51 @@ export async function submitViaWallet(
         })
         .instruction();
 
+      // Decode the receipt up front so we can hard-fail if the validator
+      // returned malformed bytes. Silently falling back to a no-receipt
+      // mint when the caller expected a binding would mask validator bugs
+      // and, after Phase 5 enforcement flips, would produce a confusing
+      // on-chain reject after the user has already approved a wallet
+      // signature. Fail-fast lets the caller surface a clear error and
+      // retry once the validator is healthy.
       let ed25519Ix: import("@solana/web3.js").TransactionInstruction | null = null;
       if (options.signedReceipt) {
         ed25519Ix = await buildEd25519ReceiptIx(options.signedReceipt);
-        if (ed25519Ix) {
-          sdkLog(
-            "[Entros SDK] Bundling validator-signed mint receipt before mint_anchor"
-          );
-        } else {
-          sdkWarn(
-            "[Entros SDK] signedReceipt provided but failed to decode; minting without binding"
-          );
+        if (!ed25519Ix) {
+          return {
+            success: false,
+            error:
+              "Validator returned a signed receipt that failed to decode (malformed hex or wrong byte length). Refusing to mint without a valid binding. The validator service may be misconfigured — check the validation-service logs.",
+          };
         }
+        sdkLog(
+          "[Entros SDK] Bundling validator-signed mint receipt before mint_anchor"
+        );
       } else {
-        // Phase 3 on-chain check is log-only when no preceding Ed25519 ix
-        // is present. Once Phase 5 enforcement flips, this code path will
-        // produce a hard rejection — keep the no-receipt fallback as a
-        // safety net for upgraded validators briefly omitting the field
-        // (e.g. Railway redeploy in progress).
+        // No receipt is the legitimate "older validator" path. Phase 3 is
+        // log-only on-chain so the mint still succeeds; Phase 5 enforcement
+        // will later turn this into a hard reject, at which point operators
+        // must ensure the validator is configured for receipt signing.
         sdkLog(
           "[Entros SDK] No validator receipt available; minting without binding (Phase 3 log-only)"
         );
       }
 
+      // Transaction shape:
+      //   [0] ComputeBudgetProgram.setComputeUnitLimit
+      //   [1] (optional) Ed25519Program::verify(receipt)
+      //   [2] mint_anchor(initial_commitment)
+      //
+      // Including an explicit compute-budget ix at index 0 prevents wallet
+      // adapters that lazily inject one from inserting it between the
+      // Ed25519 ix and `mint_anchor`. The on-chain receipt parser locates
+      // the receipt at `current_instruction_index - 1`, so any ix between
+      // the Ed25519 prefix and `mint_anchor` would silently break the
+      // binding (Phase 3 log-only) or hard-fail the mint (Phase 5).
+      // 200K covers the mint_anchor compute cost; the Ed25519 precompile
+      // runs in the runtime, not against the program's CU budget.
       const tx = new Transaction();
+      tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }));
       if (ed25519Ix) tx.add(ed25519Ix);
       tx.add(mintAnchorIx);
 
