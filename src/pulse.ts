@@ -4,7 +4,7 @@ import { setDebug, sdkLog, sdkWarn } from "./log";
 import type { SensorData, AudioCapture, MotionSample, TouchSample, StageState } from "./sensor/types";
 import type { TBH } from "./hashing/types";
 import type { SolanaProof } from "./proof/types";
-import type { VerificationResult } from "./submit/types";
+import type { SignedReceiptDto, VerificationResult } from "./submit/types";
 import type { StoredVerificationData } from "./identity/types";
 
 import { captureAudio } from "./sensor/audio";
@@ -25,6 +25,7 @@ import { prepareCircuitInput, generateProof } from "./proof/prover";
 import { serializeProof } from "./proof/serializer";
 import { submitViaWallet, submitResetViaWallet } from "./submit/wallet";
 import { submitViaRelayer } from "./submit/relayer";
+import { bytesToHex } from "./submit/receipt";
 import {
   storeVerificationData,
   loadVerificationData,
@@ -120,6 +121,15 @@ type ExtractionResult =
       accelMagnitude: number[];
       fingerprint: number[];
       tbh: TBH;
+      /**
+       * Validator-signed mint receipt (master-list #146 Phase 4). Present
+       * only when the request reached the validator with `commitment_new_hex`
+       * AND the validator has a signing key configured. `undefined` indicates
+       * the SDK should mint without an Ed25519 prefix; while Phase 3 is
+       * log-only on-chain this is harmless, but once Phase 5 enforcement
+       * flips, missing receipts cause `mint_anchor` to hard-fail.
+       */
+      signedReceipt?: SignedReceiptDto;
     }
   | { ok: false; error: string; reason?: string };
 
@@ -158,6 +168,17 @@ async function extractFingerprintAndValidate(
     `Touch[98..133]: ${features.slice(98, 134).filter((v) => v !== 0).length} non-zero.`
   );
 
+  // Compute the SimHash fingerprint and Poseidon TBH commitment BEFORE the
+  // validation POST (master-list #146 Phase 4). The validator signs a
+  // (wallet, commitment, validated_at) receipt that the SDK bundles before
+  // `mint_anchor` in the same atomic transaction; for the validator to sign
+  // the right commitment, we must transmit it in the request. SimHash +
+  // Poseidon together cost ~20ms — trivial overhead even on rejection paths.
+  const fingerprint = simhash(normalizedFeatures);
+  const tbh = await generateTBH(fingerprint);
+
+  let signedReceipt: SignedReceiptDto | undefined;
+
   onProgress?.("Validating...");
   if (config.relayerUrl && walletAddress) {
     try {
@@ -186,6 +207,15 @@ async function extractFingerprintAndValidate(
         : undefined;
       const audioSampleRateHz = sensorData.audio?.sampleRate;
 
+      // Hex-encode the 32-byte commitment for the validator's signing
+      // input (master-list #146 Phase 4). The validator only signs when
+      // this field is present AND its own signing key is configured; the
+      // SDK only consumes the receipt on first-verification, so sending
+      // it on every wallet-connected request is harmless on the re-verify
+      // path (validator signs cheaply, executor passes through, SDK
+      // ignores the field for `update_anchor`).
+      const commitmentNewHex = bytesToHex(tbh.commitmentBytes);
+
       // Whisper-tiny inference adds ~1s to the validation round trip.
       // Extend timeout from 10s to 15s to tolerate cold-start model load
       // without aborting on legitimate requests.
@@ -202,6 +232,7 @@ async function extractFingerprintAndValidate(
           wallet_id: walletAddress,
           audio_samples_b64: audioSamplesB64,
           audio_sample_rate_hz: audioSampleRateHz,
+          commitment_new_hex: commitmentNewHex,
         }),
         signal: validateController.signal,
       });
@@ -216,6 +247,26 @@ async function extractFingerprintAndValidate(
           error: (errorBody as Record<string, string>).error || "Feature validation failed",
           reason: (errorBody as Record<string, string>).reason,
         };
+      }
+
+      // Parse the validator's success body for the signed receipt
+      // (master-list #146 Phase 4). Older validator deploys omit the field
+      // entirely — the SDK proceeds without a receipt and Phase 3's
+      // log-only on-chain check writes "no preceding instruction" to the
+      // tx logs. After Phase 5 enforcement flips, missing receipts will
+      // hard-fail mint_anchor; the executor + validator deploys must
+      // therefore be brought up to receipt-supporting versions before
+      // the on-chain enforcement flag flips.
+      try {
+        const successBody = (await validateResponse.json()) as {
+          signed_receipt?: SignedReceiptDto;
+        };
+        if (successBody.signed_receipt) {
+          signedReceipt = successBody.signed_receipt;
+        }
+      } catch {
+        // Body wasn't JSON — older validator returning empty 200, or
+        // proxy mangling. Treat as no-receipt and move on.
       }
     } catch (err) {
       // Network failure / timeout / abort. Previously this silently
@@ -236,10 +287,7 @@ async function extractFingerprintAndValidate(
     }
   }
 
-  const fingerprint = simhash(normalizedFeatures);
-  const tbh = await generateTBH(fingerprint);
-
-  return { ok: true, features, f0Contour, accelMagnitude, fingerprint, tbh };
+  return { ok: true, features, f0Contour, accelMagnitude, fingerprint, tbh, signedReceipt };
 }
 
 async function processSensorData(
@@ -329,7 +377,7 @@ async function processSensorData(
       reason: extraction.reason,
     };
   }
-  const { fingerprint, tbh, features } = extraction;
+  const { fingerprint, tbh, features, signedReceipt } = extraction;
 
   // Determine if this is a first verification.
   // Wallet-connected: check on-chain IdentityState PDA (source of truth).
@@ -438,10 +486,23 @@ async function processSensorData(
 
   if (wallet && connection) {
     if (isFirstVerification) {
+      // Pass the validator-signed receipt (when present) so submitViaWallet
+      // can bundle an `Ed25519Program::verify` instruction before
+      // `mint_anchor` in the same atomic transaction (master-list #146
+      // Phase 4). Re-verification doesn't need the receipt — the binding
+      // is already enforced via the VerificationResult PDA path that
+      // `update_anchor` consumes.
       submission = await submitViaWallet(
         solanaProof ?? { proofBytes: new Uint8Array(0), publicInputs: [] },
         tbh.commitmentBytes,
-        { wallet, connection, isFirstVerification: true, relayerUrl: config.relayerUrl, relayerApiKey: config.relayerApiKey }
+        {
+          wallet,
+          connection,
+          isFirstVerification: true,
+          relayerUrl: config.relayerUrl,
+          relayerApiKey: config.relayerApiKey,
+          signedReceipt,
+        }
       );
     } else {
       submission = await submitViaWallet(solanaProof!, tbh.commitmentBytes, {
