@@ -195,7 +195,9 @@ export function extractFormantRatios(
 
   for (let i = 0; i < numFrames; i++) {
     const start = i * hopSize;
-    const frame = samples.slice(start, start + frameSize);
+    // Read-only — windowed below is a fresh allocation that copies values
+    // out, so a zero-copy view here is bit-equivalent and saves a Float32Array.
+    const frame = samples.subarray(start, start + frameSize);
 
     // Apply Hamming window
     const windowed = new Float32Array(frameSize);
