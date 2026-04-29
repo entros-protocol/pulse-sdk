@@ -84,7 +84,10 @@ async function detectF0Contour(
 
   for (let i = 0; i < numFrames; i++) {
     const start = i * hopSize;
-    const frame = samples.slice(start, start + frameSize);
+    // `subarray` is a zero-copy view — `detect()` and the RMS loop below
+    // are read-only, so we save ~1.2k Float32Array allocations per session
+    // (and matching GC pressure on Hermes).
+    const frame = samples.subarray(start, start + frameSize);
 
     // F0 detection
     const pitch = detect(frame);
@@ -221,7 +224,8 @@ function computeHNR(
     if (f0 <= 0) continue; // Skip unvoiced frames
 
     const start = i * hopSize;
-    const frame = samples.slice(start, start + frameSize);
+    // Read-only autocorrelation — view is safe.
+    const frame = samples.subarray(start, start + frameSize);
     const period = Math.round(sampleRate / f0);
 
     if (period <= 0 || period >= frame.length) continue;
@@ -262,12 +266,14 @@ async function computeLTAS(
   const flatnesses: number[] = [];
   const spreads: number[] = [];
   const numFrames = Math.floor((samples.length - frameSize) / hopSize) + 1;
+  // Pre-allocate the buffer Meyda receives — frames are exactly `frameSize`
+  // (the loop bounds guarantee no overrun), so we can overwrite each
+  // iteration via `.set()` instead of allocating ~1.2k Float32Arrays.
+  const paddedFrame = new Float32Array(frameSize);
 
   for (let i = 0; i < numFrames; i++) {
     const start = i * hopSize;
-    const frame = samples.slice(start, start + frameSize);
-    const paddedFrame = new Float32Array(frameSize);
-    paddedFrame.set(frame);
+    paddedFrame.set(samples.subarray(start, start + frameSize), 0);
 
     const features = Meyda.extract(
       ["spectralCentroid", "spectralRolloff", "spectralFlatness", "spectralSpread"],
@@ -355,9 +361,18 @@ export async function extractSpeakerFeaturesDetailed(
     if (abs > peakAmp) peakAmp = abs;
   }
 
-  const normalizedSamples = peakAmp > 1e-6
-    ? new Float32Array(samples.map((s) => (s / peakAmp) * 0.9))
-    : samples;
+  // Single-allocation normalisation. Order of operations preserved exactly
+  // (`(s / peakAmp) * 0.9`) so the output is bit-identical to the previous
+  // `samples.map(...)` form.
+  let normalizedSamples: Float32Array;
+  if (peakAmp > 1e-6) {
+    normalizedSamples = new Float32Array(samples.length);
+    for (let i = 0; i < samples.length; i++) {
+      normalizedSamples[i] = (samples[i]! / peakAmp) * 0.9;
+    }
+  } else {
+    normalizedSamples = samples;
+  }
 
   // 1. F0 detection + amplitude contour (on normalized audio)
   const { f0, amplitudes: normalizedAmplitudes, periods } = await detectF0Contour(normalizedSamples, sampleRate);
