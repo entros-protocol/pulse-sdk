@@ -1,9 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Anchor program interactions use runtime IDL fetching, requiring dynamic typing.
 import type { SolanaProof } from "../proof/types";
-import type { SubmissionResult } from "./types";
+import type { SignedReceiptDto, SubmissionResult } from "./types";
 import { PROGRAM_IDS } from "../config";
 import { sdkLog, sdkWarn } from "../log";
+import { buildEd25519ReceiptIx } from "./receipt";
 
 /**
  * Best-effort SAS attestation request. POSTs to the executor's `/attest`
@@ -100,12 +101,26 @@ export async function submitViaWallet(
     isFirstVerification: boolean;
     relayerUrl?: string;
     relayerApiKey?: string;
+    /**
+     * Validator-signed mint receipt (master-list #146 Phase 4). Consumed
+     * only on the first-verification path: when present, the SDK prepends
+     * an `Ed25519Program::verify` instruction so on-chain `mint_anchor`
+     * can confirm the commitment was endorsed by the configured validator.
+     * Re-verification ignores the field entirely — `update_anchor` enforces
+     * binding via the VerificationResult PDA instead.
+     */
+    signedReceipt?: SignedReceiptDto;
   }
 ): Promise<SubmissionResult> {
   try {
     const anchor = await import("@coral-xyz/anchor");
-    const { PublicKey, SystemProgram, Transaction, ComputeBudgetProgram } =
-      await import("@solana/web3.js");
+    const {
+      PublicKey,
+      SystemProgram,
+      Transaction,
+      ComputeBudgetProgram,
+      SYSVAR_INSTRUCTIONS_PUBKEY,
+    } = await import("@solana/web3.js");
 
     const provider = new anchor.AnchorProvider(
       options.connection,
@@ -277,7 +292,22 @@ export async function submitViaWallet(
       });
       await options.connection.confirmTransaction(txSig, "confirmed");
     } else {
-      // First verification: mint anchor (already 1 transaction, no batching needed)
+      // First verification: mint anchor. Bundles an `Ed25519Program::verify`
+      // instruction before `mint_anchor` when the validator returned a
+      // signed receipt (master-list #146 Phase 4). The on-chain program
+      // inspects the preceding instruction via the Instructions sysvar to
+      // confirm the validator endorsed (wallet, commitment, validated_at)
+      // before allowing the mint.
+      //
+      // Transaction shape:
+      //   [0] (optional) Ed25519Program::verify(receipt)
+      //   [1] mint_anchor(initial_commitment)
+      //
+      // The `instructions_sysvar` account is required by the on-chain
+      // `MintAnchor` accounts struct as of Phase 3 — it must be present
+      // even when no receipt is bundled (the on-chain check is log-only
+      // until Phase 5 enforcement flips, but the Anchor framework itself
+      // requires the account match the IDL).
       const anchorIdl = await anchor.Program.fetchIdl(anchorProgramId, provider);
       if (!anchorIdl) {
         return {
@@ -323,7 +353,7 @@ export async function submitViaWallet(
         TOKEN_2022_PROGRAM_ID
       );
 
-      await anchorProgram.methods
+      const mintAnchorIx = await anchorProgram.methods
         .mintAnchor(Array.from(commitment))
         .accounts({
           user: provider.wallet.publicKey,
@@ -338,8 +368,46 @@ export async function submitViaWallet(
           systemProgram: SystemProgram.programId,
           protocolConfig: protocolConfigPda,
           treasury: treasuryPda,
+          instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
         })
-        .rpc();
+        .instruction();
+
+      let ed25519Ix: import("@solana/web3.js").TransactionInstruction | null = null;
+      if (options.signedReceipt) {
+        ed25519Ix = await buildEd25519ReceiptIx(options.signedReceipt);
+        if (ed25519Ix) {
+          sdkLog(
+            "[Entros SDK] Bundling validator-signed mint receipt before mint_anchor"
+          );
+        } else {
+          sdkWarn(
+            "[Entros SDK] signedReceipt provided but failed to decode; minting without binding"
+          );
+        }
+      } else {
+        // Phase 3 on-chain check is log-only when no preceding Ed25519 ix
+        // is present. Once Phase 5 enforcement flips, this code path will
+        // produce a hard rejection — keep the no-receipt fallback as a
+        // safety net for upgraded validators briefly omitting the field
+        // (e.g. Railway redeploy in progress).
+        sdkLog(
+          "[Entros SDK] No validator receipt available; minting without binding (Phase 3 log-only)"
+        );
+      }
+
+      const tx = new Transaction();
+      if (ed25519Ix) tx.add(ed25519Ix);
+      tx.add(mintAnchorIx);
+
+      tx.feePayer = provider.wallet.publicKey;
+      tx.recentBlockhash = (
+        await options.connection.getLatestBlockhash("confirmed")
+      ).blockhash;
+
+      txSig = await options.wallet.sendTransaction(tx, options.connection, {
+        skipPreflight: true,
+      });
+      await options.connection.confirmTransaction(txSig, "confirmed");
     }
 
     const attestationTx = options.relayerUrl
