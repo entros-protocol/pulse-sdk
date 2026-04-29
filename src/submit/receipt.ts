@@ -27,14 +27,17 @@ export function bytesToHex(bytes: Uint8Array): string {
 
 /**
  * Decode a hex string into a Uint8Array of the expected byte length. Returns
- * `null` on malformed input (odd length, non-hex characters, wrong length).
- * Permissive about a leading `0x` because some integrations may strip or
- * preserve it inconsistently.
+ * `null` on malformed input (odd length, non-lowercase-hex characters, wrong
+ * length). Permissive about a leading `0x` because some integrations may
+ * strip or preserve it inconsistently. Strict on case so a future validator
+ * regression that emits uppercase hex surfaces immediately rather than
+ * silently accepting drift from the wire-format contract (Rust `hex::encode`
+ * is canonically lowercase).
  */
 function hexToBytes(hex: string, expectedLen: number): Uint8Array | null {
   const trimmed = hex.startsWith("0x") || hex.startsWith("0X") ? hex.slice(2) : hex;
   if (trimmed.length !== expectedLen * 2) return null;
-  if (!/^[0-9a-fA-F]+$/.test(trimmed)) return null;
+  if (!/^[0-9a-f]+$/.test(trimmed)) return null;
   const out = new Uint8Array(expectedLen);
   for (let i = 0; i < expectedLen; i += 1) {
     out[i] = parseInt(trimmed.substr(i * 2, 2), 16);

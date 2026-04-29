@@ -264,9 +264,15 @@ async function extractFingerprintAndValidate(
         if (successBody.signed_receipt) {
           signedReceipt = successBody.signed_receipt;
         }
-      } catch {
-        // Body wasn't JSON — older validator returning empty 200, or
-        // proxy mangling. Treat as no-receipt and move on.
+      } catch (err) {
+        // Body wasn't JSON — typically an older validator returning an
+        // empty 200, or a proxy mangling the response. Surface a warn
+        // so operators can distinguish "validator-too-old" from a real
+        // validator misconfiguration. Treat as no-receipt and proceed.
+        const msg = err instanceof Error ? err.message : String(err);
+        sdkWarn(
+          `[Entros SDK] /validate-features returned 200 but body was not parseable JSON; proceeding without receipt: ${msg}`
+        );
       }
     } catch (err) {
       // Network failure / timeout / abort. Previously this silently

@@ -101,6 +101,32 @@ describe("decodeSignedReceipt", () => {
       })
     ).toBeNull();
   });
+
+  it("rejects uppercase hex to pin the wire-format contract", () => {
+    // Rust `hex::encode` (used by the validator) is canonically lowercase.
+    // Accepting uppercase here would mask a future validator regression
+    // that drifts to mixed/upper case. Surface it as a decode failure so
+    // the SDK fails fast instead of silently bundling a possibly-incorrect
+    // receipt encoding.
+    expect(
+      decodeSignedReceipt({
+        ...VALID_RECEIPT,
+        validator_pubkey_hex: VALIDATOR_PUBKEY_HEX.toUpperCase(),
+      })
+    ).toBeNull();
+    expect(
+      decodeSignedReceipt({
+        ...VALID_RECEIPT,
+        signature_hex: SIGNATURE_HEX.toUpperCase(),
+      })
+    ).toBeNull();
+    expect(
+      decodeSignedReceipt({
+        ...VALID_RECEIPT,
+        message_hex: MESSAGE_HEX.toUpperCase(),
+      })
+    ).toBeNull();
+  });
 });
 
 describe("buildEd25519ReceiptIx", () => {
