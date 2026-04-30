@@ -7,6 +7,33 @@ import { sdkLog, sdkWarn } from "../log";
 import { buildEd25519ReceiptIx } from "./receipt";
 
 /**
+ * Wait for a tx to confirm AND throw if the chain-side execution errored.
+ * web3.js 1.x's `connection.confirmTransaction` resolves successfully even
+ * when the tx reverted on chain (it only checks signature inclusion); the
+ * caller MUST inspect `value.err`. Without this, on-chain Anchor errors
+ * (CommitmentMismatch, MissingValidatorReceipt under master-list #146
+ * Phase 5, ResetCooldownActive, InsufficientFunds, etc.) are silently
+ * swallowed and `submitViaWallet` returns a "successful" txSignature for
+ * a tx that never mutated state — a credibility hit. The thrown message
+ * preserves the JSON `InstructionError` shape so downstream regex parsing
+ * can extract the `Custom` code.
+ */
+async function confirmAndCheck(
+  connection: any,
+  signature: string | undefined,
+): Promise<void> {
+  if (!signature) {
+    throw new Error("confirmAndCheck called without a transaction signature");
+  }
+  const confirmation = await connection.confirmTransaction(signature, "confirmed");
+  if (confirmation?.value?.err != null) {
+    throw new Error(
+      `Transaction failed on chain: ${JSON.stringify(confirmation.value.err)} (sig=${signature})`,
+    );
+  }
+}
+
+/**
  * Best-effort SAS attestation request. POSTs to the executor's `/attest`
  * endpoint with the wallet's public key, a server-issued challenge nonce,
  * and an `Entros-ATTEST:{wallet}:{timestamp}` ownership signature.
@@ -309,7 +336,7 @@ export async function submitViaWallet(
       txSig = await options.wallet.sendTransaction(tx, options.connection, {
         skipPreflight: true,
       });
-      await options.connection.confirmTransaction(txSig, "confirmed");
+      await confirmAndCheck(options.connection, txSig);
     } else {
       // First verification: mint anchor. Bundles an `Ed25519Program::verify`
       // instruction before `mint_anchor` when the validator returned a
@@ -445,7 +472,7 @@ export async function submitViaWallet(
       txSig = await options.wallet.sendTransaction(tx, options.connection, {
         skipPreflight: true,
       });
-      await options.connection.confirmTransaction(txSig, "confirmed");
+      await confirmAndCheck(options.connection, txSig);
     }
 
     const attestationTx = options.relayerUrl
@@ -552,7 +579,7 @@ export async function submitResetViaWallet(
       options.connection,
       { skipPreflight: true }
     );
-    await options.connection.confirmTransaction(txSig, "confirmed");
+    await confirmAndCheck(options.connection, txSig);
 
     // Request a fresh SAS attestation. The executor's /attest handler
     // closes any prior attestation for this wallet and creates a new one
