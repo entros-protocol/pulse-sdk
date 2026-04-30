@@ -1,0 +1,562 @@
+{
+  "address": "4F97jNoxQzT2qRbkWpW3ztC3Nz2TtKj3rnKG8ExgnrfV",
+  "metadata": {
+    "name": "entros_verifier",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "ZK proof verification program for Entros Protocol"
+  },
+  "instructions": [
+    {
+      "name": "close_challenge",
+      "docs": [
+        "Close a used or expired challenge account to reclaim rent."
+      ],
+      "discriminator": [
+        29,
+        156,
+        109,
+        17,
+        41,
+        99,
+        71,
+        236
+      ],
+      "accounts": [
+        {
+          "name": "challenger",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "challenge",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_verification_result",
+      "docs": [
+        "Close a verification result account to reclaim rent."
+      ],
+      "discriminator": [
+        202,
+        203,
+        62,
+        127,
+        7,
+        157,
+        143,
+        12
+      ],
+      "accounts": [
+        {
+          "name": "verifier",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "verification_result",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_challenge",
+      "docs": [
+        "Create a verification challenge with a client-generated nonce."
+      ],
+      "discriminator": [
+        170,
+        244,
+        47,
+        1,
+        1,
+        15,
+        173,
+        239
+      ],
+      "accounts": [
+        {
+          "name": "challenger",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "challenge",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "challenger"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "nonce",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "verify_proof",
+      "docs": [
+        "Verify a proof against a challenge.",
+        "Validates the challenge is unused and not expired, runs mock verification,",
+        "and stores the result."
+      ],
+      "discriminator": [
+        217,
+        211,
+        191,
+        110,
+        144,
+        13,
+        186,
+        98
+      ],
+      "accounts": [
+        {
+          "name": "verifier",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "challenge",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "verifier"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "verification_result",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  101,
+                  114,
+                  105,
+                  102,
+                  105,
+                  99,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "verifier"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "proof_bytes",
+          "type": "bytes"
+        },
+        {
+          "name": "public_inputs",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        },
+        {
+          "name": "nonce",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Challenge",
+      "discriminator": [
+        119,
+        250,
+        161,
+        121,
+        119,
+        81,
+        22,
+        208
+      ]
+    },
+    {
+      "name": "VerificationResult",
+      "discriminator": [
+        104,
+        111,
+        80,
+        172,
+        219,
+        191,
+        162,
+        38
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "ChallengeCreated",
+      "discriminator": [
+        166,
+        178,
+        174,
+        178,
+        11,
+        172,
+        98,
+        243
+      ]
+    },
+    {
+      "name": "VerificationComplete",
+      "discriminator": [
+        22,
+        74,
+        77,
+        232,
+        220,
+        46,
+        59,
+        120
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidProofFormat",
+      "msg": "Invalid proof format"
+    },
+    {
+      "code": 6001,
+      "name": "ProofVerificationFailed",
+      "msg": "Proof verification failed"
+    },
+    {
+      "code": 6002,
+      "name": "ChallengeExpired",
+      "msg": "Challenge has expired"
+    },
+    {
+      "code": 6003,
+      "name": "ChallengeAlreadyUsed",
+      "msg": "Challenge already used"
+    },
+    {
+      "code": 6004,
+      "name": "InvalidPublicInputs",
+      "msg": "Invalid public inputs"
+    },
+    {
+      "code": 6005,
+      "name": "ChallengeNotUsed",
+      "msg": "Challenge must be used before closing"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidNonce",
+      "msg": "Invalid nonce: must not be all zeros"
+    },
+    {
+      "code": 6007,
+      "name": "ArithmeticOverflow",
+      "msg": "Arithmetic overflow"
+    }
+  ],
+  "types": [
+    {
+      "name": "Challenge",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "challenger",
+            "docs": [
+              "The user who requested the challenge"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce",
+            "docs": [
+              "Random nonce for anti-replay"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "created_at",
+            "docs": [
+              "Unix timestamp when challenge was created"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "expires_at",
+            "docs": [
+              "Unix timestamp when challenge expires"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "used",
+            "docs": [
+              "Whether this challenge has been consumed"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ChallengeCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "challenger",
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "expires_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VerificationComplete",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "verifier",
+            "type": "pubkey"
+          },
+          {
+            "name": "is_valid",
+            "type": "bool"
+          },
+          {
+            "name": "nonce",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "VerificationResult",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "verifier",
+            "docs": [
+              "Who submitted the proof"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "proof_hash",
+            "docs": [
+              "Hash of the proof bytes for audit trail"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "verified_at",
+            "docs": [
+              "Unix timestamp of verification"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "is_valid",
+            "docs": [
+              "Whether the proof was valid.",
+              "Always true for persisted records — invalid proofs revert the transaction",
+              "and never create a VerificationResult. Retained for account layout stability."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "challenge_nonce",
+            "docs": [
+              "The challenge nonce that was consumed"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "commitment_new",
+            "docs": [
+              "New fingerprint commitment from public_inputs[0]. Read cross-program",
+              "by entros-anchor::update_anchor to bind the proof to the identity update."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "commitment_prev",
+            "docs": [
+              "Previous fingerprint commitment from public_inputs[1]. Read cross-program",
+              "by entros-anchor::update_anchor to bind to the identity's stored commitment."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "threshold",
+            "docs": [
+              "Hamming threshold from public_inputs[2]. Bounded at proof time to prevent",
+              "attacker-chosen circuit parameters."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "min_distance",
+            "docs": [
+              "Hamming min_distance from public_inputs[3]. Bounded at proof time to",
+              "prevent replay (Hamming=0) attacks via attacker-chosen min_distance=0."
+            ],
+            "type": "u16"
+          }
+        ]
+      }
+    }
+  ]
+}

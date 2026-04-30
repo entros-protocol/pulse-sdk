@@ -1,9 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// Anchor program interactions use runtime IDL fetching, requiring dynamic typing.
+// Anchor program interactions are typed dynamically because the SDK's
+// peer dep on @coral-xyz/anchor + @solana/web3.js is loaded via dynamic
+// import (avoiding a hard dep for tree-shaking).
+import type { Idl } from "@coral-xyz/anchor";
 import type { SolanaProof } from "../proof/types";
 import type { SignedReceiptDto, SubmissionResult } from "./types";
 import { PROGRAM_IDS } from "../config";
 import { sdkLog, sdkWarn } from "../log";
+import { entrosAnchorIdl, entrosVerifierIdl } from "../protocol/idl";
 import { buildEd25519ReceiptIx } from "./receipt";
 
 /**
@@ -256,26 +260,14 @@ export async function submitViaWallet(
         registryProgramId
       );
 
-      // Fetch both IDLs
-      const [verifierIdl, anchorIdl] = await Promise.all([
-        anchor.Program.fetchIdl(verifierProgramId, provider),
-        anchor.Program.fetchIdl(anchorProgramId, provider),
-      ]);
-      if (!verifierIdl) {
-        return {
-          success: false,
-          error: `Failed to fetch entros-verifier IDL from Solana (program ${PROGRAM_IDS.entrosVerifier}). Check your RPC endpoint is reachable and on the correct cluster.`,
-        };
-      }
-      if (!anchorIdl) {
-        return {
-          success: false,
-          error: `Failed to fetch entros-anchor IDL from Solana (program ${PROGRAM_IDS.entrosAnchor}). Check your RPC endpoint is reachable and on the correct cluster.`,
-        };
-      }
-
-      const verifierProgram: any = new anchor.Program(verifierIdl, provider);
-      const anchorProgram: any = new anchor.Program(anchorIdl, provider);
+      const verifierProgram: any = new anchor.Program(
+        entrosVerifierIdl as Idl,
+        provider,
+      );
+      const anchorProgram: any = new anchor.Program(
+        entrosAnchorIdl as Idl,
+        provider,
+      );
       const { Buffer: SolBuffer } = await import("buffer");
 
       // Build all three instructions without sending
@@ -350,15 +342,10 @@ export async function submitViaWallet(
       // even when no receipt is bundled (the on-chain check is currently
       // log-only, but the Anchor framework itself requires every account
       // listed in the IDL to be supplied).
-      const anchorIdl = await anchor.Program.fetchIdl(anchorProgramId, provider);
-      if (!anchorIdl) {
-        return {
-          success: false,
-          error: `Failed to fetch entros-anchor IDL from Solana (program ${PROGRAM_IDS.entrosAnchor}). Check your RPC endpoint is reachable and on the correct cluster.`,
-        };
-      }
-
-      const anchorProgram: any = new anchor.Program(anchorIdl, provider);
+      const anchorProgram: any = new anchor.Program(
+        entrosAnchorIdl as Idl,
+        provider,
+      );
 
       const [identityPda] = PublicKey.findProgramAddressSync(
         [new TextEncoder().encode("identity"), provider.wallet.publicKey.toBuffer()],
@@ -543,14 +530,10 @@ export async function submitResetViaWallet(
       registryProgramId
     );
 
-    const anchorIdl = await anchor.Program.fetchIdl(anchorProgramId, provider);
-    if (!anchorIdl) {
-      return {
-        success: false,
-        error: `Failed to fetch entros-anchor IDL from Solana (program ${PROGRAM_IDS.entrosAnchor}). Check your RPC endpoint is reachable and on the correct cluster.`,
-      };
-    }
-    const anchorProgram: any = new anchor.Program(anchorIdl, provider);
+    const anchorProgram: any = new anchor.Program(
+      entrosAnchorIdl as Idl,
+      provider,
+    );
 
     const resetIx = await anchorProgram.methods
       .resetIdentityState(Array.from(commitment))

@@ -1,0 +1,1683 @@
+{
+  "address": "GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2",
+  "metadata": {
+    "name": "entros_anchor",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Non-transferable identity token for Entros Protocol"
+  },
+  "docs": [
+    "Mint account space for Token-2022 with NonTransferable extension.",
+    "Base mint = 82 bytes, account type = 1 byte, extension type (2) + length (2) = 4 bytes,",
+    "NonTransferable data = 0 bytes. Plus multisig padding from Token-2022.",
+    "We use a constant derived from the Token-2022 spec."
+  ],
+  "instructions": [
+    {
+      "name": "authorize_new_wallet",
+      "docs": [
+        "Authorize a new wallet by 2 signers. This can be done many times before invoking migrate_identity()"
+      ],
+      "discriminator": [
+        178,
+        186,
+        185,
+        108,
+        51,
+        219,
+        107,
+        197
+      ],
+      "accounts": [
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "identity_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "signer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "signer_new",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "mint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "signer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "signer"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "migrate_identity",
+      "docs": [
+        "Migrate from an user's old Anchor IdentityState PDA to a new one",
+        "After this function call, the orphaned 0-balance ATA, pointing at a closed mint, locks ~0.002 SOL of rent. This ATA can be recovered by the old wallet calling closeAccount()"
+      ],
+      "discriminator": [
+        161,
+        192,
+        70,
+        80,
+        47,
+        37,
+        26,
+        10
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "identity_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "initialization ordering. PDA seeds ensure uniqueness per user."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_account",
+          "writable": true
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                81,
+                130,
+                250,
+                230,
+                30,
+                253,
+                246,
+                69,
+                82,
+                96,
+                7,
+                173,
+                78,
+                160,
+                131,
+                188,
+                70,
+                106,
+                173,
+                59,
+                102,
+                163,
+                198,
+                189,
+                82,
+                37,
+                225,
+                38,
+                52,
+                233,
+                157,
+                117
+              ]
+            }
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                81,
+                130,
+                250,
+                230,
+                30,
+                253,
+                246,
+                69,
+                82,
+                96,
+                7,
+                173,
+                78,
+                160,
+                131,
+                188,
+                70,
+                106,
+                173,
+                59,
+                102,
+                163,
+                198,
+                189,
+                82,
+                37,
+                225,
+                38,
+                52,
+                233,
+                157,
+                117
+              ]
+            }
+          }
+        },
+        {
+          "name": "wallet_old",
+          "writable": true
+        },
+        {
+          "name": "identity_state_old",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wallet_old"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint_old",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wallet_old"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_account_old",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "wallet_old"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "mint_old"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "mint_anchor",
+      "docs": [
+        "Mint a new Entros Anchor identity for the caller.",
+        "Creates a NonTransferable Token-2022 mint, mints 1 token to the user's ATA,",
+        "and initializes the IdentityState PDA."
+      ],
+      "discriminator": [
+        68,
+        56,
+        113,
+        102,
+        236,
+        152,
+        146,
+        60
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "identity_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "initialization ordering. PDA seeds ensure uniqueness per user."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_account",
+          "writable": true
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                81,
+                130,
+                250,
+                230,
+                30,
+                253,
+                246,
+                69,
+                82,
+                96,
+                7,
+                173,
+                78,
+                160,
+                131,
+                188,
+                70,
+                106,
+                173,
+                59,
+                102,
+                163,
+                198,
+                189,
+                82,
+                37,
+                225,
+                38,
+                52,
+                233,
+                157,
+                117
+              ]
+            }
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                81,
+                130,
+                250,
+                230,
+                30,
+                253,
+                246,
+                69,
+                82,
+                96,
+                7,
+                173,
+                78,
+                160,
+                131,
+                188,
+                70,
+                106,
+                173,
+                59,
+                102,
+                163,
+                198,
+                189,
+                82,
+                37,
+                225,
+                38,
+                52,
+                233,
+                157,
+                117
+              ]
+            }
+          }
+        },
+        {
+          "name": "instructions_sysvar",
+          "docs": [
+            "receipt verification (master-list #146 Phase 3) to inspect the",
+            "preceding Ed25519Program::verify instruction in the same tx.",
+            "Address is constrained to the canonical sysvar pubkey, so the",
+            "program is guaranteed to be reading the real sysvar regardless of",
+            "what the client passes."
+          ],
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "initial_commitment",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "reset_identity_state",
+      "docs": [
+        "Reset the caller's identity state to a fresh baseline.",
+        "",
+        "Recovery path for users whose client-side fingerprint envelope is",
+        "unrecoverable (cleared site data, new device, corrupted keystore).",
+        "Without this instruction the only answer is \"mint a new wallet,\"",
+        "which discards on-chain history and the SAS attestation. Reset",
+        "rotates `current_commitment` in place and zeroes verification",
+        "history so a compromised wallet cannot inherit reputation.",
+        "",
+        "Defenses:",
+        "- Signer constraint on `authority` proves wallet ownership.",
+        "- 7-day cooldown (`RESET_COOLDOWN_SECS`) bounds abuse frequency.",
+        "- Full zero of `verification_count`, `trust_score`, and",
+        "`recent_timestamps` means an attacker who compromises the",
+        "wallet key and passes Tier 1 validation starts from zero.",
+        "- Verification fee charged, matching mint/update economics.",
+        "",
+        "No ZK proof is consumed: there is no prior fingerprint to",
+        "Hamming-compare against, and the Hamming circuit's",
+        "`min_distance ≥ 3` constraint would reject a same-fingerprint",
+        "proof anyway. Live-humanness evidence comes from the Tier 1",
+        "validation pipeline at the SAS attestation step (handled by",
+        "the off-chain executor, not this instruction)."
+      ],
+      "discriminator": [
+        26,
+        78,
+        86,
+        143,
+        247,
+        132,
+        85,
+        203
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "identity_state",
+          "docs": [
+            "may realloc legacy-layout accounts (207 or 543 bytes) to the current",
+            "551-byte layout before deserialization. PDA validated by seeds;",
+            "ownership verified in instruction body after deserialization."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "protocol_config",
+          "docs": [
+            "Supplies the verification fee amount charged on reset."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                81,
+                130,
+                250,
+                230,
+                30,
+                253,
+                246,
+                69,
+                82,
+                96,
+                7,
+                173,
+                78,
+                160,
+                131,
+                188,
+                70,
+                106,
+                173,
+                59,
+                102,
+                163,
+                198,
+                189,
+                82,
+                37,
+                225,
+                38,
+                52,
+                233,
+                157,
+                117
+              ]
+            }
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                81,
+                130,
+                250,
+                230,
+                30,
+                253,
+                246,
+                69,
+                82,
+                96,
+                7,
+                173,
+                78,
+                160,
+                131,
+                188,
+                70,
+                106,
+                173,
+                59,
+                102,
+                163,
+                198,
+                189,
+                82,
+                37,
+                225,
+                38,
+                52,
+                233,
+                157,
+                117
+              ]
+            }
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "new_commitment",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "update_anchor",
+      "docs": [
+        "Update the identity state after a successful proof verification.",
+        "",
+        "Trust score is computed automatically from verification history and protocol config.",
+        "Handles transparent migration from old (10-slot) to new (52-slot) account layouts.",
+        "",
+        "Requires a matching, fresh `VerificationResult` PDA (owned by entros-verifier)",
+        "whose `commitment_new` equals `new_commitment` and whose `commitment_prev`",
+        "equals the identity's current stored commitment. Without this binding the",
+        "instruction would accept any commitment with no biometric proof — allowing",
+        "trust-score farming via per-call fee payment, which contradicts the",
+        "protocol's economic deterrence model. See AUDIT.md for details.",
+        "",
+        "The `verification_nonce` argument supplies the challenge nonce used to",
+        "derive the VerificationResult PDA (`seeds = [b\"verification\", authority, nonce]`).",
+        "Single-use is enforced implicitly: after this call, `current_commitment`",
+        "rotates to `new_commitment`, so the consumed VerificationResult's",
+        "`commitment_prev` no longer matches on any future call."
+      ],
+      "discriminator": [
+        120,
+        192,
+        72,
+        245,
+        112,
+        246,
+        119,
+        135
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "identity_state",
+          "docs": [
+            "from old (10-slot) to new (52-slot) account layouts. PDA validated by seeds.",
+            "Ownership verified in instruction body after deserialization."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "verification_result",
+          "docs": [
+            "PDA seeds validated by Anchor; layout + owner + cross-field constraints",
+            "validated in instruction body. Binds the ZK proof to this specific",
+            "update — without this account, update_anchor would accept any commitment",
+            "with no proof."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  101,
+                  114,
+                  105,
+                  102,
+                  105,
+                  99,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              },
+              {
+                "kind": "arg",
+                "path": "verification_nonce"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                48,
+                50,
+                94,
+                115,
+                90,
+                162,
+                108,
+                8,
+                240,
+                151,
+                76,
+                223,
+                101,
+                176,
+                170,
+                86,
+                254,
+                247,
+                252,
+                28,
+                240,
+                145,
+                60,
+                108,
+                42,
+                129,
+                105,
+                32,
+                232,
+                212,
+                226,
+                52
+              ]
+            }
+          }
+        },
+        {
+          "name": "protocol_config",
+          "docs": [
+            "Validated by seeds + owner via seeds::program."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                81,
+                130,
+                250,
+                230,
+                30,
+                253,
+                246,
+                69,
+                82,
+                96,
+                7,
+                173,
+                78,
+                160,
+                131,
+                188,
+                70,
+                106,
+                173,
+                59,
+                102,
+                163,
+                198,
+                189,
+                82,
+                37,
+                225,
+                38,
+                52,
+                233,
+                157,
+                117
+              ]
+            }
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                81,
+                130,
+                250,
+                230,
+                30,
+                253,
+                246,
+                69,
+                82,
+                96,
+                7,
+                173,
+                78,
+                160,
+                131,
+                188,
+                70,
+                106,
+                173,
+                59,
+                102,
+                163,
+                198,
+                189,
+                82,
+                37,
+                225,
+                38,
+                52,
+                233,
+                157,
+                117
+              ]
+            }
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "new_commitment",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "verification_nonce",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "IdentityState",
+      "discriminator": [
+        156,
+        32,
+        87,
+        93,
+        52,
+        155,
+        248,
+        207
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "AnchorMinted",
+      "discriminator": [
+        11,
+        188,
+        6,
+        169,
+        20,
+        50,
+        128,
+        172
+      ]
+    },
+    {
+      "name": "AnchorReset",
+      "discriminator": [
+        183,
+        48,
+        146,
+        155,
+        112,
+        20,
+        140,
+        31
+      ]
+    },
+    {
+      "name": "AnchorUpdated",
+      "discriminator": [
+        112,
+        73,
+        210,
+        183,
+        57,
+        84,
+        103,
+        59
+      ]
+    },
+    {
+      "name": "MigrateIdentityEvent",
+      "discriminator": [
+        33,
+        239,
+        166,
+        187,
+        108,
+        47,
+        49,
+        139
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidCommitment",
+      "msg": "Invalid commitment: must be 32 non-zero bytes"
+    },
+    {
+      "code": 6001,
+      "name": "Unauthorized",
+      "msg": "Unauthorized: caller is not the identity owner"
+    },
+    {
+      "code": 6002,
+      "name": "ArithmeticOverflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidProtocolConfig",
+      "msg": "Invalid protocol config account"
+    },
+    {
+      "code": 6004,
+      "name": "InvalidIdentityState",
+      "msg": "Identity state account failed to deserialize"
+    },
+    {
+      "code": 6005,
+      "name": "IdentitySerializationFailed",
+      "msg": "Identity state account failed to serialize"
+    },
+    {
+      "code": 6006,
+      "name": "VerificationResultWrongOwner",
+      "msg": "VerificationResult account is owned by the wrong program"
+    },
+    {
+      "code": 6007,
+      "name": "StaleVerificationResult",
+      "msg": "VerificationResult account has stale layout (pre-binding-patch)"
+    },
+    {
+      "code": 6008,
+      "name": "VerifierMismatch",
+      "msg": "VerificationResult verifier does not match the signing authority"
+    },
+    {
+      "code": 6009,
+      "name": "ProofExpired",
+      "msg": "Proof is too old to consume (MAX_PROOF_AGE_SECS exceeded)"
+    },
+    {
+      "code": 6010,
+      "name": "CommitmentMismatch",
+      "msg": "Proof commitment_new does not match the submitted new_commitment"
+    },
+    {
+      "code": 6011,
+      "name": "PrevCommitmentMismatch",
+      "msg": "Proof commitment_prev does not match the identity's current_commitment"
+    },
+    {
+      "code": 6012,
+      "name": "ResetCooldownActive",
+      "msg": "Reset cooldown has not elapsed since the last reset"
+    },
+    {
+      "code": 6013,
+      "name": "UnauthorizedNewWallet",
+      "msg": "caller is not authorized by the old identity"
+    },
+    {
+      "code": 6014,
+      "name": "ProofFromFuture",
+      "msg": "VerificationResult.verified_at is in the future relative to the cluster clock"
+    },
+    {
+      "code": 6015,
+      "name": "MissingValidatorReceipt",
+      "msg": "mint_anchor expected a preceding Ed25519Program::verify instruction with a validator-signed receipt; none found"
+    },
+    {
+      "code": 6016,
+      "name": "ReceiptValidatorMismatch",
+      "msg": "Receipt was signed by a key that does not match ProtocolConfig.validator_pubkey"
+    },
+    {
+      "code": 6017,
+      "name": "ReceiptCommitmentMismatch",
+      "msg": "Receipt commitment does not match the mint_anchor commitment argument"
+    },
+    {
+      "code": 6018,
+      "name": "ReceiptWalletMismatch",
+      "msg": "Receipt wallet does not match the mint signer"
+    },
+    {
+      "code": 6019,
+      "name": "ReceiptExpired",
+      "msg": "Receipt has aged past MAX_RECEIPT_AGE_SECS"
+    },
+    {
+      "code": 6020,
+      "name": "ReceiptFromFuture",
+      "msg": "Receipt validated_at is in the future relative to the cluster clock"
+    },
+    {
+      "code": 6021,
+      "name": "MalformedReceiptMessage",
+      "msg": "Receipt message has malformed length or layout"
+    }
+  ],
+  "types": [
+    {
+      "name": "AnchorMinted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "commitment",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "AnchorReset",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "commitment",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "AnchorUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "verification_count",
+            "type": "u32"
+          },
+          {
+            "name": "trust_score",
+            "type": "u16"
+          },
+          {
+            "name": "commitment",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "IdentityState",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "docs": [
+              "The user's wallet pubkey"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "creation_timestamp",
+            "docs": [
+              "When the identity was first minted"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "last_verification_timestamp",
+            "docs": [
+              "Most recent successful verification"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "verification_count",
+            "docs": [
+              "Total successful verifications"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "trust_score",
+            "docs": [
+              "Computed reputation metric"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "current_commitment",
+            "docs": [
+              "Latest Poseidon commitment H_TBH"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "The NonTransferable mint associated with this identity"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "recent_timestamps",
+            "docs": [
+              "Timestamps of last 52 verifications (newest at index 0).",
+              "52 slots covers 1 year of weekly or 4+ years of monthly verifications.",
+              "Older entries contribute negligible score due to exponential recency decay."
+            ],
+            "type": {
+              "array": [
+                "i64",
+                52
+              ]
+            }
+          },
+          {
+            "name": "last_reset_timestamp",
+            "docs": [
+              "Most recent `reset_identity_state` invocation. Zero when the identity",
+              "has never been reset (including freshly minted accounts and accounts",
+              "created before this field existed and then realloc'd in-place)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "new_wallet",
+            "docs": [
+              "new wallet for migrate_identity()"
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MigrateIdentityEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet_old",
+            "type": "pubkey"
+          },
+          {
+            "name": "wallet_new",
+            "type": "pubkey"
+          },
+          {
+            "name": "identity_old",
+            "type": "pubkey"
+          },
+          {
+            "name": "identity_new",
+            "type": "pubkey"
+          }
+        ]
+      }
+    }
+  ]
+}

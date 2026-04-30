@@ -1,5 +1,7 @@
+import type { Idl } from "@coral-xyz/anchor";
 import { PROGRAM_IDS } from "../config";
 import { sdkWarn } from "../log";
+import { entrosAnchorIdl } from "../protocol/idl";
 import type { IdentityState, StoredVerificationData } from "./types";
 import {
   hasCryptoSupport,
@@ -66,6 +68,18 @@ function isPlaintextData(obj: unknown): obj is StoredVerificationData {
 
 /**
  * Fetch identity state from the on-chain IdentityState PDA.
+ *
+ * Uses the bundled `entros_anchor.json` IDL (copied verbatim from
+ * `protocol-core/target/idl/`) instead of `Program.fetchIdl`, which
+ * adds a 150-300ms RPC round-trip per call to fetch the IDL from chain.
+ * Account decoding is identical; the only difference is that IDL changes
+ * now require an SDK bump rather than a chain-side IDL upload — in
+ * practice that's already true since on-chain Anchor changes need
+ * matching SDK updates anyway.
+ *
+ * When the on-chain `entros_anchor` program changes, re-copy
+ * `protocol-core/target/idl/entros_anchor.json` into `src/protocol/idl/`
+ * and bump the SDK minor version.
  */
 export async function fetchIdentityState(
   walletPubkey: string,
@@ -84,12 +98,7 @@ export async function fetchIdentityState(
     const accountInfo = await connection.getAccountInfo(identityPda);
     if (!accountInfo) return null;
 
-    const idl = await anchor.Program.fetchIdl(programId, {
-      connection,
-    } as any);
-    if (!idl) return null;
-
-    const coder = new anchor.BorshAccountsCoder(idl);
+    const coder = new anchor.BorshAccountsCoder(entrosAnchorIdl as Idl);
     const decoded = coder.decode("identityState", accountInfo.data);
 
     return {
