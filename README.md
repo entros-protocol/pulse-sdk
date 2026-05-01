@@ -5,6 +5,8 @@
 
 Client-side SDK for the Entros Protocol. Captures behavioral biometrics (voice, motion, touch), extracts 134 statistical features, generates a Groth16 zero-knowledge proof, and submits for on-chain verification on Solana. Raw biometric data stays on-device — only derived features and the proof are transmitted.
 
+> **Looking for a drop-in?** Most integrators want [`@entros/verify`](https://github.com/entros-protocol/entros-verify) — a popup-pattern React component that wraps this SDK and ships verification in five lines of JSX. Use this package directly when you need to own the verification UX (custom capture canvas, branded loading states, mobile-native).
+
 ## Install
 
 ```bash
