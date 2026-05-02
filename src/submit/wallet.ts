@@ -15,9 +15,9 @@ import { buildEd25519ReceiptIx } from "./receipt";
  * web3.js 1.x's `connection.confirmTransaction` resolves successfully even
  * when the tx reverted on chain (it only checks signature inclusion); the
  * caller MUST inspect `value.err`. Without this, on-chain Anchor errors
- * (CommitmentMismatch, MissingValidatorReceipt under master-list #146
- * Phase 5, ResetCooldownActive, InsufficientFunds, etc.) are silently
- * swallowed and `submitViaWallet` returns a "successful" txSignature for
+ * (CommitmentMismatch, MissingValidatorReceipt, ResetCooldownActive,
+ * InsufficientFunds, etc.) are silently swallowed and `submitViaWallet`
+ * returns a "successful" txSignature for
  * a tx that never mutated state — a credibility hit. The thrown message
  * preserves the JSON `InstructionError` shape so downstream regex parsing
  * can extract the `Custom` code.
@@ -490,9 +490,8 @@ export async function submitViaWallet(
  * and sets a 7-day cooldown before the next reset.
  *
  * Transaction shape: single instruction (no challenge / verify_proof /
- * ZK proof required). Humanness evidence comes from the Tier 1
- * validation pipeline invoked at the /attest step (same as mint and
- * update).
+ * ZK proof required). Humanness evidence comes from the validation
+ * pipeline invoked at the /attest step (same as mint and update).
  */
 export async function submitResetViaWallet(
   commitment: Uint8Array,

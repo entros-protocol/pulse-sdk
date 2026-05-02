@@ -1,12 +1,12 @@
 /**
  * Encode captured Float32 audio samples as base64 int16 PCM for transmission
- * to the validation service (master-list #89 phrase content binding).
+ * to the validation service.
  *
  * Audio is captured as `Float32Array` with values in `[-1.0, 1.0]` by the
- * Pulse SDK (`sensor/audio.ts`). The validation service's phrase-binding
- * module decodes base64 → Vec<i16> → Vec<f32> before feeding Whisper-tiny.
- * int16 is the standard compact representation: 2 bytes per sample vs 4 for
- * f32, halving wire size without perceptible quality loss for 16kHz speech.
+ * Pulse SDK (`sensor/audio.ts`). The validation service decodes the base64
+ * payload and feeds the audio into server-side transcription. int16 is the
+ * standard compact representation: 2 bytes per sample vs 4 for f32, halving
+ * wire size without perceptible quality loss for 16kHz speech.
  *
  * Byte layout: little-endian int16 samples, contiguous, no header.
  */

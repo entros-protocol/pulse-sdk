@@ -55,7 +55,7 @@ interface ExtractedFeatures {
   f0Contour: number[];
   /**
    * Acceleration magnitude (√(ax²+ay²+az²)) resampled to match the F0 frame count.
-   * Paired with `f0Contour` for server-side lagged cross-correlation.
+   * Paired with `f0Contour` for server-side analysis.
    * Empty array when motion data is absent.
    */
   accelMagnitude: number[];
@@ -206,11 +206,10 @@ async function extractFingerprintAndValidate(
         validateHeaders["X-API-Key"] = config.relayerApiKey;
       }
 
-      // Encode captured audio for server-side phrase content binding
-      // (master-list #89). Validation runs Whisper-tiny on the samples and
-      // phoneme-matches against the server-issued challenge phrase (which
-      // the executor looks up server-side via the wallet-keyed nonce
-      // registry). If audio is absent, the validation service skips the
+      // Encode captured audio for server-side phrase verification. The
+      // validator transcribes the audio and matches it against the
+      // server-issued challenge phrase (which the executor looks up by
+      // nonce). If audio is absent, the validation service skips the
       // phrase check — preserving backward compatibility for older SDKs.
       //
       // We also transmit the actual `sampleRate` from the capture — browsers
@@ -233,7 +232,7 @@ async function extractFingerprintAndValidate(
       // the field for `update_anchor`).
       const commitmentNewHex = bytesToHex(tbh.commitmentBytes);
 
-      // Whisper-tiny inference adds ~1s to the validation round trip.
+      // Server-side transcription adds ~1s to the validation round trip.
       // Extend timeout from 10s to 15s to tolerate cold-start model load
       // without aborting on legitimate requests.
       const validateController = new AbortController();
@@ -293,8 +292,8 @@ async function extractFingerprintAndValidate(
     } catch (err) {
       // Network failure / timeout / abort. Previously this silently
       // continued and skipped server-side validation, which let a
-      // network-failure attacker bypass Tier 1 / Tier 2 + phrase
-      // binding entirely. Return as a recoverable error instead;
+      // network-failure attacker bypass server-side checks entirely.
+      // Return as a recoverable error instead;
       // the host app can surface a retry CTA. The reason category
       // `validation_unavailable` is client-side only (distinct from
       // any server-side `ReasonCode`) and is intended for soft-fail
@@ -753,9 +752,16 @@ export class PulseSession {
       audio: {
         sampleRate: 16000,
         channelCount: 1,
+        // Capture constraints kept in lock-step with `sensor/audio.ts` —
+        // the two entry points (standalone capture vs session-based
+        // capture) must agree or the verify flow and direct-API
+        // consumers diverge.
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: false,
+        // @ts-expect-error -- W3C Media Capture Extensions property; not
+        // yet in lib.dom.d.ts as of TypeScript 6.0.
+        voiceIsolation: true,
       },
     });
 

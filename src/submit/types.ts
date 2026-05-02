@@ -41,8 +41,8 @@ export interface VerificationResult {
    * Server-side safe-reveal (validator → executor → SDK):
    *   - `variance_floor`, `entropy_bounds`, `temporal_coupling_low`,
    *     `phrase_content_mismatch`
-   *   Surfaced for the soft-reject + retry UX (master-list #94) so the
-   *   UI can render a per-category hint.
+   *   Surfaced for the soft-reject + retry UX so the UI can render a
+   *   per-category hint.
    *
    * Client-side (SDK-emitted):
    *   - `validation_unavailable` — the relayer's `/validate-features`

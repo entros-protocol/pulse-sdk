@@ -59,5 +59,5 @@ export { fetchChallenge } from "./challenge/fetch";
 export type { ChallengeResponse } from "./challenge/fetch";
 
 // Audio encoding helper (transmits captured PCM to the validation service
-// for phrase content binding; master-list #89).
+// for server-side verification).
 export { encodeAudioAsBase64 } from "./sensor/encode";

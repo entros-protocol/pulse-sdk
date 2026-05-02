@@ -2,11 +2,10 @@
 //
 // The authoritative challenge phrase is server-issued by the executor's
 // `/challenge` endpoint (a 5-word phrase drawn from a curated English-word
-// dictionary — see `entros-validation/src/word_dict.rs` for the source of truth).
-// This client-side generator only fires when the executor is unreachable; in
-// that path the server has no record of the phrase and validation skips
-// phrase content binding entirely (Tier 1 acoustic + Tier 2 cross-modal still
-// run). The fallback intentionally stays nonsense to avoid shipping the
+// dictionary). This client-side generator only fires when the executor is
+// unreachable; in that path the server has no record of the phrase and the
+// phrase verification step is skipped while other server-side checks still
+// run. The fallback intentionally stays nonsense to avoid shipping the
 // curated dictionary client-side — the JS bundle stays lean, and a degraded
 // session is visually distinct from a normal one for users / contributors
 // debugging.
@@ -31,8 +30,8 @@ function secureRandom(max: number): number {
  * FALLBACK challenge-phrase generator. Used only when the executor's
  * `/challenge` endpoint is unreachable; the authoritative phrase comes from
  * the server (5 real words drawn from a curated English-word dictionary). On
- * this fallback path, validation skips server-side phrase content binding —
- * Tier 1 acoustic + Tier 2 cross-modal still run.
+ * this fallback path, validation skips the phrase verification step —
+ * other server-side checks still run.
  *
  * Output is 5-6 syllable pairs, forming nonsensical but speakable words.
  * Uses crypto.getRandomValues for unpredictable challenge generation.

@@ -12,8 +12,8 @@ const TARGET_SAMPLE_RATE = 16000;
  * statistical summary is the only audio-related signal that crosses the
  * device boundary. The single sanctioned exception is the encoded base64
  * audio bytes sent to the validator's `/validate-features` endpoint for
- * server-side phrase content binding (master-list #89), which the validator
- * processes ephemerally — see entros.io paper §6.8 for the threat model.
+ * server-side verification, which the validator processes ephemerally —
+ * see entros.io for the privacy and threat model.
  *
  * NOTE: ScriptProcessorNode is deprecated in favor of AudioWorklet.
  * Migration planned for v1.0. ScriptProcessorNode is used because it
@@ -41,9 +41,30 @@ export async function captureAudio(
     audio: {
       sampleRate: TARGET_SAMPLE_RATE,
       channelCount: 1,
+      // Capture without browser-side audio processing — preserves the
+      // raw microphone signal for the SDK's downstream feature extraction
+      // and for server-side validation. Audio cleanup intended for the
+      // transcription path runs server-side, on a parallel path that
+      // never feeds back to feature extraction. Matches the mobile SDK's
+      // choice of Android's `MIC` source over `VOICE_RECOGNITION` —
+      // same architectural decision, two platforms.
       echoCancellation: false,
       noiseSuppression: false,
       autoGainControl: false,
+      // OS-level voice isolation request (W3C Media Capture Extensions,
+      // 2024). Activates the platform DSP on Chrome 124+ / ChromeOS and
+      // surfaces Apple Voice Isolation Mic Mode on Safari macOS Sonoma+
+      // / iOS 17+ when the user has it enabled in Control Center.
+      // Silently ignored on browsers/OSes without support, so the
+      // constraint costs nothing where it doesn't help. Distinct
+      // mechanism from `noiseSuppression` above — that flag controls
+      // WebRTC's hand-tuned AudioProcessingModule, this requests the
+      // OS-native neural effect.
+      // @ts-expect-error -- W3C Media Capture Extensions property; not
+      // yet in lib.dom.d.ts as of TypeScript 6.0. Removing this directive
+      // becomes a compile error once lib.dom catches up, signaling that
+      // it can be deleted.
+      voiceIsolation: true,
     },
   });
 

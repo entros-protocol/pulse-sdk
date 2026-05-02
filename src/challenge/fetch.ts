@@ -3,16 +3,14 @@
  *
  * The executor's `/challenge` endpoint returns a fresh nonce + 5-word phrase
  * bound to the wallet for a short TTL (default 60s). The phrase is drawn from
- * a curated English-word dictionary (source of truth at
- * `entros-validation/src/word_dict.rs`); shown to the user as the voice challenge
+ * a curated English-word dictionary, shown to the user as the voice challenge
  * and looked up server-side at `/validate-features` to verify the audio
- * matches the issued phrase (master-list #89, phrase content binding).
+ * matches the issued phrase.
  *
- * Server-issued phrases are the only safe design for content binding: if the
- * client generated the phrase and sent it to the server alongside the audio,
- * an attacker would submit their own phrase matching whatever content they
- * captured. With server issuance, the phrase is bound to the nonce and the
- * client cannot substitute it.
+ * Server-issued phrases are the only safe design here: if the client generated
+ * the phrase and sent it to the server alongside the audio, an attacker would
+ * submit their own phrase matching whatever content they captured. With server
+ * issuance, the phrase is bound to the nonce and the client cannot substitute it.
  */
 
 import { sdkWarn } from "../log";

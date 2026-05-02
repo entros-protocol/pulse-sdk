@@ -3,9 +3,9 @@ import { condense, variance, entropy } from "./statistics";
 
 /**
  * Compute per-sample acceleration magnitude |a| = √(ax² + ay² + az²) and
- * linearly resample to a target frame count. Used for Tier 2 cross-modal
- * temporal analysis against the F0 contour; the two time-series must share
- * the same frame count for direct correlation.
+ * linearly resample to a target frame count. Surfaced for server-side
+ * analysis paired against the F0 contour; the two time-series must share
+ * the same frame count when consumed downstream.
  *
  * Returns an empty array if motion data is absent or too short.
  */
@@ -77,8 +77,7 @@ export function extractMotionFeatures(samples: MotionSample[]): number[] {
   }
 
   // Jitter variance per axis: variance of windowed jerk variance.
-  // Real human tremor fluctuates over time (high jitter variance).
-  // Synthetic/replay data has constant jitter (low jitter variance).
+  // Captures temporal fluctuation in the motion signal.
   for (const values of Object.values(axes)) {
     const jerk = derivative(values);
     const windowSize = Math.max(5, Math.floor(jerk.length / 4));

@@ -336,17 +336,17 @@ function derivative(values: number[]): number[] {
 /**
  * Extract speaker-dependent audio features.
  *
- * Captures physiological vocal characteristics (F0, jitter, shimmer, HNR, formant
- * ratios) that are stable across different utterances from the same speaker.
- * Content-independent by design — different phrases produce similar feature values.
+ * Captures physiological vocal characteristics that are stable across
+ * different utterances from the same speaker. Content-independent by
+ * design — different phrases produce similar feature values.
  *
  * Returns 44 values.
  */
 /**
  * Extracts 44 speaker features AND the raw F0 contour.
- * The F0 contour is surfaced so Tier 2 cross-modal temporal analysis can be
- * performed server-side against the motion time-series. Feature vector shape
- * and semantics are unchanged.
+ * The F0 contour is surfaced so server-side analysis can pair it with
+ * the motion time-series. Feature vector shape and semantics are
+ * unchanged.
  */
 export async function extractSpeakerFeaturesDetailed(
   audio: AudioCapture,
@@ -479,7 +479,7 @@ export async function extractSpeakerFeaturesDetailed(
 /**
  * Extracts 44 speaker features. Backward-compatible wrapper that discards
  * the F0 contour; use `extractSpeakerFeaturesDetailed` when the contour is
- * needed (e.g. for Tier 2 server-side cross-modal analysis).
+ * needed (e.g. for server-side analysis).
  */
 export async function extractSpeakerFeatures(audio: AudioCapture): Promise<number[]> {
   const { features } = await extractSpeakerFeaturesDetailed(audio);
