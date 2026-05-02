@@ -19,6 +19,7 @@ import {
   extractAccelerationMagnitude,
 } from "./extraction/kinematic";
 import { fuseFeatures, fuseRawFeatures } from "./extraction/statistics";
+import { yieldToMainThread } from "./yield";
 import { simhash, hammingDistance } from "./hashing/simhash";
 import { generateTBH, bigintToBytes32 } from "./hashing/poseidon";
 import { prepareCircuitInput, generateProof } from "./proof/prover";
@@ -73,6 +74,10 @@ async function extractFeatures(data: SensorData): Promise<ExtractedFeatures> {
   const { features: audioFeatures, f0Contour } = await extractSpeakerFeaturesDetailed(
     data.audio,
   );
+  // The audio path is the dominant cost. Yield once it's done so the
+  // verify-flow spinner gets a paint frame before motion/touch extraction
+  // resumes the main-thread work.
+  await yieldToMainThread();
 
   const hasMotion = data.motion.length >= MIN_MOTION_SAMPLES;
   const hasTouch = data.touch.length >= MIN_TOUCH_SAMPLES;
@@ -83,8 +88,10 @@ async function extractFeatures(data: SensorData): Promise<ExtractedFeatures> {
       : hasMotion
         ? extractMotionFeatures(data.motion)
         : extractMouseDynamics(data.touch);
+  await yieldToMainThread();
 
   const touchFeatures = extractTouchFeatures(data.touch);
+  await yieldToMainThread();
 
   // Align acceleration magnitude to the F0 frame count for direct cross-correlation.
   // Empty if motion absent or F0 extraction produced no frames (e.g. silent capture).
@@ -152,6 +159,12 @@ async function extractFingerprintAndValidate(
   onProgress?: (stage: string) => void,
 ): Promise<ExtractionResult> {
   onProgress?.("Extracting features...");
+  // Let React render the new stage label before we re-enter the heavy
+  // synchronous extraction path. Without this, the host UI sets the
+  // string but the main thread is captured by extractFeatures before
+  // the spinner can repaint, and the user sees the previous stage's
+  // label until extraction completes.
+  await yieldToMainThread();
   const {
     raw: features,
     normalized: normalizedFeatures,
@@ -180,6 +193,10 @@ async function extractFingerprintAndValidate(
   let signedReceipt: SignedReceiptDto | undefined;
 
   onProgress?.("Validating...");
+  // Same rationale as the "Extracting features..." yield above — give
+  // React a paint opportunity before we encode the audio buffer to base64
+  // (~16k samples), which is the next synchronous chunk on the main thread.
+  await yieldToMainThread();
   if (config.relayerUrl && walletAddress) {
     try {
       const baseUrl = new URL(config.relayerUrl);

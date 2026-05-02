@@ -13,6 +13,7 @@
 import type { AudioCapture } from "../sensor/types";
 import { condense, entropy } from "./statistics";
 import { extractFormantRatios } from "./lpc";
+import { yieldToMainThread } from "../yield";
 import { sdkWarn } from "../log";
 
 /**
@@ -376,6 +377,10 @@ export async function extractSpeakerFeaturesDetailed(
 
   // 1. F0 detection + amplitude contour (on normalized audio)
   const { f0, amplitudes: normalizedAmplitudes, periods } = await detectF0Contour(normalizedSamples, sampleRate);
+  // YIN pitch detection is the heaviest single block in the audio path
+  // (~120 frames × O(frameSize²)). Yield before HNR + formant extraction
+  // so the verify UI can repaint the "Extracting features..." spinner.
+  await yieldToMainThread();
 
   // Compute amplitude from ORIGINAL samples (pre-normalization) for biometric consistency
   const amplitudes: number[] = [];
@@ -413,6 +418,10 @@ export async function extractSpeakerFeaturesDetailed(
   const hnrStats = condense(hnrValues);
   const hnrEntropy = entropy(hnrValues);
   const hnrFeatures = [hnrStats.mean, hnrStats.variance, hnrStats.skewness, hnrStats.kurtosis, hnrEntropy];
+  // HNR autocorrelation is per-frame and synchronous. Yield before LPC
+  // formant extraction so a paint frame can land between the two heaviest
+  // synchronous stages.
+  await yieldToMainThread();
 
   // 7. Formant ratios (8 values)
   const { f1f2, f2f3 } = extractFormantRatios(normalizedSamples, sampleRate, frameSize, hopSize);
@@ -422,6 +431,7 @@ export async function extractSpeakerFeaturesDetailed(
     f1f2Stats.mean, f1f2Stats.variance, f1f2Stats.skewness, f1f2Stats.kurtosis,
     f2f3Stats.mean, f2f3Stats.variance, f2f3Stats.skewness, f2f3Stats.kurtosis,
   ];
+  await yieldToMainThread();
 
   // 8. LTAS (8 values)
   const ltasFeatures = await computeLTAS(samples, sampleRate);
