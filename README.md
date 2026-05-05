@@ -32,7 +32,7 @@ if (result.success) {
 
 ### Walletless (liveness-check tier)
 
-For non-crypto users. No wallet, no SOL required. The integrator optionally funds verifications via the relayer API.
+For liveness checking without wallet onboarding. The integrator optionally funds verifications via the relayer API. Submits proofs to chain through the relayer; **does not issue SAS attestations** — for SAS attestations bound to a verified wallet, use the wallet-connected path above.
 
 ```typescript
 import { PulseSDK } from '@entros/pulse-sdk';
