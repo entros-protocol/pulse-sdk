@@ -53,7 +53,13 @@ function getHyperplanes(dimension: number): number[][] {
  * Uses deterministic random hyperplanes seeded from the protocol constant.
  * Similar feature vectors produce fingerprints with low Hamming distance.
  */
-const EXPECTED_FEATURE_DIMENSION = 134; // 44 speaker + 54 motion/mouse + 36 touch
+// v2 feature pipeline (post-Sprint-1): 176 speaker + 54 motion + 36 touch.
+// Sprint 2 expands motion to 86 and touch to 58 for a final 320; until that
+// lands, the kinematic blocks stay at their legacy sizes and the expected
+// total is 266. The constant is a soft warning gate (mismatch logs but the
+// hash still computes), so a stale-baseline session under an upgrading
+// SDK degrades gracefully rather than failing.
+const EXPECTED_FEATURE_DIMENSION = 266;
 
 export function simhash(features: number[]): TemporalFingerprint {
   if (features.length === 0) {

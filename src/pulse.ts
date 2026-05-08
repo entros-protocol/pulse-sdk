@@ -172,13 +172,19 @@ async function extractFingerprintAndValidate(
     accelMagnitude,
   } = await extractFeatures(sensorData);
 
-  // Diagnostic: log feature vector composition
+  // Diagnostic: log feature vector composition. Block boundaries follow the
+  // v2 layout: audio = 176 (44 legacy + 78 MFCC + 24 LPC + 16 formant
+  // trajectories + 9 voice quality + 5 pitch DCT), motion = 54, touch = 36.
+  // Sprint 2 will expand motion to 86 and touch to 58.
+  const AUDIO_END = 176;
+  const MOTION_END = AUDIO_END + 54;
+  const TOUCH_END = MOTION_END + 36;
   const nonZero = features.filter((v) => v !== 0).length;
   sdkLog(
     `[Entros SDK] Feature vector: ${features.length} dimensions, ${nonZero} non-zero. ` +
-    `Audio[0..43]: ${features.slice(0, 44).filter((v) => v !== 0).length} non-zero. ` +
-    `Motion/Mouse[44..97]: ${features.slice(44, 98).filter((v) => v !== 0).length} non-zero. ` +
-    `Touch[98..133]: ${features.slice(98, 134).filter((v) => v !== 0).length} non-zero.`
+    `Audio[0..${AUDIO_END - 1}]: ${features.slice(0, AUDIO_END).filter((v) => v !== 0).length} non-zero. ` +
+    `Motion/Mouse[${AUDIO_END}..${MOTION_END - 1}]: ${features.slice(AUDIO_END, MOTION_END).filter((v) => v !== 0).length} non-zero. ` +
+    `Touch[${MOTION_END}..${TOUCH_END - 1}]: ${features.slice(MOTION_END, TOUCH_END).filter((v) => v !== 0).length} non-zero.`
   );
 
   // Compute the SimHash fingerprint and Poseidon TBH commitment BEFORE the
@@ -483,10 +489,12 @@ async function processSensorData(
       );
       solanaProof = serializeProof(proof, publicSignals);
     } catch (proofErr: any) {
-      // Include diagnostics in error for mobile debugging (no devtools)
-      const audioNZ = features.slice(0, 44).filter((v) => v !== 0).length;
-      const motionNZ = features.slice(44, 98).filter((v) => v !== 0).length;
-      const touchNZ = features.slice(98, 134).filter((v) => v !== 0).length;
+      // Include diagnostics in error for mobile debugging (no devtools).
+      // Block boundaries match the v2 audio expansion: 176 audio + 54
+      // motion + 36 touch (Sprint 1 state; Sprint 2 will widen kinematics).
+      const audioNZ = features.slice(0, 176).filter((v) => v !== 0).length;
+      const motionNZ = features.slice(176, 230).filter((v) => v !== 0).length;
+      const touchNZ = features.slice(230, 266).filter((v) => v !== 0).length;
       const rawAudio = sensorData.audio?.samples.length ?? 0;
       const rawMotion = sensorData.motion.length;
       const rawTouch = sensorData.touch.length;

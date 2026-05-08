@@ -309,6 +309,19 @@ async function computeLTAS(
   const Meyda = await getMeyda();
   if (!Meyda) return new Array(8).fill(0);
 
+  // Meyda.extract's third argument is `previousSignal`, NOT options — so
+  // passing `{ sampleRate, bufferSize: frameSize }` there is silently
+  // ignored. Without setting the globals here, Meyda would use whatever
+  // bufferSize the previous extractor in the pipeline left behind (mfcc /
+  // voice-quality both set 2048; if they ran first, this function would
+  // see 2048; if they didn't run yet, it would see the default 512). That
+  // call-order dependency makes the per-frame spectral extractors
+  // non-deterministic across pipeline orderings — the exact bug the v2
+  // pentest replay assertion (distance must be 0) caught. Set the globals
+  // so this extractor is order-independent.
+  Meyda.bufferSize = frameSize;
+  Meyda.sampleRate = sampleRate;
+
   const centroids: number[] = [];
   const rolloffs: number[] = [];
   const flatnesses: number[] = [];
@@ -326,7 +339,6 @@ async function computeLTAS(
     const features = Meyda.extract(
       ["spectralCentroid", "spectralRolloff", "spectralFlatness", "spectralSpread"],
       paddedFrame,
-      { sampleRate, bufferSize: frameSize }
     );
 
     if (features) {
