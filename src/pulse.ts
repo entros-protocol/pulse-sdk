@@ -173,12 +173,14 @@ async function extractFingerprintAndValidate(
   } = await extractFeatures(sensorData);
 
   // Diagnostic: log feature vector composition. Block boundaries follow the
-  // v2 layout: audio = 176 (44 legacy + 78 MFCC + 24 LPC + 16 formant
-  // trajectories + 9 voice quality + 5 pitch DCT), motion = 54, touch = 36.
-  // Sprint 2 will expand motion to 86 and touch to 58.
+  // v2 layout: audio = 176 (Sprint 1 expansion), motion = 81 (54 legacy +
+  // 27 v2: cross-axis covariance, FFT bands, tremor peak, direction stats,
+  // autocorrelation), touch = 57 (36 legacy + 21 v2: pressure derivative,
+  // contact geometry, curvature, velocity autocorrelation, gap distribution,
+  // path efficiency). Total fused = 314.
   const AUDIO_END = 176;
-  const MOTION_END = AUDIO_END + 54;
-  const TOUCH_END = MOTION_END + 36;
+  const MOTION_END = AUDIO_END + 81;
+  const TOUCH_END = MOTION_END + 57;
   const nonZero = features.filter((v) => v !== 0).length;
   sdkLog(
     `[Entros SDK] Feature vector: ${features.length} dimensions, ${nonZero} non-zero. ` +
@@ -490,11 +492,11 @@ async function processSensorData(
       solanaProof = serializeProof(proof, publicSignals);
     } catch (proofErr: any) {
       // Include diagnostics in error for mobile debugging (no devtools).
-      // Block boundaries match the v2 audio expansion: 176 audio + 54
-      // motion + 36 touch (Sprint 1 state; Sprint 2 will widen kinematics).
+      // Block boundaries follow the v2 layout: 176 audio + 81 motion + 57
+      // touch = 314 fused.
       const audioNZ = features.slice(0, 176).filter((v) => v !== 0).length;
-      const motionNZ = features.slice(176, 230).filter((v) => v !== 0).length;
-      const touchNZ = features.slice(230, 266).filter((v) => v !== 0).length;
+      const motionNZ = features.slice(176, 257).filter((v) => v !== 0).length;
+      const touchNZ = features.slice(257, 314).filter((v) => v !== 0).length;
       const rawAudio = sensorData.audio?.samples.length ?? 0;
       const rawMotion = sensorData.motion.length;
       const rawTouch = sensorData.touch.length;

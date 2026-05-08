@@ -8,12 +8,13 @@ const TARGET_SAMPLE_RATE = 16000;
  * Uses ScriptProcessorNode for raw PCM sample access.
  *
  * @privacyGuarantee Raw audio samples returned from this function are processed
- * locally by the SDK's feature extraction pipeline. The 134-feature derived
- * statistical summary is the only audio-related signal that crosses the
- * device boundary. The single sanctioned exception is the encoded base64
- * audio bytes sent to the validator's `/validate-features` endpoint for
- * server-side verification, which the validator processes ephemerally —
- * see entros.io for the privacy and threat model.
+ * locally by the SDK's feature extraction pipeline. The derived statistical
+ * summary (314-element vector under the v2 pipeline) is the only audio-
+ * related signal that crosses the device boundary. The single sanctioned
+ * exception is the encoded base64 audio bytes sent to the validator's
+ * `/validate-features` endpoint for server-side verification, which the
+ * validator processes ephemerally — see entros.io for the privacy and
+ * threat model.
  *
  * NOTE: ScriptProcessorNode is deprecated in favor of AudioWorklet.
  * Migration planned for v1.0. ScriptProcessorNode is used because it
