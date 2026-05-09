@@ -32,6 +32,15 @@ import { condense, mean as meanOf, variance as varianceOf } from "./statistics";
 import { sdkWarn } from "../log";
 
 const NUM_MFCC_COEFFICIENTS = 13;
+/** Drop the leading MFCC[0] (cepstral DC term, log-energy proxy). It's
+ *  dominated by frame energy and mic gain rather than vocal-tract
+ *  identity, sits at 1-3 orders of magnitude larger than MFCC[1..12], and
+ *  was a contributing outlier to the per-modality z-score collapse the
+ *  validator-side winsorize defends against. Standard Kaldi / sidekit
+ *  speaker-recognition pipelines drop C0; we follow the convention. */
+const MFCC_DROP_LEADING = 1;
+/** Coefficients actually retained for downstream stats (12 = 13 - 1). */
+const NUM_USED_MFCC = NUM_MFCC_COEFFICIENTS - MFCC_DROP_LEADING;
 /** Half-width of the regression window used to compute delta-MFCCs. The
  *  standard speech-recognition value is 2 (window of 9 frames total: 4 on
  *  each side plus the center). Larger N smooths more but lags behind
@@ -43,9 +52,9 @@ const DELTA_REGRESSION_HALF_WIDTH = 2;
  * speaker.ts when assembling the final audio feature vector.
  */
 export const MFCC_FEATURE_COUNT =
-  NUM_MFCC_COEFFICIENTS * 4 + // mean, var, skew, kurt per coefficient
-  NUM_MFCC_COEFFICIENTS * 2; // mean, var per delta coefficient
-// = 52 + 26 = 78
+  NUM_USED_MFCC * 4 + // mean, var, skew, kurt per coefficient
+  NUM_USED_MFCC * 2; // mean, var per delta coefficient
+// = 48 + 24 = 72 (down from 78 after dropping MFCC[0])
 
 /**
  * Apply standard pre-emphasis filter `H(z) = 1 - 0.97 z^-1` to the raw
@@ -154,13 +163,14 @@ async function getMeyda(): Promise<any> {
  * fingerprinting (resistant to phrase content; sensitive to vocal tract
  * shape).
  *
- * Returns 78 floats (see MFCC_FEATURE_COUNT above) in stable order:
- *   [mean(c0), var(c0), skew(c0), kurt(c0),
- *    mean(c1), var(c1), skew(c1), kurt(c1),
+ * Returns 72 floats (see MFCC_FEATURE_COUNT above) in stable order over
+ * coefficients C1..C12 (C0 is intentionally dropped — see MFCC_DROP_LEADING):
+ *   [mean(c1), var(c1), skew(c1), kurt(c1),
+ *    mean(c2), var(c2), skew(c2), kurt(c2),
  *    ...
  *    mean(c12), var(c12), skew(c12), kurt(c12),
- *    mean(d0), var(d0),
  *    mean(d1), var(d1),
+ *    mean(d2), var(d2),
  *    ...
  *    mean(d12), var(d12)]
  *
@@ -195,9 +205,11 @@ export async function extractMfccFeatures(
     return new Array(MFCC_FEATURE_COUNT).fill(0);
   }
 
-  // Per-coefficient time series: mfccTracks[i][t] is the i-th MFCC at frame t.
+  // Per-coefficient time series: mfccTracks[i][t] is the (i + MFCC_DROP_LEADING)-th
+  // MFCC at frame t. Indexed by the USED coefficient slot, not Meyda's raw
+  // [0..NUM_MFCC_COEFFICIENTS) range.
   const mfccTracks: number[][] = Array.from(
-    { length: NUM_MFCC_COEFFICIENTS },
+    { length: NUM_USED_MFCC },
     () => [],
   );
 
@@ -245,8 +257,12 @@ export async function extractMfccFeatures(
     }
     if (!allFinite) continue;
 
-    for (let c = 0; c < NUM_MFCC_COEFFICIENTS; c++) {
-      mfccTracks[c]!.push(result[c]!);
+    // Skip MFCC[0..MFCC_DROP_LEADING) — the cepstral DC term carries
+    // mic-energy noise rather than vocal-tract identity. Read from
+    // `result[c + MFCC_DROP_LEADING]` so track index `c` corresponds to
+    // the c-th USED coefficient (C1..C12 with the default drop).
+    for (let c = 0; c < NUM_USED_MFCC; c++) {
+      mfccTracks[c]!.push(result[c + MFCC_DROP_LEADING]!);
     }
   }
 
@@ -259,8 +275,8 @@ export async function extractMfccFeatures(
   out.length = MFCC_FEATURE_COUNT;
   let writeIdx = 0;
 
-  // 13 × 4 = 52 features (mean, variance, skewness, kurtosis per coefficient).
-  for (let c = 0; c < NUM_MFCC_COEFFICIENTS; c++) {
+  // 12 × 4 = 48 features (mean, variance, skewness, kurtosis per used coefficient).
+  for (let c = 0; c < NUM_USED_MFCC; c++) {
     const stats = condense(mfccTracks[c]!);
     out[writeIdx++] = stats.mean;
     out[writeIdx++] = stats.variance;
@@ -268,8 +284,8 @@ export async function extractMfccFeatures(
     out[writeIdx++] = stats.kurtosis;
   }
 
-  // 13 × 2 = 26 features (mean, variance per delta coefficient).
-  for (let c = 0; c < NUM_MFCC_COEFFICIENTS; c++) {
+  // 12 × 2 = 24 features (mean, variance per delta of each used coefficient).
+  for (let c = 0; c < NUM_USED_MFCC; c++) {
     const delta = computeDelta(mfccTracks[c]!, DELTA_REGRESSION_HALF_WIDTH);
     const muDelta = meanOf(delta);
     out[writeIdx++] = muDelta;

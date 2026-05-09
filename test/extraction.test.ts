@@ -70,7 +70,7 @@ describe("speaker feature extraction", () => {
     const audio = makeAudio({ length: 32000, sampleRate: 16000 });
     const features = await extractSpeakerFeatures(audio);
     expect(features).toHaveLength(SPEAKER_FEATURE_COUNT);
-    expect(features).toHaveLength(176);
+    expect(features).toHaveLength(170);
   });
 
   it("produces no NaN values from normal audio", async () => {

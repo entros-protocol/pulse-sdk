@@ -68,7 +68,7 @@ describe("extractMfccFeatures", () => {
     const samples = sineSamples(SESSION_LENGTH, 220, SAMPLE_RATE);
     const features = await extractMfccFeatures(samples, SAMPLE_RATE, FRAME_SIZE, HOP_SIZE);
     expect(features).toHaveLength(MFCC_FEATURE_COUNT);
-    expect(MFCC_FEATURE_COUNT).toBe(78); // 13×4 + 13×2
+    expect(MFCC_FEATURE_COUNT).toBe(72); // 12×4 + 12×2 (MFCC[0] dropped)
   });
 
   it("produces all-finite values on real input", async () => {
@@ -116,11 +116,13 @@ describe("extractMfccFeatures", () => {
     // so delta-MFCCs should average near zero.
     const samples = sineSamples(SESSION_LENGTH, 440, SAMPLE_RATE);
     const features = await extractMfccFeatures(samples, SAMPLE_RATE, FRAME_SIZE, HOP_SIZE);
-    // Layout: indices 0..51 are MFCC moments, 52..77 are delta moments
-    // (alternating mean, var per coefficient). Pull the 13 delta means.
+    // Layout: indices 0..47 are MFCC moments, 48..71 are delta moments
+    // (alternating mean, var per coefficient). Pull the 12 delta means.
+    // Coefficient count is 12 because MFCC[0] is intentionally dropped
+    // (cepstral DC term — see mfcc.ts::MFCC_DROP_LEADING).
     const deltaMeans: number[] = [];
-    for (let c = 0; c < 13; c++) {
-      deltaMeans.push(features[52 + c * 2]!);
+    for (let c = 0; c < 12; c++) {
+      deltaMeans.push(features[48 + c * 2]!);
     }
     const meanOfMeans = deltaMeans.reduce((a, b) => a + b, 0) / deltaMeans.length;
     // For a perfectly stationary signal we'd expect 0; allow generous slack

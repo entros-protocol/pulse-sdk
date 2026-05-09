@@ -384,12 +384,12 @@ describe("end-to-end fingerprint width parity (Sprint 2 invariant)", () => {
   // mobile produce SimHash inputs of identical width (314), so the same
   // hyperplane set projects both into comparable 256-bit fingerprints.
   // This test locks that invariant against accidental width drift.
-  it("fused vector is exactly 314 elements with mobile motion", () => {
+  it("fused vector is exactly 308 elements with mobile motion", () => {
     const motion = Array.from({ length: 81 }, () => Math.random());
-    const audio = Array.from({ length: 176 }, () => Math.random());
+    const audio = Array.from({ length: 170 }, () => Math.random());
     const touch = Array.from({ length: 57 }, () => Math.random());
     const fused = [...audio, ...motion, ...touch];
-    expect(fused).toHaveLength(314);
+    expect(fused).toHaveLength(308);
   });
 
   it("extractMouseDynamics produces the same width as extractMotionFeatures", () => {
