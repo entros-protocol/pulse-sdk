@@ -17,6 +17,8 @@ import {
   extractTouchFeatures,
   extractMouseDynamics,
   extractAccelerationMagnitude,
+  MOTION_FEATURE_COUNT,
+  TOUCH_FEATURE_COUNT,
 } from "./extraction/kinematic";
 import { fuseFeatures, fuseRawFeatures } from "./extraction/statistics";
 import { yieldToMainThread } from "./yield";
@@ -173,14 +175,11 @@ async function extractFingerprintAndValidate(
   } = await extractFeatures(sensorData);
 
   // Diagnostic: log feature vector composition. Block boundaries follow the
-  // v2 layout: audio = 176 (Sprint 1 expansion), motion = 81 (54 legacy +
-  // 27 v2: cross-axis covariance, FFT bands, tremor peak, direction stats,
-  // autocorrelation), touch = 57 (36 legacy + 21 v2: pressure derivative,
-  // contact geometry, curvature, velocity autocorrelation, gap distribution,
-  // path efficiency). Total fused = 314.
-  const AUDIO_END = 176;
-  const MOTION_END = AUDIO_END + 81;
-  const TOUCH_END = MOTION_END + 57;
+  // v2 layout, derived from the canonical per-modality counts so any future
+  // modality bump propagates automatically (no hand-sync drift).
+  const AUDIO_END = SPEAKER_FEATURE_COUNT;
+  const MOTION_END = AUDIO_END + MOTION_FEATURE_COUNT;
+  const TOUCH_END = MOTION_END + TOUCH_FEATURE_COUNT;
   const nonZero = features.filter((v) => v !== 0).length;
   sdkLog(
     `[Entros SDK] Feature vector: ${features.length} dimensions, ${nonZero} non-zero. ` +
@@ -492,11 +491,14 @@ async function processSensorData(
       solanaProof = serializeProof(proof, publicSignals);
     } catch (proofErr: any) {
       // Include diagnostics in error for mobile debugging (no devtools).
-      // Block boundaries follow the v2 layout: 176 audio + 81 motion + 57
-      // touch = 314 fused.
-      const audioNZ = features.slice(0, 176).filter((v) => v !== 0).length;
-      const motionNZ = features.slice(176, 257).filter((v) => v !== 0).length;
-      const touchNZ = features.slice(257, 314).filter((v) => v !== 0).length;
+      // Block boundaries derived from extractor constants so they stay in
+      // sync with the v2 layout if any modality count shifts.
+      const motionStart = SPEAKER_FEATURE_COUNT;
+      const touchStart = motionStart + MOTION_FEATURE_COUNT;
+      const touchEnd = touchStart + TOUCH_FEATURE_COUNT;
+      const audioNZ = features.slice(0, motionStart).filter((v) => v !== 0).length;
+      const motionNZ = features.slice(motionStart, touchStart).filter((v) => v !== 0).length;
+      const touchNZ = features.slice(touchStart, touchEnd).filter((v) => v !== 0).length;
       const rawAudio = sensorData.audio?.samples.length ?? 0;
       const rawMotion = sensorData.motion.length;
       const rawTouch = sensorData.touch.length;

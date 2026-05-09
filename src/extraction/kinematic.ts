@@ -17,8 +17,20 @@ export const TOUCH_FEATURE_COUNT = TOUCH_LEGACY_COUNT + TOUCH_V2_ADDITIONS;
 // Mouse-dynamics keeps width parity with the motion block so that desktop
 // captures fuse cleanly into the same fingerprint slot as mobile IMU
 // captures. The first 54 entries are the legacy mouse-dynamics features;
-// the remaining 27 are zero (no IMU on desktop), keeping the bit-influence
-// share per modality identical across device classes.
+// the remaining 27 are zero (no IMU on desktop).
+//
+// Why zero-padding doesn't break SimHash bit-influence parity (verified
+// algebraically): `normalizeGroup` z-scores the 81-element block. With 27
+// zeros, the padded variance equals (54/81) × pure_variance, so the
+// padded std equals √(2/3) × pure_std ≈ 0.816 × pure_std. After dividing
+// by the padded std, real features scale by 1/0.816 ≈ 1.225, and zero
+// padding stays at -mean/std (≈ 0 when the real-feature mean is small).
+// The collective variance of the 81-element normalized block is exactly
+// 1 by construction (z-score guarantee), so the modality contributes the
+// same expected variance to the SimHash random-projection dot product
+// as the mobile case (also a unit-variance 81-element block). The
+// per-feature magnitude of real features inflates by 22% on desktop;
+// the per-modality bit-influence share stays equal.
 export const MOUSE_DYNAMICS_FEATURE_COUNT = MOTION_FEATURE_COUNT;
 
 /**
@@ -189,9 +201,14 @@ function computeMotionV2(
   out.push(tremor.freq, tremor.amplitude);
 
   // 4. Direction-reversal rate per second per accel axis (mean, variance).
-  // A reversal is a sign change of velocity (= sign change of d/dt of
-  // acceleration). Rate is normalized by capture duration so it's
-  // dimension-stable across IMU sample-rates.
+  // A "reversal" here is a sign change of jerk (= the derivative of
+  // acceleration). Counting on jerk rather than raw acceleration removes
+  // the gravity DC bias on the vertical axis (raw az hovers around -9.8
+  // and rarely crosses zero) and captures the rate of micro-correction
+  // events on each axis. Rate is normalized by capture duration so it's
+  // dimension-stable across IMU sample-rates. Mean + variance over the
+  // 3 accel axes captures both how busy the user's motion is and which
+  // axis dominates — a per-axis dominance pattern that's identity-bearing.
   const duration = captureDurationSec(samples);
   const reversalRates = [axes.ax, axes.ay, axes.az].map((axis) =>
     duration > 0 ? signChangeCount(derivative(axis)) / duration : 0
@@ -210,7 +227,12 @@ function computeMotionV2(
 
   // 6. Motion-magnitude autocorrelation at lags 1, 5, 10, 25 — captures
   // periodic structure (gait, tremor harmonics) that escapes the
-  // moment-based features.
+  // moment-based features. Lags chosen to span the physiological-tremor
+  // band: at a typical 60 Hz IMU rate, lag 5 ≈ 83 ms (12 Hz cycle), lag
+  // 10 ≈ 167 ms (6 Hz), lag 25 ≈ 417 ms (sub-tremor, gait-rate signal).
+  // The asymmetry vs touch's autocorrelation lags (1, 3, 5) is intentional
+  // — touch captures finer rhythms (50-100 ms inter-event coherence)
+  // while motion captures slower oscillatory patterns.
   for (const lag of [1, 5, 10, 25]) {
     out.push(autocorrelation(magnitude, lag));
   }
@@ -321,11 +343,25 @@ function computeTouchV2(
 
   // 4. Trajectory curvature stats (mean, var, skew). Curvature is the
   // absolute angle change between successive velocity vectors —
-  // identity-bearing motor coordination.
+  // identity-bearing motor coordination. Skip rest-frames where either
+  // velocity vector is below `CURVATURE_REST_EPS` because `atan2(0, 0)`
+  // returns 0 silently, which would inject a spurious large curvature
+  // spike whenever motion resumes from a pause.
+  const CURVATURE_REST_EPS = 1e-3;
   const curvatures: number[] = [];
   for (let i = 1; i < vx.length; i++) {
-    const a1 = Math.atan2(vy[i - 1] ?? 0, vx[i - 1] ?? 0);
-    const a2 = Math.atan2(vy[i] ?? 0, vx[i] ?? 0);
+    const v1x = vx[i - 1] ?? 0;
+    const v1y = vy[i - 1] ?? 0;
+    const v2x = vx[i] ?? 0;
+    const v2y = vy[i] ?? 0;
+    if (
+      Math.hypot(v1x, v1y) < CURVATURE_REST_EPS ||
+      Math.hypot(v2x, v2y) < CURVATURE_REST_EPS
+    ) {
+      continue;
+    }
+    const a1 = Math.atan2(v1y, v1x);
+    const a2 = Math.atan2(v2y, v2x);
     let d = a2 - a1;
     while (d > Math.PI) d -= 2 * Math.PI;
     while (d < -Math.PI) d += 2 * Math.PI;

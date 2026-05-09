@@ -96,8 +96,16 @@ export function realFFT(
 
 /**
  * Sum the squared magnitudes of FFT bins falling inside the half-open
- * frequency interval [`fLow`, `fHigh`) Hz. Values are returned in the
- * same units as `|X[k]|²` (i.e. squared signal amplitude × N²).
+ * frequency interval [`fLow`, `fHigh`) Hz, NORMALIZED by `N²` so the
+ * result is a per-bin power density in the same units as the squared
+ * input signal (not Parseval N²-scaled energy).
+ *
+ * Why normalize: an unscaled `Σ|X[k]|²` grows as O(N²·A²) for a sine
+ * of amplitude A on N samples, which would put band energies 10,000×
+ * larger than other motion features (O(0.01-1)) and dominate the
+ * z-score normalization in `statistics.ts::normalizeGroup`. Dividing
+ * by `N²` aligns the band energy with the squared-signal scale and
+ * lets it sit alongside other motion moments cleanly.
  *
  * Out-of-range or NaN/Infinity inputs return 0 — never throw — so a
  * malformed sensor capture downstream produces a deterministic zero
@@ -133,12 +141,13 @@ export function bandEnergy(
     const im = imag[k] ?? 0;
     energy += re * re + im * im;
   }
-  return energy;
+  return energy / (N * N);
 }
 
 /**
- * Return the dominant frequency and its (squared-magnitude) amplitude in
- * the half-open frequency interval [`fLow`, `fHigh`) Hz.
+ * Return the dominant frequency (Hz) and its squared-magnitude amplitude
+ * (normalized by `N²` for the same reason as `bandEnergy`) in the
+ * half-open frequency interval [`fLow`, `fHigh`) Hz.
  *
  * If no bin falls inside the band (e.g. capture is too short to resolve
  * the requested band), returns `{ freq: 0, amplitude: 0 }`. Used by the
@@ -179,7 +188,7 @@ export function peakInBand(
     }
   }
   if (bestK < 0) return { freq: 0, amplitude: 0 };
-  return { freq: bestK * binHz, amplitude: bestAmp };
+  return { freq: bestK * binHz, amplitude: bestAmp / (N * N) };
 }
 
 export { nextPow2 };
