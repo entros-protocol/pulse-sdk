@@ -441,14 +441,23 @@ export async function extractSpeakerFeaturesDetailed(
   // so the verify UI can repaint the "Extracting features..." spinner.
   await yieldToMainThread();
 
-  // Compute amplitude from ORIGINAL samples (pre-normalization) for biometric consistency
+  // Compute per-frame RMS amplitude from the peak-normalized buffer.
+  // After the SDK's capture-time RMS normalization, the input `samples`
+  // carries stable RMS = TARGET_CAPTURE_RMS for every speaker, so per-
+  // frame mean amplitude computed off `samples` would converge to that
+  // same value across all users — a wasted feature slot. The peak-
+  // normalized `normalizedSamples` (peak = 0.9, variable RMS) preserves
+  // dynamic-range identity instead: monotone speakers have higher mean
+  // amplitude (more time near peak), expressive speakers have lower mean
+  // (more time in valleys). Variance / skewness / kurtosis are scale-
+  // invariant either way; switching the source affects only mean.
   const amplitudes: number[] = [];
   for (let i = 0; i < numFrames; i++) {
     const start = i * hopSize;
     let sum = 0;
-    const end = Math.min(start + frameSize, samples.length);
+    const end = Math.min(start + frameSize, normalizedSamples.length);
     for (let j = start; j < end; j++) {
-      sum += (samples[j] ?? 0) * (samples[j] ?? 0);
+      sum += (normalizedSamples[j] ?? 0) * (normalizedSamples[j] ?? 0);
     }
     amplitudes.push(Math.sqrt(sum / (end - start)));
   }
