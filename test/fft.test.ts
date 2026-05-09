@@ -128,6 +128,16 @@ describe("bandEnergy", () => {
   });
 });
 
+describe("realFFT determinism", () => {
+  it("returns byte-identical output across repeated calls on identical input", () => {
+    const input = sineSignal(FFT_SIZE, 6, SAMPLE_RATE, 1);
+    const a = realFFT(input, FFT_SIZE);
+    const b = realFFT(input, FFT_SIZE);
+    expect(a.real).toEqual(b.real);
+    expect(a.imag).toEqual(b.imag);
+  });
+});
+
 describe("peakInBand", () => {
   it("returns zero amplitude on empty input", () => {
     const result = peakInBand([], [], 100, 0, 10);

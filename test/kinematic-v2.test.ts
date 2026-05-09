@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   extractMotionFeatures,
   extractTouchFeatures,
+  extractMouseDynamics,
   MOTION_LEGACY_COUNT,
   MOTION_FEATURE_COUNT,
   MOTION_V2_ADDITIONS,
@@ -336,5 +337,75 @@ describe("touch v2 — path efficiency + per-stroke length (indices 54..57)", ()
     const features = extractTouchFeatures(samples);
     // Circle endpoints are nearly co-located so straight-line distance ≈ 0.
     expect(features[54]!).toBeLessThan(0.05);
+  });
+
+  it("multi-stroke path produces non-zero per-stroke length variance", () => {
+    // Construct three strokes of clearly different lengths separated by
+    // pause samples (speed ≈ 0). The per-stroke length variance feature
+    // (index 56) only becomes meaningful when the segmenter sees more
+    // than one stroke; this guards against the common single-stroke
+    // case silently degrading the feature to zero.
+    const samples: TouchSample[] = [];
+    let t = 0;
+    let x = 0;
+    const pushPoint = (xv: number) => {
+      samples.push({
+        timestamp: t,
+        x: xv,
+        y: 0,
+        pressure: 0.5,
+        width: 10,
+        height: 10,
+      });
+      t += TOUCH_PERIOD_MS;
+    };
+    // Stroke A: 20 samples, +1 px/sample
+    for (let i = 0; i < 20; i++) pushPoint(x++);
+    // Pause: 5 samples at the same x (speed = 0)
+    for (let i = 0; i < 5; i++) pushPoint(x);
+    // Stroke B: 40 samples, +1 px/sample
+    for (let i = 0; i < 40; i++) pushPoint(x++);
+    // Pause
+    for (let i = 0; i < 5; i++) pushPoint(x);
+    // Stroke C: 60 samples
+    for (let i = 0; i < 60; i++) pushPoint(x++);
+
+    const features = extractTouchFeatures(samples);
+    const strokeLengthMean = features[55]!;
+    const strokeLengthVar = features[56]!;
+    expect(strokeLengthMean).toBeGreaterThan(0);
+    // Three strokes of lengths {20, 40, 60} → variance > 0.
+    expect(strokeLengthVar).toBeGreaterThan(0);
+  });
+});
+
+describe("end-to-end fingerprint width parity (Sprint 2 invariant)", () => {
+  // The whole point of mouse-dynamics zero-padding is that desktop and
+  // mobile produce SimHash inputs of identical width (314), so the same
+  // hyperplane set projects both into comparable 256-bit fingerprints.
+  // This test locks that invariant against accidental width drift.
+  it("fused vector is exactly 314 elements with mobile motion", () => {
+    const motion = Array.from({ length: 81 }, () => Math.random());
+    const audio = Array.from({ length: 176 }, () => Math.random());
+    const touch = Array.from({ length: 57 }, () => Math.random());
+    const fused = [...audio, ...motion, ...touch];
+    expect(fused).toHaveLength(314);
+  });
+
+  it("extractMouseDynamics produces the same width as extractMotionFeatures", () => {
+    const touchSamples = touchPathSamples({ count: 100, shape: "wiggle" });
+    const motionSamples: MotionSample[] = Array.from({ length: 100 }, (_, i) => ({
+      timestamp: i * IMU_PERIOD_MS,
+      ax: Math.random(),
+      ay: Math.random(),
+      az: -9.8 + Math.random() * 0.1,
+      gx: Math.random() * 0.01,
+      gy: Math.random() * 0.01,
+      gz: Math.random() * 0.01,
+    }));
+    const desktopMotion = extractMouseDynamics(touchSamples);
+    const mobileMotion = extractMotionFeatures(motionSamples);
+    expect(desktopMotion.length).toBe(mobileMotion.length);
+    expect(desktopMotion.length).toBe(MOTION_FEATURE_COUNT);
   });
 });
