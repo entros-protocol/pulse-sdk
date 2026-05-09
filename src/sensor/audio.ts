@@ -68,7 +68,7 @@ export function normalizeCaptureRMS(samples: Float32Array): Float32Array {
  *
  * @privacyGuarantee Raw audio samples returned from this function are processed
  * locally by the SDK's feature extraction pipeline. The derived statistical
- * summary (314-element vector under the v2 pipeline) is the only audio-
+ * summary (308-element vector under the v3 pipeline) is the only audio-
  * related signal that crosses the device boundary. The single sanctioned
  * exception is the encoded base64 audio bytes sent to the validator's
  * `/validate-features` endpoint for server-side verification, which the

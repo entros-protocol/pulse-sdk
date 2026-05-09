@@ -10,11 +10,12 @@
  * the v2 feature pipeline closes (see
  * `docs/master/BLUEPRINT-feature-pipeline-v2.md` §1.1).
  *
- * Output of `extractMfccFeatures` is 78 statistical aggregates over the
- * per-frame MFCC time-series captured during a 12-second session:
+ * Output of `extractMfccFeatures` is 72 statistical aggregates over the
+ * per-frame MFCC time-series captured during a 12-second session
+ * (MFCC[0] is dropped as a cepstral DC term — see MFCC_DROP_LEADING):
  *
- *   - 13 MFCC coefficients × 4 stats (mean, var, skewness, kurtosis) = 52
- *   - 13 delta-MFCC coefficients × 2 stats (mean, var) = 26
+ *   - 12 used MFCC coefficients × 4 stats (mean, var, skewness, kurtosis) = 48
+ *   - 12 used delta-MFCC coefficients × 2 stats (mean, var) = 24
  *
  * The deltas (first-order temporal derivatives via 9-frame regression
  * window) capture how the vocal tract shape CHANGES during articulation —

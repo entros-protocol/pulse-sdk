@@ -66,8 +66,10 @@ const SPEAKER_FEATURE_COUNT =
   FORMANT_TRAJECTORY_FEATURE_COUNT +
   VOICE_QUALITY_FEATURE_COUNT +
   PITCH_CONTOUR_SHAPE_FEATURE_COUNT;
-// = 44 + 78 + 24 + 16 + 9 + 5 = 176. See
+// = 44 + 72 + 24 + 16 + 9 + 5 = 170. See
 // docs/master/BLUEPRINT-feature-pipeline-v2.md §2.1.
+// (Audio block shrank 176 → 170 in v3 when MFCC[0] was dropped — see
+// mfcc.ts::MFCC_DROP_LEADING.)
 
 // Dynamic imports for browser compatibility
 let pitchDetector: ((buf: Float32Array) => number | null) | null = null;
@@ -521,7 +523,7 @@ export async function extractSpeakerFeaturesDetailed(
   // 44-feature layout (and the validator's named sub-range constants) stays
   // pinned at indices 0..44.
 
-  // 11. MFCC + delta-MFCC stats (78 values total: 13×4 + 13×2)
+  // 11. MFCC + delta-MFCC stats (72 values total: 12×4 + 12×2 — MFCC[0] dropped)
   await yieldToMainThread();
   const mfccFeatures = await extractMfccFeatures(
     normalizedSamples,
@@ -589,12 +591,12 @@ export async function extractSpeakerFeaturesDetailed(
     ...ltasFeatures,               // 8     [30..38]  LTAS
     ...voicingFeatures,            // 1     [38]      VOICING_RATIO
     ...ampFeatures,                // 5     [39..44]  AMPLITUDE
-    ...mfccFeatures,               // 78    [44..122] MFCC + delta-MFCC
-    ...lpcStats,                   // 24    [122..146] LPC coefficient stats
-    ...formantTrajectoryFeatures,  // 16    [146..162] Formant absolutes + dynamics + bandwidths
-    ...voiceQualityFeatures,       // 9     [162..171] Voice quality
-    ...pitchShapeFeatures,         // 5     [171..176] Pitch contour shape DCT
-  ]; // = 176
+    ...mfccFeatures,               // 72    [44..116] MFCC + delta-MFCC (MFCC[0] dropped)
+    ...lpcStats,                   // 24    [116..140] LPC coefficient stats
+    ...formantTrajectoryFeatures,  // 16    [140..156] Formant absolutes + dynamics + bandwidths
+    ...voiceQualityFeatures,       // 9     [156..165] Voice quality
+    ...pitchShapeFeatures,         // 5     [165..170] Pitch contour shape DCT
+  ]; // = 170
 
   return { features, f0Contour: f0 };
 }
