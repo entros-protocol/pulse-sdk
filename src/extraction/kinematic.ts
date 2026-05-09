@@ -672,13 +672,129 @@ export function extractMouseDynamics(samples: TouchSample[]): number[] {
     normalizedPathLength,
   ];
 
-  // Pad to MOUSE_DYNAMICS_FEATURE_COUNT so the desktop fingerprint slot
-  // has the same width as a mobile IMU capture. The padding zeros are
-  // consistent across all desktop sessions (no IMU available), so they
-  // don't introduce per-session noise — they just keep the bit-influence
-  // share per modality identical across device classes.
-  const padding = MOUSE_DYNAMICS_FEATURE_COUNT - legacyMouseDynamics.length;
-  return padding > 0
-    ? [...legacyMouseDynamics, ...new Array(padding).fill(0)]
-    : legacyMouseDynamics;
+  // Mouse V2 additions — 27 features mirroring `computeMotionV2`'s layout
+  // exactly so desktop and mobile fingerprints share parallel structure
+  // in the same indices. Replaces the original zero-padding scheme that
+  // contributed ~85 deterministic bits across all desktop users (the
+  // May-2026 cross-person Hamming collision contributor for the motion
+  // block). Real signals fill every slot from the same mouse data the
+  // legacy 54 features already consume, so no new sensor access required.
+  const v2 = computeMouseV2(samples, vx, vy, accX, accY, speed, acc, jerk, directions);
+  return [...legacyMouseDynamics, ...v2];
+}
+
+/**
+ * v2 mouse-dynamics additions (27 features). Pulled into a dedicated
+ * helper that mirrors `computeMotionV2` index-for-index so desktop and
+ * mobile fingerprints have parallel semantic structure. All inputs are
+ * already computed in the calling `extractMouseDynamics` scope; passing
+ * them through avoids a second pass over the touch sample stream.
+ *
+ * Layout (relative to mouse block start):
+ *   `[54..60)` cross-axis covariance: 6 pairs from {vx, vy, accX, accY}
+ *   `[60..72)` FFT band energy {0-2, 2-6, 6-12, 12-30} Hz × {speed, acc, jerk}
+ *   `[72..74)` physiological tremor peak (4-12 Hz) on speed: freq + amplitude
+ *   `[74..76)` reversal-rate-per-second per channel {vx, vy, speed}: mean + variance
+ *   `[76]`     mean angular speed (mean |Δdirection|)
+ *   `[77..81)` speed-magnitude autocorrelation at lags {1, 5, 10, 25}
+ */
+function computeMouseV2(
+  samples: TouchSample[],
+  vx: number[],
+  vy: number[],
+  accX: number[],
+  accY: number[],
+  speed: number[],
+  acc: number[],
+  jerk: number[],
+  directions: number[],
+): number[] {
+  const out: number[] = [];
+
+  // 1. Cross-axis covariance — 6 unique pairs from the 4-channel
+  // {vx, vy, accX, accY} basis. Captures motor-coordination signature:
+  // vx-vy coupling (handedness), velocity-acceleration coupling per axis
+  // (motor-control style), and X/Y acceleration coupling (cursor-gesture
+  // diagonality preference). The mouse equivalent of `computeMotionV2`'s
+  // accel-gyro-and-axes pairings.
+  const covPairs: Array<[number[], number[]]> = [
+    [vx, vy],
+    [vx, accX],
+    [vx, accY],
+    [vy, accX],
+    [vy, accY],
+    [accX, accY],
+  ];
+  for (const [a, b] of covPairs) out.push(covariance(a, b));
+
+  // 2. FFT band energy on 3 channels: speed, acc, jerk magnitudes. Sample
+  // rate is recovered from timestamps so band boundaries are reported in
+  // physical Hz across mouse-event rates that vary 60-125 Hz across
+  // browsers and OSs. Pre-FFT each channel once; reuse the speed
+  // spectrum for the tremor peak below.
+  const sampleRate = sampleRateFromTimestamps(samples.map((s) => s.timestamp));
+  const fftSize = nextPow2(Math.max(64, speed.length));
+  const bands: Array<[number, number]> = [
+    [0, 2],
+    [2, 6],
+    [6, 12],
+    [12, 30],
+  ];
+  const speedSpectrum = realFFT(meanCenter(speed), fftSize);
+  const accSpectrum = realFFT(meanCenter(acc), fftSize);
+  const jerkSpectrum = realFFT(meanCenter(jerk), fftSize);
+  for (const spectrum of [speedSpectrum, accSpectrum, jerkSpectrum]) {
+    for (const [lo, hi] of bands) {
+      out.push(bandEnergy(spectrum.real, spectrum.imag, sampleRate, lo, hi));
+    }
+  }
+
+  // 3. Physiological-tremor peak (4-12 Hz) on speed magnitude. Mouse-using
+  // hands carry the same 4-12 Hz physiological tremor as IMU-tracked hands;
+  // it surfaces in cursor-speed envelope as a small periodic component
+  // riding on top of intentional motion.
+  const tremor = peakInBand(
+    speedSpectrum.real,
+    speedSpectrum.imag,
+    sampleRate,
+    4,
+    12,
+  );
+  out.push(tremor.freq, tremor.amplitude);
+
+  // 4. Reversal rate per second per channel (mean, variance across
+  // {vx, vy, speed}). Sign change of the channel's first derivative
+  // counts micro-corrections — wrist-style movements differ across
+  // people in both rate and per-axis distribution.
+  const duration = captureDurationSec(samples);
+  const reversalRates = [vx, vy, speed].map((channel) =>
+    duration > 0 ? signChangeCount(derivative(channel)) / duration : 0,
+  );
+  out.push(mean(reversalRates), variance(reversalRates));
+
+  // 5. Mean angular speed: mean of unwrapped |Δdirection|. Captures
+  // overall steering activity — looser-grip hands change direction more
+  // often than precision-grip hands. Equivalent to motion's mean |gyro|.
+  let dirAccum = 0;
+  for (let i = 1; i < directions.length; i++) {
+    let diff = directions[i]! - directions[i - 1]!;
+    while (diff > Math.PI) diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
+    dirAccum += Math.abs(diff);
+  }
+  out.push(directions.length > 1 ? dirAccum / (directions.length - 1) : 0);
+
+  // 6. Speed-magnitude autocorrelation at lags 1, 5, 10, 25 — captures
+  // periodic structure (drag rhythms, repeated sub-gestures) that escapes
+  // moment-based features. Lag choices match motion v2 so the fingerprint
+  // band-by-band layout stays parallel across device classes.
+  for (const lag of [1, 5, 10, 25]) {
+    out.push(autocorrelation(speed, lag));
+  }
+
+  // Defensive finite-cast: any helper that hits an edge case (zero-length
+  // spectrum, constant channel, sub-1-sample direction series) should
+  // return 0 rather than NaN/Infinity, matching the SDK's "feature vector
+  // is always finite" contract enforced by the validator's NonFinite check.
+  return out.map((v) => (Number.isFinite(v) ? v : 0));
 }

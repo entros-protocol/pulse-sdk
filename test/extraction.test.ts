@@ -230,11 +230,14 @@ describe("touch feature extraction", () => {
 });
 
 describe("mouse dynamics extraction", () => {
-  // Mouse-dynamics keeps width parity with the v2 motion block (81)
-  // by zero-padding the trailing v2-only IMU slots — desktop has no
-  // gyroscope / accelerometer to populate them, but the constant width
-  // keeps the per-modality SimHash bit-influence share identical across
-  // device classes.
+  // Mouse-dynamics keeps width parity with the v2 motion block (81) and
+  // populates every slot with mouse-derived signals (no zero-padding).
+  // The trailing 27 v2 slots used to be deterministic zeros, contributing
+  // ~85 identical bits across all desktop users (the May-2026 cross-
+  // person fingerprint collapse contributor); they now carry FFT band
+  // energy, tremor peak, cross-axis covariance, reversal stats, mean
+  // angular speed, and speed autocorrelation — see
+  // `kinematic.ts::computeMouseV2`.
   it("produces motion-parity feature count from pointer data", () => {
     const samples = makeTouchSamples(100);
     const features = extractMouseDynamics(samples);
@@ -255,17 +258,21 @@ describe("mouse dynamics extraction", () => {
     expect(features.every((v) => v === 0)).toBe(true);
   });
 
-  it("zero-pads the trailing IMU-only slots on desktop", () => {
-    // Indices 54..81 correspond to the v2 motion block (cross-axis IMU
-    // covariance + FFT bands + tremor peak + direction stats + magnitude
-    // autocorrelation). Desktop captures have no IMU, so these MUST be
-    // zero — otherwise the desktop fingerprint slot grows extra
-    // hardware-specific bias the mobile fingerprint slot lacks.
+  it("populates the v2 trailing slots with mouse-derived signals (no zero leak)", () => {
+    // Wave 2 fix contract: indices 54..80 now carry per-session signal
+    // computed from mouse data (cross-axis covariance, FFT band energy on
+    // speed/acc/jerk, tremor peak, reversal stats, mean angular speed,
+    // and speed autocorrelation). On a varied path most slots end up
+    // non-zero; some (e.g. autocorr on smooth input) may legitimately
+    // sit at exactly zero, so the test asserts a healthy majority are
+    // populated rather than EVERY slot.
     const samples = makeTouchSamples(100);
     const features = extractMouseDynamics(samples);
+    let nonZero = 0;
     for (let i = 54; i < 81; i++) {
-      expect(features[i]).toBe(0);
+      if (features[i] !== 0) nonZero++;
     }
+    expect(nonZero).toBeGreaterThanOrEqual(20);
   });
 });
 

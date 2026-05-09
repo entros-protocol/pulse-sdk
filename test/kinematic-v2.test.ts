@@ -409,3 +409,131 @@ describe("end-to-end fingerprint width parity (Sprint 2 invariant)", () => {
     expect(desktopMotion.length).toBe(MOTION_FEATURE_COUNT);
   });
 });
+
+// Mouse v2 additions replace the prior 27-slot zero-padding with real
+// signals derived from the same mouse data. Each test asserts a specific
+// slot has the expected shape on a controlled synthetic input. These
+// guard the cross-person fingerprint-collapse fix: zero-pad indices were
+// identical across all desktop users; real signals must differ.
+
+describe("mouse v2 — cross-axis covariance (indices 54..60)", () => {
+  it("vx-vy covariance (index 54) is non-zero when X and Y both oscillate in phase", () => {
+    // Both x and y carry the same oscillation, so vx and vy each vary
+    // with the same shape and high correlation. Linearly increasing
+    // diagonal (x=i, y=i) wouldn't work — vx and vy would be constants
+    // and any constant vector has zero covariance with anything by
+    // definition.
+    const samples: TouchSample[] = Array.from({ length: 100 }, (_, i) => ({
+      timestamp: i * TOUCH_PERIOD_MS,
+      x: 50 + 10 * Math.sin(i * 0.3),
+      y: 50 + 10 * Math.sin(i * 0.3),
+      pressure: 0.5,
+      width: 10,
+      height: 10,
+    }));
+    const features = extractMouseDynamics(samples);
+    expect(Number.isFinite(features[54]!)).toBe(true);
+    expect(Math.abs(features[54]!)).toBeGreaterThan(0);
+  });
+});
+
+describe("mouse v2 — FFT band energy (indices 60..72)", () => {
+  it("low-frequency wiggle has more energy in the 0-2 Hz band than 12-30 Hz on speed", () => {
+    // Slow wiggle: cursor sweeps a 0.5 Hz sinusoid in y while x drifts.
+    // Speed envelope is dominated by sub-2 Hz content.
+    const samples: TouchSample[] = Array.from({ length: 256 }, (_, i) => ({
+      timestamp: i * TOUCH_PERIOD_MS,
+      x: i,
+      y: 50 * Math.sin((2 * Math.PI * 0.5 * i) / 60),
+      pressure: 0.5,
+      width: 10,
+      height: 10,
+    }));
+    const features = extractMouseDynamics(samples);
+    const speedBand_0_2 = features[60]!; // first band, first channel (speed)
+    const speedBand_12_30 = features[63]!; // fourth band, first channel (speed)
+    expect(speedBand_0_2).toBeGreaterThan(speedBand_12_30);
+  });
+});
+
+describe("mouse v2 — tremor peak (indices 72..74)", () => {
+  it("an 8 Hz perturbation on the speed envelope produces a tremor amplitude > 0 in the 4-12 Hz band", () => {
+    // Straight-line drift with an 8 Hz speed modulation. The tremor
+    // detector should pick this up and report a peak in the 4-12 Hz band.
+    const samples: TouchSample[] = Array.from({ length: 512 }, (_, i) => {
+      const baseSpeed = 1;
+      const tremor = 0.5 * Math.sin((2 * Math.PI * 8 * i) / 60);
+      return {
+        timestamp: i * TOUCH_PERIOD_MS,
+        x: i * (baseSpeed + tremor),
+        y: 0,
+        pressure: 0.5,
+        width: 10,
+        height: 10,
+      };
+    });
+    const features = extractMouseDynamics(samples);
+    const tremorAmp = features[73]!;
+    expect(Number.isFinite(tremorAmp)).toBe(true);
+    expect(tremorAmp).toBeGreaterThan(0);
+  });
+});
+
+describe("mouse v2 — reversal-rate stats (indices 74..76)", () => {
+  it("zigzag path produces non-zero reversal-rate variance across channels", () => {
+    // Zigzag: y oscillates rapidly while x advances. vx is monotonic
+    // (low reversal rate) while vy reverses constantly (high rate).
+    // The per-channel rate variance is therefore positive.
+    const samples: TouchSample[] = Array.from({ length: 100 }, (_, i) => ({
+      timestamp: i * TOUCH_PERIOD_MS,
+      x: i,
+      y: 30 * Math.sin(i * 1.0),
+      pressure: 0.5,
+      width: 10,
+      height: 10,
+    }));
+    const features = extractMouseDynamics(samples);
+    const reversalVar = features[75]!;
+    expect(Number.isFinite(reversalVar)).toBe(true);
+    expect(reversalVar).toBeGreaterThan(0);
+  });
+});
+
+describe("mouse v2 — mean angular speed (index 76)", () => {
+  it("circular path produces a higher mean angular speed than a straight path", () => {
+    const straight = touchPathSamples({ count: 100, shape: "straight" });
+    const circle = touchPathSamples({ count: 100, shape: "circle" });
+    const sFeats = extractMouseDynamics(straight);
+    const cFeats = extractMouseDynamics(circle);
+    expect(cFeats[76]!).toBeGreaterThan(sFeats[76]!);
+  });
+});
+
+describe("mouse v2 — speed autocorrelation (indices 77..81)", () => {
+  it("returns finite values across all four lags", () => {
+    const samples = touchPathSamples({ count: 100, shape: "wiggle" });
+    const features = extractMouseDynamics(samples);
+    for (let i = 77; i < 81; i++) {
+      expect(Number.isFinite(features[i]!)).toBe(true);
+    }
+  });
+});
+
+describe("mouse v2 — no remaining deterministic zeros across desktop sessions", () => {
+  it("two distinct mouse traces produce different values at every index in [54, 81)", () => {
+    // Wave 2 fix contract: the 27 slots formerly zero-padded must now
+    // carry per-session signal. If any index in [54, 81) ends up
+    // identical across two clearly different paths, the deterministic-
+    // zero leak that contributed ~85 cross-person bits is back.
+    const a = extractMouseDynamics(touchPathSamples({ count: 100, shape: "circle" }));
+    const b = extractMouseDynamics(touchPathSamples({ count: 100, shape: "wiggle" }));
+    let identicalIndices = 0;
+    for (let i = 54; i < 81; i++) {
+      if (a[i]! === b[i]!) identicalIndices++;
+    }
+    // Allow up to 1 incidental coincidence (two paths might happen to
+    // produce identical autocorr or band energy at a noisy index), but
+    // not the wholesale 27-slot leak the zero-pad would produce.
+    expect(identicalIndices).toBeLessThanOrEqual(1);
+  });
+});
