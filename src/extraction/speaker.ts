@@ -11,8 +11,14 @@
  *   amplitude statistics (5)
  */
 import type { AudioCapture } from "../sensor/types";
-import { condense, entropy } from "./statistics";
-import { extractFormantRatios } from "./lpc";
+import { condense, entropy, mean as meanOf, variance as varianceOf } from "./statistics";
+import { extractLpcAnalysis } from "./lpc";
+import { extractMfccFeatures, MFCC_FEATURE_COUNT } from "./mfcc";
+import {
+  extractVoiceQualityFeatures,
+  VOICE_QUALITY_FEATURE_COUNT,
+} from "./voice-quality";
+import { pitchContourShape, PITCH_CONTOUR_SHAPE_FEATURE_COUNT } from "./dct";
 import { yieldToMainThread } from "../yield";
 import { sdkWarn } from "../log";
 
@@ -37,7 +43,33 @@ function getHopSize(sampleRate: number): number {
   return Math.max(1, Math.round(sampleRate * 0.01));
 }
 
-const SPEAKER_FEATURE_COUNT = 44;
+// Existing legacy 44 features (preserved at the start of the audio block so
+// the validator's named sub-range constants — JITTER, SHIMMER,
+// LTAS_FLATNESS_VAR, VOICING_RATIO, etc. — keep pointing at the same
+// indices and the TTS detector's threshold checks remain unchanged).
+const LEGACY_SPEAKER_FEATURE_COUNT = 44;
+
+// LPC coefficient statistics: 12 coefficients × {mean, variance} per
+// coefficient time series.
+const LPC_COEFFICIENT_STATS = 12 * 2;
+
+// Formant absolute values + dynamics: F1/F2/F3 absolute (6) + F1/F2/F3
+// derivative (6) + F1/F2 bandwidth (4) = 16. F3 bandwidth omitted because
+// LPC pole bandwidth on the 3rd formant is consistently noisier than the
+// underlying frequency signal — keeping it would dilute the block.
+const FORMANT_TRAJECTORY_FEATURE_COUNT = 16;
+
+const SPEAKER_FEATURE_COUNT =
+  LEGACY_SPEAKER_FEATURE_COUNT +
+  MFCC_FEATURE_COUNT +
+  LPC_COEFFICIENT_STATS +
+  FORMANT_TRAJECTORY_FEATURE_COUNT +
+  VOICE_QUALITY_FEATURE_COUNT +
+  PITCH_CONTOUR_SHAPE_FEATURE_COUNT;
+// = 44 + 72 + 24 + 16 + 9 + 5 = 170. See
+// docs/master/BLUEPRINT-feature-pipeline-v2.md §2.1.
+// (Audio block shrank 176 → 170 in v3 when MFCC[0] was dropped — see
+// mfcc.ts::MFCC_DROP_LEADING.)
 
 // Dynamic imports for browser compatibility
 let pitchDetector: ((buf: Float32Array) => number | null) | null = null;
@@ -279,6 +311,19 @@ async function computeLTAS(
   const Meyda = await getMeyda();
   if (!Meyda) return new Array(8).fill(0);
 
+  // Meyda.extract's third argument is `previousSignal`, NOT options — so
+  // passing `{ sampleRate, bufferSize: frameSize }` there is silently
+  // ignored. Without setting the globals here, Meyda would use whatever
+  // bufferSize the previous extractor in the pipeline left behind (mfcc /
+  // voice-quality both set 2048; if they ran first, this function would
+  // see 2048; if they didn't run yet, it would see the default 512). That
+  // call-order dependency makes the per-frame spectral extractors
+  // non-deterministic across pipeline orderings — the exact bug the v2
+  // pentest replay assertion (distance must be 0) caught. Set the globals
+  // so this extractor is order-independent.
+  Meyda.bufferSize = frameSize;
+  Meyda.sampleRate = sampleRate;
+
   const centroids: number[] = [];
   const rolloffs: number[] = [];
   const flatnesses: number[] = [];
@@ -296,7 +341,6 @@ async function computeLTAS(
     const features = Meyda.extract(
       ["spectralCentroid", "spectralRolloff", "spectralFlatness", "spectralSpread"],
       paddedFrame,
-      { sampleRate, bufferSize: frameSize }
     );
 
     if (features) {
@@ -399,14 +443,23 @@ export async function extractSpeakerFeaturesDetailed(
   // so the verify UI can repaint the "Extracting features..." spinner.
   await yieldToMainThread();
 
-  // Compute amplitude from ORIGINAL samples (pre-normalization) for biometric consistency
+  // Compute per-frame RMS amplitude from the peak-normalized buffer.
+  // After the SDK's capture-time RMS normalization, the input `samples`
+  // carries stable RMS = TARGET_CAPTURE_RMS for every speaker, so per-
+  // frame mean amplitude computed off `samples` would converge to that
+  // same value across all users — a wasted feature slot. The peak-
+  // normalized `normalizedSamples` (peak = 0.9, variable RMS) preserves
+  // dynamic-range identity instead: monotone speakers have higher mean
+  // amplitude (more time near peak), expressive speakers have lower mean
+  // (more time in valleys). Variance / skewness / kurtosis are scale-
+  // invariant either way; switching the source affects only mean.
   const amplitudes: number[] = [];
   for (let i = 0; i < numFrames; i++) {
     const start = i * hopSize;
     let sum = 0;
-    const end = Math.min(start + frameSize, samples.length);
+    const end = Math.min(start + frameSize, normalizedSamples.length);
     for (let j = start; j < end; j++) {
-      sum += (samples[j] ?? 0) * (samples[j] ?? 0);
+      sum += (normalizedSamples[j] ?? 0) * (normalizedSamples[j] ?? 0);
     }
     amplitudes.push(Math.sqrt(sum / (end - start)));
   }
@@ -440,10 +493,14 @@ export async function extractSpeakerFeaturesDetailed(
   // synchronous stages.
   await yieldToMainThread();
 
-  // 7. Formant ratios (8 values)
-  const { f1f2, f2f3 } = extractFormantRatios(normalizedSamples, sampleRate, frameSize, hopSize);
-  const f1f2Stats = condense(f1f2);
-  const f2f3Stats = condense(f2f3);
+  // 7. Formant analysis — single LPC pass surfaces ratios (legacy
+  // 8 features), LPC coefficients (24 new), absolute formants + dynamics
+  // + bandwidths (16 new). All derived from one autocorrelate +
+  // Levinson-Durbin per frame; CPU cost identical to the legacy
+  // extractFormantRatios call but the output is much richer.
+  const lpc = extractLpcAnalysis(normalizedSamples, sampleRate, frameSize, hopSize);
+  const f1f2Stats = condense(lpc.f1f2);
+  const f2f3Stats = condense(lpc.f2f3);
   const formantFeatures = [
     f1f2Stats.mean, f1f2Stats.variance, f1f2Stats.skewness, f1f2Stats.kurtosis,
     f2f3Stats.mean, f2f3Stats.variance, f2f3Stats.skewness, f2f3Stats.kurtosis,
@@ -461,17 +518,85 @@ export async function extractSpeakerFeaturesDetailed(
   const ampEntropy = entropy(amplitudes);
   const ampFeatures = [ampStats.mean, ampStats.variance, ampStats.skewness, ampStats.kurtosis, ampEntropy];
 
+  // ----- v2 feature pipeline additions -----
+  // Each new block appended to the end of the audio vector so the existing
+  // 44-feature layout (and the validator's named sub-range constants) stays
+  // pinned at indices 0..44.
+
+  // 11. MFCC + delta-MFCC stats (72 values total: 12×4 + 12×2 — MFCC[0] dropped)
+  await yieldToMainThread();
+  const mfccFeatures = await extractMfccFeatures(
+    normalizedSamples,
+    sampleRate,
+    frameSize,
+    hopSize,
+  );
+
+  // 12. LPC coefficient statistics (24 values: 12 coefficients × mean, variance)
+  // Derived from the single LPC pass that already ran for the formant block.
+  const lpcStats: number[] = [];
+  for (let c = 0; c < 12; c++) {
+    const track = lpc.lpcCoefficients[c] ?? [];
+    const mu = meanOf(track);
+    lpcStats.push(mu, varianceOf(track, mu));
+  }
+
+  // 13. Formant trajectories (16 values):
+  //   F1/F2/F3 absolute mean+var (6) + derivative mean+var (6) + B1/B2 mean+var (4)
+  const f1Stats = { mean: meanOf(lpc.f1), var: varianceOf(lpc.f1) };
+  const f2Stats = { mean: meanOf(lpc.f2), var: varianceOf(lpc.f2) };
+  const f3Stats = { mean: meanOf(lpc.f3), var: varianceOf(lpc.f3) };
+  const f1Delta = derivative(lpc.f1);
+  const f2Delta = derivative(lpc.f2);
+  const f3Delta = derivative(lpc.f3);
+  const f1DeltaMu = meanOf(f1Delta);
+  const f2DeltaMu = meanOf(f2Delta);
+  const f3DeltaMu = meanOf(f3Delta);
+  const b1Mu = meanOf(lpc.b1);
+  const b2Mu = meanOf(lpc.b2);
+  const formantTrajectoryFeatures = [
+    f1Stats.mean, f1Stats.var,
+    f2Stats.mean, f2Stats.var,
+    f3Stats.mean, f3Stats.var,
+    f1DeltaMu, varianceOf(f1Delta, f1DeltaMu),
+    f2DeltaMu, varianceOf(f2Delta, f2DeltaMu),
+    f3DeltaMu, varianceOf(f3Delta, f3DeltaMu),
+    b1Mu, varianceOf(lpc.b1, b1Mu),
+    b2Mu, varianceOf(lpc.b2, b2Mu),
+  ];
+
+  // 14. Voice quality (9 values: CPP, tilt, H1-H2 each mean+var, plus low/mid/high band ratios)
+  await yieldToMainThread();
+  const voiceQualityFeatures = await extractVoiceQualityFeatures(
+    normalizedSamples,
+    sampleRate,
+    frameSize,
+    hopSize,
+    f0,
+  );
+
+  // 15. Pitch contour shape (5 DCT coefficients of the F0 contour)
+  // Strict dimensionality reduction: ~1200 voiced frames → 5 coefficients.
+  // Captures prosodic shape (rising/falling/modulated) that the existing
+  // F0_STATS block doesn't reach.
+  const pitchShapeFeatures = pitchContourShape(f0, PITCH_CONTOUR_SHAPE_FEATURE_COUNT);
+
   const features = [
-    ...f0Features,        // 5
-    ...f0DeltaFeatures,   // 4
-    ...jitterFeatures,    // 4
-    ...shimmerFeatures,   // 4
-    ...hnrFeatures,       // 5
-    ...formantFeatures,   // 8
-    ...ltasFeatures,      // 8
-    ...voicingFeatures,   // 1
-    ...ampFeatures,       // 5
-  ]; // = 44
+    ...f0Features,                 // 5     [0..5]    F0_STATS
+    ...f0DeltaFeatures,            // 4     [5..9]    F0_DELTA
+    ...jitterFeatures,             // 4     [9..13]   JITTER
+    ...shimmerFeatures,            // 4     [13..17]  SHIMMER
+    ...hnrFeatures,                // 5     [17..22]  HNR
+    ...formantFeatures,            // 8     [22..30]  FORMANT_RATIOS
+    ...ltasFeatures,               // 8     [30..38]  LTAS
+    ...voicingFeatures,            // 1     [38]      VOICING_RATIO
+    ...ampFeatures,                // 5     [39..44]  AMPLITUDE
+    ...mfccFeatures,               // 72    [44..116] MFCC + delta-MFCC (MFCC[0] dropped)
+    ...lpcStats,                   // 24    [116..140] LPC coefficient stats
+    ...formantTrajectoryFeatures,  // 16    [140..156] Formant absolutes + dynamics + bandwidths
+    ...voiceQualityFeatures,       // 9     [156..165] Voice quality
+    ...pitchShapeFeatures,         // 5     [165..170] Pitch contour shape DCT
+  ]; // = 170
 
   return { features, f0Contour: f0 };
 }

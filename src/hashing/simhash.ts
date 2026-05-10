@@ -1,4 +1,9 @@
 import { FINGERPRINT_BITS, SIMHASH_SEED } from "../config";
+import { SPEAKER_FEATURE_COUNT } from "../extraction/speaker";
+import {
+  MOTION_FEATURE_COUNT,
+  TOUCH_FEATURE_COUNT,
+} from "../extraction/kinematic";
 import { sdkWarn } from "../log";
 import type { TemporalFingerprint } from "./types";
 
@@ -53,7 +58,24 @@ function getHyperplanes(dimension: number): number[][] {
  * Uses deterministic random hyperplanes seeded from the protocol constant.
  * Similar feature vectors produce fingerprints with low Hamming distance.
  */
-const EXPECTED_FEATURE_DIMENSION = 134; // 44 speaker + 54 motion/mouse + 36 touch
+// v3 feature pipeline: composed from the canonical per-modality counts
+// exported by their respective extractors so a future modality bump in
+// `speaker.ts` or `kinematic.ts` propagates without manual sync.
+//   - Speaker: 44 legacy + 72 MFCC (12×4 + 12×2, MFCC[0] dropped)
+//     + 24 LPC + 16 formant trajectories + 9 voice quality
+//     + 5 pitch DCT = 170.
+//   - Motion: 54 legacy + 27 v2 (cross-axis covariance,
+//     FFT band energy, tremor peak, direction-reversal stats, motion
+//     autocorrelation) = 81.
+//   - Touch: 36 legacy + 21 v2 (pressure derivative, contact
+//     geometry, curvature, velocity autocorrelation, gap distribution,
+//     path efficiency) = 57.
+// Total: 308. The constant is a soft warning gate (mismatch logs but
+// the hash still computes), so a stale-baseline session under an
+// upgrading SDK degrades gracefully rather than failing — the user
+// routes through the existing reset-baseline migration path.
+const EXPECTED_FEATURE_DIMENSION =
+  SPEAKER_FEATURE_COUNT + MOTION_FEATURE_COUNT + TOUCH_FEATURE_COUNT;
 
 export function simhash(features: number[]): TemporalFingerprint {
   if (features.length === 0) {

@@ -29,8 +29,10 @@ describe.skipIf(!circuitArtifactsExist)(
   "integration: full crypto pipeline",
   () => {
     it("generates a valid proof from mock features end-to-end", async () => {
-      // 1. Create mock feature vector (~134 random values: 44 speaker + 54 motion/mouse + 36 touch)
-      const features = Array.from({ length: 134 }, (_, i) =>
+      // 1. Create mock feature vector matching the v2 layout (314 = 176
+      //    audio + 81 motion + 57 touch). Exact dimension keeps the
+      //    SimHash warning log silent so test output stays clean.
+      const features = Array.from({ length: 314 }, (_, i) =>
         Math.sin(i * 0.3) * Math.cos(i * 0.7)
       );
 

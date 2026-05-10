@@ -1,5 +1,37 @@
 import type { MotionSample, TouchSample } from "../sensor/types";
-import { condense, variance, entropy } from "./statistics";
+import { condense, mean, variance, entropy, autocorrelation } from "./statistics";
+import { realFFT, bandEnergy, peakInBand, nextPow2 } from "./fft";
+
+// v2 motion block widens 54 → 81: 54 legacy (jerk + jounce stats × 6 axes,
+// jitter variance × 6) followed by 27 new features. Order is fixed by
+// `MOTION_FEATURE_COUNT` and asserted in tests/extraction.test.ts.
+export const MOTION_LEGACY_COUNT = 54;
+export const MOTION_V2_ADDITIONS = 27;
+export const MOTION_FEATURE_COUNT = MOTION_LEGACY_COUNT + MOTION_V2_ADDITIONS;
+
+// v2 touch block widens 36 → 57: 36 legacy followed by 21 new features.
+export const TOUCH_LEGACY_COUNT = 36;
+export const TOUCH_V2_ADDITIONS = 21;
+export const TOUCH_FEATURE_COUNT = TOUCH_LEGACY_COUNT + TOUCH_V2_ADDITIONS;
+
+// Mouse-dynamics keeps width parity with the motion block so that desktop
+// captures fuse cleanly into the same fingerprint slot as mobile IMU
+// captures. The first 54 entries are the legacy mouse-dynamics features;
+// the remaining 27 are zero (no IMU on desktop).
+//
+// Why zero-padding doesn't break SimHash bit-influence parity (verified
+// algebraically): `normalizeGroup` z-scores the 81-element block. With 27
+// zeros, the padded variance equals (54/81) × pure_variance, so the
+// padded std equals √(2/3) × pure_std ≈ 0.816 × pure_std. After dividing
+// by the padded std, real features scale by 1/0.816 ≈ 1.225, and zero
+// padding stays at -mean/std (≈ 0 when the real-feature mean is small).
+// The collective variance of the 81-element normalized block is exactly
+// 1 by construction (z-score guarantee), so the modality contributes the
+// same expected variance to the SimHash random-projection dot product
+// as the mobile case (also a unit-variance 81-element block). The
+// per-feature magnitude of real features inflates by 22% on desktop;
+// the per-modality bit-influence share stays equal.
+export const MOUSE_DYNAMICS_FEATURE_COUNT = MOTION_FEATURE_COUNT;
 
 /**
  * Compute per-sample acceleration magnitude |a| = √(ax² + ay² + az²) and
@@ -35,13 +67,23 @@ export function extractAccelerationMagnitude(
 
 /**
  * Extract kinematic features from motion (IMU) data.
- * Computes jerk (3rd derivative) and jounce (4th derivative) of acceleration,
- * then condenses each axis into statistics.
  *
- * Returns: ~54 values (6 axes × 2 derivatives × 4 stats + 6 jitter variance values)
+ * Layout (`MOTION_FEATURE_COUNT = 81`):
+ *   `[0..48)`  legacy: 6 axes × (jerk stats 4 + jounce stats 4)
+ *   `[48..54)` legacy: jitter variance per axis (6)
+ *   `[54..60)` v2:    cross-axis covariance (6 selected pairs)
+ *   `[60..72)` v2:    FFT band energy in {0-2, 2-6, 6-12, 12-30} Hz × {ax, ay, az}
+ *   `[72..74)` v2:    physiological tremor peak frequency + amplitude (4-12 Hz)
+ *   `[74..76)` v2:    direction-reversal rate per axis: mean, variance across {ax, ay, az}
+ *   `[76]`     v2:    mean angular velocity (|gyro| over the capture)
+ *   `[77..81)` v2:    motion-magnitude autocorrelation at lags {1, 5, 10, 25}
+ *
+ * @privacyGuarantee Operates on already-on-device IMU samples and emits
+ * statistical / spectral aggregates (variances, covariances, band sums,
+ * autocorrelation scalars). The full sample stream is never transmitted.
  */
 export function extractMotionFeatures(samples: MotionSample[]): number[] {
-  if (samples.length < 5) return new Array(54).fill(0);
+  if (samples.length < 5) return new Array(MOTION_FEATURE_COUNT).fill(0);
 
   // Extract acceleration and rotation time series
   const axes = {
@@ -88,18 +130,138 @@ export function extractMotionFeatures(samples: MotionSample[]): number[] {
     features.push(windowVariances.length >= 2 ? variance(windowVariances) : 0);
   }
 
+  // ---- v2 additions ----
+  features.push(...computeMotionV2(axes, samples));
+
   return features;
 }
 
 /**
+ * v2 motion additions (27 features). Pulled into a dedicated helper so the
+ * legacy 54-feature block stays isolated and visually identifiable in the
+ * git history of `extractMotionFeatures`.
+ */
+function computeMotionV2(
+  axes: Record<"ax" | "ay" | "az" | "gx" | "gy" | "gz", number[]>,
+  samples: MotionSample[]
+): number[] {
+  const out: number[] = [];
+
+  // 1. Cross-axis covariance — 6 selected pairs (per blueprint §2.2). The
+  // pairs target identity-bearing motor coordinations: accel-gyro coupling
+  // (ax-gy, ay-gx, az-gz) for natural hand sway, accel-accel coupling
+  // (ax-az, ay-az) for axis-of-grip leakage, and gyro-gyro coupling
+  // (gx-gy) for wrist-rotation patterns.
+  const covPairs: Array<[number[], number[]]> = [
+    [axes.ax, axes.gy],
+    [axes.ay, axes.gx],
+    [axes.az, axes.gz],
+    [axes.ax, axes.az],
+    [axes.ay, axes.az],
+    [axes.gx, axes.gy],
+  ];
+  for (const [a, b] of covPairs) out.push(covariance(a, b));
+
+  // 2. FFT band energy on the 3 accelerometer axes.
+  // Sample rate is recovered from timestamps so we report energy in
+  // physical Hz rather than bin units (IMU rates vary 50-200 Hz across
+  // devices).
+  const sampleRate = sampleRateFromTimestamps(samples.map((s) => s.timestamp));
+  const fftSize = nextPow2(Math.max(64, axes.ax.length));
+  const bands: Array<[number, number]> = [
+    [0, 2],
+    [2, 6],
+    [6, 12],
+    [12, 30],
+  ];
+
+  // Pre-FFT each accel axis once; reuse the spectra for both band-energy
+  // and the magnitude path below.
+  const accelSpectra = [axes.ax, axes.ay, axes.az].map((axis) =>
+    realFFT(meanCenter(axis), fftSize)
+  );
+  for (const spectrum of accelSpectra) {
+    for (const [lo, hi] of bands) {
+      out.push(bandEnergy(spectrum.real, spectrum.imag, sampleRate, lo, hi));
+    }
+  }
+
+  // 3. Physiological-tremor peak (4-12 Hz) on motion magnitude.
+  const magnitude = samples.map((s) =>
+    Math.sqrt(s.ax * s.ax + s.ay * s.ay + s.az * s.az)
+  );
+  const magSpectrum = realFFT(meanCenter(magnitude), fftSize);
+  const tremor = peakInBand(
+    magSpectrum.real,
+    magSpectrum.imag,
+    sampleRate,
+    4,
+    12
+  );
+  out.push(tremor.freq, tremor.amplitude);
+
+  // 4. Direction-reversal rate per second per accel axis (mean, variance).
+  // A "reversal" here is a sign change of jerk (= the derivative of
+  // acceleration). Counting on jerk rather than raw acceleration removes
+  // the gravity DC bias on the vertical axis (raw az hovers around -9.8
+  // and rarely crosses zero) and captures the rate of micro-correction
+  // events on each axis. Rate is normalized by capture duration so it's
+  // dimension-stable across IMU sample-rates. Mean + variance over the
+  // 3 accel axes captures both how busy the user's motion is and which
+  // axis dominates — a per-axis dominance pattern that's identity-bearing.
+  const duration = captureDurationSec(samples);
+  const reversalRates = [axes.ax, axes.ay, axes.az].map((axis) =>
+    duration > 0 ? signChangeCount(derivative(axis)) / duration : 0
+  );
+  out.push(mean(reversalRates), variance(reversalRates));
+
+  // 5. Mean angular velocity (|gyro| over the capture).
+  let gyroSum = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const gx = samples[i]!.gx;
+    const gy = samples[i]!.gy;
+    const gz = samples[i]!.gz;
+    gyroSum += Math.sqrt(gx * gx + gy * gy + gz * gz);
+  }
+  out.push(samples.length > 0 ? gyroSum / samples.length : 0);
+
+  // 6. Motion-magnitude autocorrelation at lags 1, 5, 10, 25 — captures
+  // periodic structure (gait, tremor harmonics) that escapes the
+  // moment-based features. Lags chosen to span the physiological-tremor
+  // band: at a typical 60 Hz IMU rate, lag 5 ≈ 83 ms (12 Hz cycle), lag
+  // 10 ≈ 167 ms (6 Hz), lag 25 ≈ 417 ms (sub-tremor, gait-rate signal).
+  // The asymmetry vs touch's autocorrelation lags (1, 3, 5) is intentional
+  // — touch captures finer rhythms (50-100 ms inter-event coherence)
+  // while motion captures slower oscillatory patterns.
+  for (const lag of [1, 5, 10, 25]) {
+    out.push(autocorrelation(magnitude, lag));
+  }
+
+  return out;
+}
+
+/**
  * Extract kinematic features from touch data.
- * Computes velocity and acceleration of touch coordinates,
- * plus pressure and area statistics.
  *
- * Returns: ~36 values (32 base + 4 jitter variance for x, y, pressure, area)
+ * Layout (`TOUCH_FEATURE_COUNT = 57`):
+ *   `[0..32)`  legacy: velocity / accel / pressure / area / jerk stats (32)
+ *   `[32..36)` legacy: jitter variance for {vx, vy, pressure, area} (4)
+ *   `[36..40)` v2:    pressure first-derivative stats (mean, var, skew, kurt)
+ *   `[40..42)` v2:    contact aspect-ratio stats (mean, var)
+ *   `[42..44)` v2:    contact-area first-derivative stats (mean, var)
+ *   `[44..47)` v2:    trajectory curvature stats (mean, var, skew)
+ *   `[47..50)` v2:    velocity autocorrelation at lags {1, 3, 5}
+ *   `[50..54)` v2:    inter-touch gap duration stats (mean, var, skew, kurt)
+ *   `[54]`     v2:    path efficiency (straight-line / total path length)
+ *   `[55..57)` v2:    per-stroke total path length: mean, variance
+ *
+ * @privacyGuarantee Operates on already-on-device touch samples and emits
+ * statistical aggregates only. The full coordinate stream is never
+ * transmitted; downstream phase-content (e.g. typed text) is not
+ * recoverable from the per-stroke summaries.
  */
 export function extractTouchFeatures(samples: TouchSample[]): number[] {
-  if (samples.length < 5) return new Array(36).fill(0);
+  if (samples.length < 5) return new Array(TOUCH_FEATURE_COUNT).fill(0);
 
   const x = samples.map((s) => s.x);
   const y = samples.map((s) => s.y);
@@ -142,7 +304,127 @@ export function extractTouchFeatures(samples: TouchSample[]): number[] {
     features.push(windowVariances.length >= 2 ? variance(windowVariances) : 0);
   }
 
+  // ---- v2 additions ----
+  features.push(...computeTouchV2(samples, vx, vy));
+
   return features;
+}
+
+/**
+ * v2 touch additions (21 features). Pulled into a helper so the legacy
+ * 36-feature block stays a visually identifiable unit.
+ */
+function computeTouchV2(
+  samples: TouchSample[],
+  vx: number[],
+  vy: number[]
+): number[] {
+  const out: number[] = [];
+
+  // 1. Pressure first-derivative stats (4) — temporal RATE of pressure
+  // variation, complementing the existing pressure mean/var/skew/kurt.
+  const pressure = samples.map((s) => s.pressure);
+  const dPressure = derivative(pressure);
+  out.push(...Object.values(condense(dPressure)));
+
+  // 2. Contact aspect ratio stats (mean, variance). width/height captures
+  // finger-vs-thumb-vs-stylus identity even when raw area drifts.
+  const aspect = samples.map((s) => {
+    const h = s.height;
+    return h > 0 ? s.width / h : 0;
+  });
+  out.push(mean(aspect), variance(aspect));
+
+  // 3. Contact-area first-derivative stats (mean, variance) — rate of
+  // pressure-spread change, a finer-grained signal than raw area moments.
+  const area = samples.map((s) => s.width * s.height);
+  const dArea = derivative(area);
+  out.push(mean(dArea), variance(dArea));
+
+  // 4. Trajectory curvature stats (mean, var, skew). Curvature is the
+  // absolute angle change between successive velocity vectors —
+  // identity-bearing motor coordination. Skip rest-frames where either
+  // velocity vector is below `CURVATURE_REST_EPS` because `atan2(0, 0)`
+  // returns 0 silently, which would inject a spurious large curvature
+  // spike whenever motion resumes from a pause.
+  const CURVATURE_REST_EPS = 1e-3;
+  const curvatures: number[] = [];
+  for (let i = 1; i < vx.length; i++) {
+    const v1x = vx[i - 1] ?? 0;
+    const v1y = vy[i - 1] ?? 0;
+    const v2x = vx[i] ?? 0;
+    const v2y = vy[i] ?? 0;
+    if (
+      Math.hypot(v1x, v1y) < CURVATURE_REST_EPS ||
+      Math.hypot(v2x, v2y) < CURVATURE_REST_EPS
+    ) {
+      continue;
+    }
+    const a1 = Math.atan2(v1y, v1x);
+    const a2 = Math.atan2(v2y, v2x);
+    let d = a2 - a1;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    curvatures.push(Math.abs(d));
+  }
+  const curvStats = condense(curvatures);
+  out.push(curvStats.mean, curvStats.variance, curvStats.skewness);
+
+  // 5. Velocity-magnitude autocorrelation at short lags — captures rhythm
+  // in touch motion below the resolution of moment statistics.
+  const speed = vx.map((dx, i) => {
+    const dy = vy[i] ?? 0;
+    return Math.sqrt(dx * dx + dy * dy);
+  });
+  for (const lag of [1, 3, 5]) out.push(autocorrelation(speed, lag));
+
+  // 6. Inter-touch gap duration stats (mean, var, skew, kurt). Gaps are
+  // the millisecond intervals between successive touch events — touch
+  // rhythm is highly individual (think tap cadence vs swipe cadence).
+  const gaps: number[] = [];
+  for (let i = 1; i < samples.length; i++) {
+    gaps.push((samples[i]?.timestamp ?? 0) - (samples[i - 1]?.timestamp ?? 0));
+  }
+  out.push(...Object.values(condense(gaps)));
+
+  // 7. Path efficiency = straight-line displacement / total path length.
+  // 1.0 = perfectly straight movement, near-0 = highly tortuous.
+  const totalPath = speed.reduce((a, b) => a + b, 0);
+  const dx = (samples[samples.length - 1]?.x ?? 0) - (samples[0]?.x ?? 0);
+  const dy = (samples[samples.length - 1]?.y ?? 0) - (samples[0]?.y ?? 0);
+  const straight = Math.sqrt(dx * dx + dy * dy);
+  out.push(totalPath > 0 ? straight / totalPath : 0);
+
+  // 8. Per-stroke total path length: split on speed troughs (≤ 0.5 px/sample
+  // from rest, matching the mouse-dynamics pause threshold), then take
+  // mean and variance. Captures motor-planning style — burst-then-pause
+  // vs continuous-glide users.
+  const strokeLengths = perStrokePathLengths(speed);
+  out.push(mean(strokeLengths), variance(strokeLengths));
+
+  return out;
+}
+
+/** Split a speed series into stroke segments at rest-points and return
+ *  the cumulative speed (≈ path length in pixels) of each stroke.
+ *  A "stroke" is a contiguous run of speed ≥ threshold. */
+function perStrokePathLengths(speed: number[]): number[] {
+  const PAUSE_THRESHOLD = 0.5;
+  const lengths: number[] = [];
+  let acc = 0;
+  let inStroke = false;
+  for (const s of speed) {
+    if (s >= PAUSE_THRESHOLD) {
+      acc += s;
+      inStroke = true;
+    } else if (inStroke) {
+      lengths.push(acc);
+      acc = 0;
+      inStroke = false;
+    }
+  }
+  if (inStroke && acc > 0) lengths.push(acc);
+  return lengths;
 }
 
 /** Compute discrete derivative (differences between consecutive values) */
@@ -154,15 +436,82 @@ function derivative(values: number[]): number[] {
   return d;
 }
 
+/** Subtract the arithmetic mean from a series; returns a new array. */
+function meanCenter(values: number[]): number[] {
+  if (values.length === 0) return [];
+  let sum = 0;
+  for (const v of values) sum += v;
+  const m = sum / values.length;
+  return values.map((v) => v - m);
+}
+
+/** Sample covariance Cov(a, b) = mean((a-mean(a))(b-mean(b))). */
+function covariance(a: number[], b: number[]): number {
+  const n = Math.min(a.length, b.length);
+  if (n < 2) return 0;
+  let sumA = 0;
+  let sumB = 0;
+  for (let i = 0; i < n; i++) {
+    sumA += a[i] ?? 0;
+    sumB += b[i] ?? 0;
+  }
+  const meanA = sumA / n;
+  const meanB = sumB / n;
+  let cov = 0;
+  for (let i = 0; i < n; i++) {
+    cov += ((a[i] ?? 0) - meanA) * ((b[i] ?? 0) - meanB);
+  }
+  return cov / (n - 1);
+}
+
+/** Count strict sign changes (zero-crossings excluding zero-runs). */
+function signChangeCount(values: number[]): number {
+  let count = 0;
+  let last = 0;
+  for (const v of values) {
+    if (v > 0 && last < 0) count++;
+    else if (v < 0 && last > 0) count++;
+    if (v !== 0) last = v;
+  }
+  return count;
+}
+
+/**
+ * Recover the sample rate (Hz) from a millisecond-timestamped sensor
+ * stream. Returns 0 when the input is too short to estimate or contains
+ * non-monotone timestamps (defensive — pulse.ts caps this with a default
+ * downstream so 0 propagates as "no spectral feature available").
+ */
+function sampleRateFromTimestamps(timestampsMs: number[]): number {
+  if (timestampsMs.length < 2) return 0;
+  const span = (timestampsMs[timestampsMs.length - 1] ?? 0) - (timestampsMs[0] ?? 0);
+  if (!Number.isFinite(span) || span <= 0) return 0;
+  return ((timestampsMs.length - 1) * 1000) / span;
+}
+
+/** Capture duration in seconds from a millisecond-timestamped sample set. */
+function captureDurationSec(
+  samples: Array<{ timestamp: number }>
+): number {
+  if (samples.length < 2) return 0;
+  const span =
+    (samples[samples.length - 1]?.timestamp ?? 0) -
+    (samples[0]?.timestamp ?? 0);
+  return Number.isFinite(span) && span > 0 ? span / 1000 : 0;
+}
+
 /**
  * Extract mouse dynamics features as a desktop replacement for motion sensor data.
  * Captures behavioral patterns from mouse/pointer movement that are user-specific:
  * path curvature, speed patterns, micro-corrections, pause behavior.
  *
- * Returns: 54 values (matches motion feature dimension for consistent SimHash input)
+ * Returns: `MOUSE_DYNAMICS_FEATURE_COUNT` (= `MOTION_FEATURE_COUNT`) values.
+ * The first 54 entries are the legacy mouse-dynamics signal; the trailing
+ * v2-block slots stay zero on desktop so the per-modality bit-influence
+ * share matches a mobile IMU capture under the new pipeline.
  */
 export function extractMouseDynamics(samples: TouchSample[]): number[] {
-  if (samples.length < 10) return new Array(54).fill(0);
+  if (samples.length < 10) return new Array(MOUSE_DYNAMICS_FEATURE_COUNT).fill(0);
 
   const x = samples.map((s) => s.x);
   const y = samples.map((s) => s.y);
@@ -302,7 +651,7 @@ export function extractMouseDynamics(samples: TouchSample[]): number[] {
   // normalizedPathLength                                      // 1
   // Total: 4+1+4+4+2+1+1+1+4+4+4+4+4+4+4+4+3+1 = 54
 
-  return [
+  const legacyMouseDynamics = [
     curvatureStats.mean, curvatureStats.variance, curvatureStats.skewness, curvatureStats.kurtosis,
     dirEntropy,
     speedStats.mean, speedStats.variance, speedStats.skewness, speedStats.kurtosis,
@@ -322,4 +671,130 @@ export function extractMouseDynamics(samples: TouchSample[]): number[] {
     angleAutoCorr[0] ?? 0, angleAutoCorr[1] ?? 0, angleAutoCorr[2] ?? 0,
     normalizedPathLength,
   ];
+
+  // Mouse V2 additions — 27 features mirroring `computeMotionV2`'s layout
+  // exactly so desktop and mobile fingerprints share parallel structure
+  // in the same indices. Replaces the original zero-padding scheme that
+  // contributed ~85 deterministic bits across all desktop users (the
+  // May-2026 cross-person Hamming collision contributor for the motion
+  // block). Real signals fill every slot from the same mouse data the
+  // legacy 54 features already consume, so no new sensor access required.
+  const v2 = computeMouseV2(samples, vx, vy, accX, accY, speed, acc, jerk, directions);
+  return [...legacyMouseDynamics, ...v2];
+}
+
+/**
+ * v2 mouse-dynamics additions (27 features). Pulled into a dedicated
+ * helper that mirrors `computeMotionV2` index-for-index so desktop and
+ * mobile fingerprints have parallel semantic structure. All inputs are
+ * already computed in the calling `extractMouseDynamics` scope; passing
+ * them through avoids a second pass over the touch sample stream.
+ *
+ * Layout (relative to mouse block start):
+ *   `[54..60)` cross-axis covariance: 6 pairs from {vx, vy, accX, accY}
+ *   `[60..72)` FFT band energy {0-2, 2-6, 6-12, 12-30} Hz × {speed, acc, jerk}
+ *   `[72..74)` physiological tremor peak (4-12 Hz) on speed: freq + amplitude
+ *   `[74..76)` reversal-rate-per-second per channel {vx, vy, speed}: mean + variance
+ *   `[76]`     mean angular speed (mean |Δdirection|)
+ *   `[77..81)` speed-magnitude autocorrelation at lags {1, 5, 10, 25}
+ */
+function computeMouseV2(
+  samples: TouchSample[],
+  vx: number[],
+  vy: number[],
+  accX: number[],
+  accY: number[],
+  speed: number[],
+  acc: number[],
+  jerk: number[],
+  directions: number[],
+): number[] {
+  const out: number[] = [];
+
+  // 1. Cross-axis covariance — 6 unique pairs from the 4-channel
+  // {vx, vy, accX, accY} basis. Captures motor-coordination signature:
+  // vx-vy coupling (handedness), velocity-acceleration coupling per axis
+  // (motor-control style), and X/Y acceleration coupling (cursor-gesture
+  // diagonality preference). The mouse equivalent of `computeMotionV2`'s
+  // accel-gyro-and-axes pairings.
+  const covPairs: Array<[number[], number[]]> = [
+    [vx, vy],
+    [vx, accX],
+    [vx, accY],
+    [vy, accX],
+    [vy, accY],
+    [accX, accY],
+  ];
+  for (const [a, b] of covPairs) out.push(covariance(a, b));
+
+  // 2. FFT band energy on 3 channels: speed, acc, jerk magnitudes. Sample
+  // rate is recovered from timestamps so band boundaries are reported in
+  // physical Hz across mouse-event rates that vary 60-125 Hz across
+  // browsers and OSs. Pre-FFT each channel once; reuse the speed
+  // spectrum for the tremor peak below.
+  const sampleRate = sampleRateFromTimestamps(samples.map((s) => s.timestamp));
+  const fftSize = nextPow2(Math.max(64, speed.length));
+  const bands: Array<[number, number]> = [
+    [0, 2],
+    [2, 6],
+    [6, 12],
+    [12, 30],
+  ];
+  const speedSpectrum = realFFT(meanCenter(speed), fftSize);
+  const accSpectrum = realFFT(meanCenter(acc), fftSize);
+  const jerkSpectrum = realFFT(meanCenter(jerk), fftSize);
+  for (const spectrum of [speedSpectrum, accSpectrum, jerkSpectrum]) {
+    for (const [lo, hi] of bands) {
+      out.push(bandEnergy(spectrum.real, spectrum.imag, sampleRate, lo, hi));
+    }
+  }
+
+  // 3. Physiological-tremor peak (4-12 Hz) on speed magnitude. Mouse-using
+  // hands carry the same 4-12 Hz physiological tremor as IMU-tracked hands;
+  // it surfaces in cursor-speed envelope as a small periodic component
+  // riding on top of intentional motion.
+  const tremor = peakInBand(
+    speedSpectrum.real,
+    speedSpectrum.imag,
+    sampleRate,
+    4,
+    12,
+  );
+  out.push(tremor.freq, tremor.amplitude);
+
+  // 4. Reversal rate per second per channel (mean, variance across
+  // {vx, vy, speed}). Sign change of the channel's first derivative
+  // counts micro-corrections — wrist-style movements differ across
+  // people in both rate and per-axis distribution.
+  const duration = captureDurationSec(samples);
+  const reversalRates = [vx, vy, speed].map((channel) =>
+    duration > 0 ? signChangeCount(derivative(channel)) / duration : 0,
+  );
+  out.push(mean(reversalRates), variance(reversalRates));
+
+  // 5. Mean angular speed: mean of unwrapped |Δdirection|. Captures
+  // overall steering activity — looser-grip hands change direction more
+  // often than precision-grip hands. Equivalent to motion's mean |gyro|.
+  let dirAccum = 0;
+  for (let i = 1; i < directions.length; i++) {
+    let diff = directions[i]! - directions[i - 1]!;
+    while (diff > Math.PI) diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
+    dirAccum += Math.abs(diff);
+  }
+  out.push(directions.length > 1 ? dirAccum / (directions.length - 1) : 0);
+
+  // 6. Speed-magnitude autocorrelation at lags 1, 5, 10, 25 — captures
+  // periodic structure (drag rhythms, repeated sub-gestures) that escapes
+  // moment-based features. Lag choices match motion v2 so the fingerprint
+  // band-by-band layout stays parallel across device classes.
+  for (const lag of [1, 5, 10, 25]) {
+    out.push(autocorrelation(speed, lag));
+  }
+
+  // Defensive finite-cast: any helper that hits an edge case (zero-length
+  // spectrum, constant channel, sub-1-sample direction series) should
+  // return 0 rather than NaN/Infinity, matching the SDK's "feature vector
+  // is always finite" contract enforced by the validator's NonFinite check.
+  return out.map((v) => (Number.isFinite(v) ? v : 0));
 }

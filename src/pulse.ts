@@ -17,6 +17,8 @@ import {
   extractTouchFeatures,
   extractMouseDynamics,
   extractAccelerationMagnitude,
+  MOTION_FEATURE_COUNT,
+  TOUCH_FEATURE_COUNT,
 } from "./extraction/kinematic";
 import { fuseFeatures, fuseRawFeatures } from "./extraction/statistics";
 import { yieldToMainThread } from "./yield";
@@ -172,13 +174,18 @@ async function extractFingerprintAndValidate(
     accelMagnitude,
   } = await extractFeatures(sensorData);
 
-  // Diagnostic: log feature vector composition
+  // Diagnostic: log feature vector composition. Block boundaries follow the
+  // v2 layout, derived from the canonical per-modality counts so any future
+  // modality bump propagates automatically (no hand-sync drift).
+  const AUDIO_END = SPEAKER_FEATURE_COUNT;
+  const MOTION_END = AUDIO_END + MOTION_FEATURE_COUNT;
+  const TOUCH_END = MOTION_END + TOUCH_FEATURE_COUNT;
   const nonZero = features.filter((v) => v !== 0).length;
   sdkLog(
     `[Entros SDK] Feature vector: ${features.length} dimensions, ${nonZero} non-zero. ` +
-    `Audio[0..43]: ${features.slice(0, 44).filter((v) => v !== 0).length} non-zero. ` +
-    `Motion/Mouse[44..97]: ${features.slice(44, 98).filter((v) => v !== 0).length} non-zero. ` +
-    `Touch[98..133]: ${features.slice(98, 134).filter((v) => v !== 0).length} non-zero.`
+    `Audio[0..${AUDIO_END - 1}]: ${features.slice(0, AUDIO_END).filter((v) => v !== 0).length} non-zero. ` +
+    `Motion/Mouse[${AUDIO_END}..${MOTION_END - 1}]: ${features.slice(AUDIO_END, MOTION_END).filter((v) => v !== 0).length} non-zero. ` +
+    `Touch[${MOTION_END}..${TOUCH_END - 1}]: ${features.slice(MOTION_END, TOUCH_END).filter((v) => v !== 0).length} non-zero.`
   );
 
   // Compute the SimHash fingerprint and Poseidon TBH commitment BEFORE the
@@ -483,10 +490,15 @@ async function processSensorData(
       );
       solanaProof = serializeProof(proof, publicSignals);
     } catch (proofErr: any) {
-      // Include diagnostics in error for mobile debugging (no devtools)
-      const audioNZ = features.slice(0, 44).filter((v) => v !== 0).length;
-      const motionNZ = features.slice(44, 98).filter((v) => v !== 0).length;
-      const touchNZ = features.slice(98, 134).filter((v) => v !== 0).length;
+      // Include diagnostics in error for mobile debugging (no devtools).
+      // Block boundaries derived from extractor constants so they stay in
+      // sync with the v2 layout if any modality count shifts.
+      const motionStart = SPEAKER_FEATURE_COUNT;
+      const touchStart = motionStart + MOTION_FEATURE_COUNT;
+      const touchEnd = touchStart + TOUCH_FEATURE_COUNT;
+      const audioNZ = features.slice(0, motionStart).filter((v) => v !== 0).length;
+      const motionNZ = features.slice(motionStart, touchStart).filter((v) => v !== 0).length;
+      const touchNZ = features.slice(touchStart, touchEnd).filter((v) => v !== 0).length;
       const rawAudio = sensorData.audio?.samples.length ?? 0;
       const rawMotion = sensorData.motion.length;
       const rawTouch = sensorData.touch.length;
