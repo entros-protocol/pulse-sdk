@@ -6,12 +6,6 @@
     "spec": "0.1.0",
     "description": "Non-transferable identity token for Entros Protocol"
   },
-  "docs": [
-    "Mint account space for Token-2022 with NonTransferable extension.",
-    "Base mint = 82 bytes, account type = 1 byte, extension type (2) + length (2) = 4 bytes,",
-    "NonTransferable data = 0 bytes. Plus multisig padding from Token-2022.",
-    "We use a constant derived from the Token-2022 spec."
-  ],
   "instructions": [
     {
       "name": "authorize_new_wallet",
@@ -994,6 +988,132 @@
       ]
     },
     {
+      "name": "set_encrypted_baseline",
+      "docs": [
+        "Write or overwrite the caller's encrypted baseline blob.",
+        "",
+        "The blob is opaque to the program — AES-256-GCM ciphertext of the",
+        "user's previous SimHash plus salt, produced off-chain in the SDK",
+        "under a key derived from a deterministic `signMessage`. The GCM",
+        "auth tag binds the blob to (wallet, this PDA's address, on-chain",
+        "`current_commitment` at encryption time), so a stale blob produced",
+        "before a `reset_identity_state` fails authentication under the new",
+        "commitment and the SDK falls back to a fresh-capture flow.",
+        "",
+        "The program never decrypts the blob — it only stores opaque bytes.",
+        "Plaintext biometric data never reaches chain at any point.",
+        "",
+        "Guards:",
+        "* Signer must equal the wallet that seeds the EncryptedBaseline",
+        "PDA (enforced by the seeds constraint on the Accounts struct).",
+        "* The caller's IdentityState PDA at `[b\"identity\", signer]` must",
+        "already exist — pre-mint attempts are rejected with",
+        "`IdentityStateNotFound`. Anchor's seeds constraint validates the",
+        "PDA address; the `data_len() > 0` check confirms initialization."
+      ],
+      "discriminator": [
+        10,
+        73,
+        41,
+        36,
+        2,
+        145,
+        87,
+        111
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "identity_state",
+          "docs": [
+            "UncheckedAccount because we only need to verify the IdentityState",
+            "PDA exists at the expected address — we don't need to deserialize",
+            "its fields. The seeds constraint validates the PDA address."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "encrypted_baseline",
+          "docs": [
+            "The EncryptedBaseline PDA. Created on first call, overwritten on",
+            "subsequent calls. PDA seeds bind to the signer's wallet, so only",
+            "the wallet owner can write to their own baseline."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  99,
+                  114,
+                  121,
+                  112,
+                  116,
+                  101,
+                  100,
+                  95,
+                  98,
+                  97,
+                  115,
+                  101,
+                  108,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "blob",
+          "type": {
+            "array": [
+              "u8",
+              96
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "update_anchor",
       "docs": [
         "Update the identity state after a successful proof verification.",
@@ -1297,6 +1417,19 @@
   ],
   "accounts": [
     {
+      "name": "EncryptedBaseline",
+      "discriminator": [
+        235,
+        60,
+        246,
+        174,
+        131,
+        9,
+        248,
+        146
+      ]
+    },
+    {
       "name": "IdentityState",
       "discriminator": [
         156,
@@ -1348,6 +1481,19 @@
         84,
         103,
         59
+      ]
+    },
+    {
+      "name": "EncryptedBaselineSet",
+      "discriminator": [
+        198,
+        176,
+        56,
+        167,
+        74,
+        225,
+        138,
+        121
       ]
     },
     {
@@ -1474,6 +1620,11 @@
       "code": 6021,
       "name": "MalformedReceiptMessage",
       "msg": "Receipt message has malformed length or layout"
+    },
+    {
+      "code": 6022,
+      "name": "IdentityStateNotFound",
+      "msg": "set_encrypted_baseline called before mint_anchor — IdentityState PDA does not exist"
     }
   ],
   "types": [
@@ -1552,6 +1703,64 @@
                 32
               ]
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "EncryptedBaseline",
+      "docs": [
+        "Wallet-keyed encrypted baseline blob, stored at PDA seeds",
+        "`[b\"encrypted_baseline\", wallet.key().as_ref()]`. Persists the user's",
+        "previous SimHash + salt across cache wipes and device changes so the",
+        "Hamming-distance ZK proof can recover its private witnesses on any",
+        "device with the originating wallet.",
+        "",
+        "The blob is opaque ciphertext to the program — AES-256-GCM produced",
+        "off-chain in the SDK under a key derived from a deterministic",
+        "`signMessage` on a domain-separated payload. The GCM AAD binds the",
+        "blob to (wallet, this PDA's address, current on-chain commitment),",
+        "so a stale blob (post-`reset_identity_state`) fails authentication",
+        "against the new commitment and the SDK falls back to a fresh-capture",
+        "flow.",
+        "",
+        "The program never decrypts the blob — it only stores opaque bytes.",
+        "Plaintext biometric data never reaches chain at any point."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "blob",
+            "docs": [
+              "96-byte versioned ciphertext envelope.",
+              "Layout: version(1) || algo(1) || reserved(2) || iv(12) || ct+tag(80)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                96
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EncryptedBaselineSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
           }
         ]
       }
