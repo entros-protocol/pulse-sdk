@@ -1,6 +1,6 @@
 import type { Idl } from "@coral-xyz/anchor";
 import { PROGRAM_IDS } from "../config";
-import { sdkWarn } from "../log";
+import { sdkLog, sdkWarn } from "../log";
 import { entrosAnchorIdl } from "../protocol/idl";
 import type { IdentityState, StoredVerificationData } from "./types";
 import {
@@ -9,6 +9,16 @@ import {
   encrypt,
   decrypt,
 } from "./crypto";
+import {
+  BaselineWallet,
+  StaleEncryptedBaselineError,
+  bytes32ToBigint,
+  bytesToFingerprint,
+  decryptBaselineBlob,
+  deriveEncryptedBaselinePda,
+  fetchEncryptedBaseline,
+  getOrDeriveBaselineKey,
+} from "./baseline";
 
 const STORAGE_KEY = "entros-protocol-verification-data";
 const ENCRYPTED_VERSION = 2;
@@ -245,5 +255,126 @@ export async function loadVerificationData(): Promise<StoredVerificationData | n
     return inMemoryStore;
   } catch {
     return inMemoryStore;
+  }
+}
+
+/**
+ * Outcome of an attempt to recover the local baseline from the on-chain
+ * encrypted blob (master-list #98 cache-clear / cross-device path).
+ *
+ * Reasons distinguish recoverable from terminal failures:
+ *   - `no-on-chain-identity`: caller should treat as first-verification.
+ *   - `no-encrypted-baseline`: identity exists but user has never written
+ *     an encrypted baseline (pre-3.3.0 SDK or pre-#98 deploy). UX should
+ *     surface the existing baseline-missing copy and offer reset.
+ *   - `signing-unavailable`: AES key derivation failed because the wallet
+ *     can't `signMessage` (no method on the adapter, e.g., older Ledger
+ *     firmware) OR the user cancelled the prompt OR the wallet erred. The
+ *     `detail` field carries the specific cause when present.
+ *   - `stale-baseline`: blob predates a `reset_identity_state` cycle.
+ *     Treat as terminal recovery failure; route to fresh-capture flow.
+ *   - `unknown-error`: catch-all (RPC failure, malformed blob, etc.).
+ */
+export type BaselineRecoveryReason =
+  | "no-on-chain-identity"
+  | "no-encrypted-baseline"
+  | "signing-unavailable"
+  | "stale-baseline"
+  | "unknown-error";
+
+export interface BaselineRecoveryResult {
+  recovered: boolean;
+  reason?: BaselineRecoveryReason;
+  detail?: string;
+}
+
+/**
+ * Attempt to recover this wallet's local baseline from the on-chain
+ * `EncryptedBaseline` PDA. On success, writes the recovered fingerprint /
+ * salt / commitment / timestamp into the SDK's normal local storage tier
+ * so the next `loadVerificationData()` call returns it transparently.
+ *
+ * Wallet flow on success: ONE `signMessage` prompt (for the AES key
+ * derivation). The wallet's currently-cached key — if `getOrDeriveBaselineKey`
+ * has been called earlier in the session — short-circuits the prompt.
+ *
+ * No-op when:
+ *   - The on-chain `IdentityState` PDA does not exist (treat as first-verify).
+ *   - The on-chain `EncryptedBaseline` PDA does not exist (pre-#98 or wallet
+ *     never had `set_encrypted_baseline` written — UX should offer reset).
+ *   - The wallet lacks `signMessage` (some Ledger firmware versions).
+ *   - The blob's auth tag doesn't verify under the current on-chain
+ *     commitment (stale blob from a prior reset cycle).
+ */
+export async function recoverBaselineFromChain(
+  wallet: BaselineWallet,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Connection is an optional peer dep; matches fetchIdentityState style
+  connection: any
+): Promise<BaselineRecoveryResult> {
+  try {
+    const identity = await fetchIdentityState(
+      wallet.publicKey.toBase58(),
+      connection
+    );
+    if (!identity) {
+      return { recovered: false, reason: "no-on-chain-identity" };
+    }
+
+    const blob = await fetchEncryptedBaseline(wallet.publicKey, connection);
+    if (!blob) {
+      return { recovered: false, reason: "no-encrypted-baseline" };
+    }
+
+    let key: CryptoKey;
+    try {
+      key = await getOrDeriveBaselineKey(wallet);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      return {
+        recovered: false,
+        reason: "signing-unavailable",
+        detail,
+      };
+    }
+
+    const [baselinePda] = await deriveEncryptedBaselinePda(wallet.publicKey);
+
+    let plaintext: { simhash: Uint8Array; salt: Uint8Array };
+    try {
+      plaintext = await decryptBaselineBlob(
+        blob,
+        key,
+        wallet.publicKey,
+        baselinePda,
+        identity.currentCommitment
+      );
+    } catch (err) {
+      if (err instanceof StaleEncryptedBaselineError) {
+        return { recovered: false, reason: "stale-baseline" };
+      }
+      const detail = err instanceof Error ? err.message : String(err);
+      return { recovered: false, reason: "unknown-error", detail };
+    }
+
+    const fingerprint = bytesToFingerprint(plaintext.simhash);
+    const saltBigint = bytes32ToBigint(plaintext.salt);
+    const commitmentBigint = bytes32ToBigint(identity.currentCommitment);
+
+    await storeVerificationData({
+      fingerprint,
+      salt: saltBigint.toString(),
+      commitment: commitmentBigint.toString(),
+      timestamp:
+        identity.lastVerificationTimestamp > 0
+          ? identity.lastVerificationTimestamp * 1000
+          : Date.now(),
+    });
+    sdkLog(
+      "[Entros SDK] Recovered local baseline from on-chain EncryptedBaseline PDA"
+    );
+    return { recovered: true };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { recovered: false, reason: "unknown-error", detail };
   }
 }
