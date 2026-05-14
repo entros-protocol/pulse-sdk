@@ -144,39 +144,92 @@ function findRoots(coefficients: number[], maxIterations: number = 50): [number,
 }
 
 /**
- * Extract formant frequencies (F1, F2, F3) from a single audio frame.
- * Returns [F1, F2, F3] in Hz, or null if extraction fails.
+ * Per-frame analysis output: the 12 LPC coefficients always exist (one
+ * autocorrelate + Levinson-Durbin pass per frame), and the formant tuple
+ * exists when at least 3 valid candidates were detected within the
+ * speech-formant band. Bandwidths are paired with the formants — they're
+ * the imaginary-axis decay rates of the same complex roots that produce
+ * F1/F2/F3.
  */
-function extractFormants(
+interface FrameAnalysis {
+  /** LPC coefficients a[1..order]; a[0] = 1 implicitly. Always populated. */
+  lpcCoefficients: number[];
+  /** [F1, F2, F3] in Hz, or null if fewer than 3 valid candidates. */
+  formants: [number, number, number] | null;
+  /** [B1, B2, B3] in Hz, paired with formants. Null when formants are null. */
+  bandwidths: [number, number, number] | null;
+}
+
+/**
+ * Per-frame LPC analysis surfacing the full information set used downstream
+ * by the v2 feature pipeline (LPC coefficients, formant frequencies,
+ * formant bandwidths). Replaces the legacy `extractFormants()` which only
+ * returned formant frequencies and discarded both the LPC coefficients
+ * and the bandwidths.
+ */
+function extractFrameAnalysis(
   frame: Float32Array,
   sampleRate: number,
-  lpcOrder: number = 12
-): [number, number, number] | null {
+  lpcOrder: number = 12,
+): FrameAnalysis {
   const r = autocorrelate(frame, lpcOrder);
   const coeffs = levinsonDurbin(r, lpcOrder);
 
   const roots = findRoots(coeffs);
 
-  // Convert roots to frequencies, keep only positive-frequency roots
-  const formantCandidates: number[] = [];
+  // Pair each candidate frequency with its corresponding bandwidth so we
+  // can preserve the F1↔B1, F2↔B2, F3↔B3 alignment after sorting by
+  // frequency. The LPC pole's imaginary-axis decay rate maps to formant
+  // bandwidth via the same complex-magnitude → log relation; capturing it
+  // is information-free vs. the existing computation.
+  const candidates: { freq: number; bandwidth: number }[] = [];
 
   for (const [real, imag] of roots) {
     if (imag <= 0) continue; // Keep only positive-frequency roots
 
     const freq = (Math.atan2(imag, real) / (2 * Math.PI)) * sampleRate;
-    const bandwidth = (-sampleRate / (2 * Math.PI)) * Math.log(Math.sqrt(real * real + imag * imag));
+    const bandwidth =
+      (-sampleRate / (2 * Math.PI)) *
+      Math.log(Math.sqrt(real * real + imag * imag));
 
-    // Filter: formants are in 200-5000Hz range with reasonable bandwidth
+    // Filter: formants are in 200-5000Hz range with reasonable bandwidth.
     if (freq > 200 && freq < 5000 && bandwidth < 500) {
-      formantCandidates.push(freq);
+      candidates.push({ freq, bandwidth });
     }
   }
 
-  formantCandidates.sort((a, b) => a - b);
+  candidates.sort((a, b) => a.freq - b.freq);
 
-  if (formantCandidates.length < 3) return null;
+  if (candidates.length < 3) {
+    return { lpcCoefficients: coeffs, formants: null, bandwidths: null };
+  }
 
-  return [formantCandidates[0]!, formantCandidates[1]!, formantCandidates[2]!];
+  const formants: [number, number, number] = [
+    candidates[0]!.freq,
+    candidates[1]!.freq,
+    candidates[2]!.freq,
+  ];
+  const bandwidths: [number, number, number] = [
+    candidates[0]!.bandwidth,
+    candidates[1]!.bandwidth,
+    candidates[2]!.bandwidth,
+  ];
+
+  return { lpcCoefficients: coeffs, formants, bandwidths };
+}
+
+/**
+ * Backward-compatible thin wrapper. Existing callers that only need
+ * formant frequencies keep their signatures stable; the v2 feature pipeline
+ * uses `extractFrameAnalysis` directly to surface the additional LPC and
+ * bandwidth signal that the old wrapper discarded.
+ */
+function extractFormants(
+  frame: Float32Array,
+  sampleRate: number,
+  lpcOrder: number = 12,
+): [number, number, number] | null {
+  return extractFrameAnalysis(frame, sampleRate, lpcOrder).formants;
 }
 
 /**
@@ -214,4 +267,121 @@ export function extractFormantRatios(
   }
 
   return { f1f2, f2f3 };
+}
+
+/**
+ * Session-level output of the v2 LPC analysis. Each per-coefficient time
+ * series has length `numFramesAnalyzed` (every frame contributes); the
+ * formant time series may be shorter because frames with fewer than 3
+ * valid candidates are skipped (matches `extractFormantRatios` behavior).
+ */
+export interface LpcAnalysis {
+  /** lpcCoefficients[c][t] = c-th LPC coefficient at frame t. Shape: [order × frames]. */
+  lpcCoefficients: number[][];
+  /** F1/F2/F3 absolute frequencies in Hz, one entry per detected-formant frame. */
+  f1: number[];
+  f2: number[];
+  f3: number[];
+  /** B1/B2/B3 corresponding bandwidths in Hz, aligned with f1/f2/f3 by index. */
+  b1: number[];
+  b2: number[];
+  b3: number[];
+  /** Existing formant ratios, retained for backward-compat with the original 44-feature audio block. */
+  f1f2: number[];
+  f2f3: number[];
+  /** Diagnostic: number of frames the analyzer ran over (independent of formant detection). */
+  numFramesAnalyzed: number;
+}
+
+/**
+ * Comprehensive session-level LPC + formant analysis. Surfaces the full
+ * information set the v2 feature pipeline consumes: per-frame LPC
+ * coefficients (12 time series), absolute formant frequencies (3 time
+ * series), formant bandwidths (3 time series), and the existing F1/F2 +
+ * F2/F3 ratios.
+ *
+ * Single pass over the samples — autocorrelate + Levinson-Durbin runs
+ * once per frame, with all downstream signals derived from that single
+ * coefficient set. CPU cost is identical to the legacy
+ * `extractFormantRatios` (the formant filtering, root-finding, and ratio
+ * derivation were always running; this function just RETAINS the
+ * intermediate values that the legacy function discarded).
+ */
+export function extractLpcAnalysis(
+  samples: Float32Array,
+  sampleRate: number,
+  frameSize: number,
+  hopSize: number,
+  lpcOrder: number = 12,
+): LpcAnalysis {
+  const lpcCoefficients: number[][] = Array.from({ length: lpcOrder }, () => []);
+  const f1: number[] = [];
+  const f2: number[] = [];
+  const f3: number[] = [];
+  const b1: number[] = [];
+  const b2: number[] = [];
+  const b3: number[] = [];
+  const f1f2: number[] = [];
+  const f2f3: number[] = [];
+
+  const numFrames = Math.floor((samples.length - frameSize) / hopSize) + 1;
+  let numFramesAnalyzed = 0;
+
+  if (numFrames < 1) {
+    return {
+      lpcCoefficients,
+      f1, f2, f3, b1, b2, b3, f1f2, f2f3,
+      numFramesAnalyzed: 0,
+    };
+  }
+
+  // Pre-allocate the windowed frame buffer once (matches the optimization
+  // in speaker.ts::computeLTAS — saves ~1200 Float32Array allocations
+  // per session at ~10ms hop over 12 seconds).
+  const windowed = new Float32Array(frameSize);
+
+  for (let i = 0; i < numFrames; i++) {
+    const start = i * hopSize;
+    const frame = samples.subarray(start, start + frameSize);
+
+    // Apply Hamming window in-place to the pre-allocated buffer.
+    for (let j = 0; j < frameSize; j++) {
+      windowed[j] =
+        (frame[j] ?? 0) *
+        (0.54 - 0.46 * Math.cos((2 * Math.PI * j) / (frameSize - 1)));
+    }
+
+    const analysis = extractFrameAnalysis(windowed, sampleRate, lpcOrder);
+    numFramesAnalyzed++;
+
+    // LPC coefficients are always populated.
+    for (let c = 0; c < lpcOrder; c++) {
+      const coeff = analysis.lpcCoefficients[c];
+      if (Number.isFinite(coeff)) {
+        lpcCoefficients[c]!.push(coeff!);
+      }
+    }
+
+    // Formants and bandwidths are populated only when 3+ valid candidates
+    // were detected. Push the triplet atomically (all three or none) so
+    // index alignment between f1/f2/f3 and b1/b2/b3 is preserved.
+    if (analysis.formants && analysis.bandwidths) {
+      const [F1, F2, F3] = analysis.formants;
+      const [B1, B2, B3] = analysis.bandwidths;
+      f1.push(F1);
+      f2.push(F2);
+      f3.push(F3);
+      b1.push(B1);
+      b2.push(B2);
+      b3.push(B3);
+      if (F2 > 0) f1f2.push(F1 / F2);
+      if (F3 > 0) f2f3.push(F2 / F3);
+    }
+  }
+
+  return {
+    lpcCoefficients,
+    f1, f2, f3, b1, b2, b3, f1f2, f2f3,
+    numFramesAnalyzed,
+  };
 }

@@ -15,6 +15,25 @@ export function variance(values: number[], mu?: number): number {
   return sum / (values.length - 1);
 }
 
+// Cap on the absolute value of skewness emitted to the feature vector.
+// Real human behavioral signals (voice prosody, motion, touch) produce
+// skewness in [-5, +5]; values beyond ±20 indicate near-zero variance
+// pathological frames (silent windows, near-constant signals) where the
+// standardized third moment becomes numerically unstable. Unbounded
+// outliers in this position were the root cause of the May-2026
+// cross-person fingerprint collapse: a single feature with raw skewness
+// ≈ 7,000 dominates the per-modality z-score in the validator and forces
+// ~half the audio bits to a deterministic value across all users.
+const SKEWNESS_BOUND = 20;
+
+// Cap on kurtosis. Real human kurtosis is typically [0, 15]; values
+// above 50 indicate extreme outliers in low-variance signals that don't
+// carry identity-bearing information. Empirical: production LTAS
+// kurtosis on a near-silent capture hit 153,881 — well outside any
+// physically meaningful range — and dominated the audio block z-score.
+const KURTOSIS_LOWER = 0;
+const KURTOSIS_UPPER = 50;
+
 export function skewness(values: number[]): number {
   if (values.length < 3) return 0;
   const n = values.length;
@@ -23,7 +42,8 @@ export function skewness(values: number[]): number {
   if (s === 0) return 0;
   let sum = 0;
   for (const v of values) sum += ((v - m) / s) ** 3;
-  return (n / ((n - 1) * (n - 2))) * sum;
+  const raw = (n / ((n - 1) * (n - 2))) * sum;
+  return Math.max(-SKEWNESS_BOUND, Math.min(SKEWNESS_BOUND, raw));
 }
 
 export function kurtosis(values: number[]): number {
@@ -37,7 +57,7 @@ export function kurtosis(values: number[]): number {
   const k =
     ((n * (n + 1)) / ((n - 1) * (n - 2) * (n - 3))) * sum -
     (3 * (n - 1) ** 2) / ((n - 2) * (n - 3));
-  return k;
+  return Math.max(KURTOSIS_LOWER, Math.min(KURTOSIS_UPPER, k));
 }
 
 export function condense(values: number[]): StatsSummary {

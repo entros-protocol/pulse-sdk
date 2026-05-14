@@ -27,7 +27,7 @@ export const SIMHASH_SEED = "IAM-PROTOCOL-SIMHASH-V1";
 // Capture duration bounds (ms)
 export const MIN_CAPTURE_MS = 2000;
 export const MAX_CAPTURE_MS = 60000;
-export const DEFAULT_CAPTURE_MS = 7000;
+export const DEFAULT_CAPTURE_MS = 12000;
 
 export const PROGRAM_IDS = {
   entrosAnchor: "GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2",

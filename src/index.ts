@@ -18,9 +18,9 @@ export {
 
 // Feature extraction
 export type { StatsSummary, FeatureVector, FusedFeatureVector } from "./extraction/types";
-export { mean, variance, skewness, kurtosis, condense, entropy, autocorrelation, fuseFeatures } from "./extraction/statistics";
+export { fuseFeatures } from "./extraction/statistics";
 export { extractSpeakerFeatures, extractSpeakerFeaturesDetailed, SPEAKER_FEATURE_COUNT } from "./extraction/speaker";
-export { extractMotionFeatures, extractTouchFeatures, extractMouseDynamics, extractAccelerationMagnitude } from "./extraction/kinematic";
+export { extractMotionFeatures, extractTouchFeatures, extractMouseDynamics, extractAccelerationMagnitude, MOTION_FEATURE_COUNT, TOUCH_FEATURE_COUNT } from "./extraction/kinematic";
 export { fuseRawFeatures } from "./extraction/statistics";
 
 // Proof generation
@@ -46,7 +46,32 @@ export { attestAgentOperator, getAgentHumanOperator } from "./agent/anchor";
 
 // Identity
 export type { IdentityState, StoredVerificationData } from "./identity/types";
-export { fetchIdentityState, storeVerificationData, loadVerificationData } from "./identity/anchor";
+export type { BaselineRecoveryReason, BaselineRecoveryResult } from "./identity/anchor";
+export {
+  fetchIdentityState,
+  storeVerificationData,
+  loadVerificationData,
+  recoverBaselineFromChain,
+} from "./identity/anchor";
+
+// Encrypted baseline (master-list #98) — wallet-keyed encrypted SimHash+salt
+// persisted on-chain in a per-wallet EncryptedBaseline PDA, recoverable
+// across devices via deterministic signMessage-derived AES-256-GCM key.
+export type { BaselineWallet } from "./identity/baseline";
+export {
+  deriveBaselineKey,
+  getOrDeriveBaselineKey,
+  clearBaselineKeyCache,
+  deriveEncryptedBaselinePda,
+  encryptBaselineBlob,
+  decryptBaselineBlob,
+  fetchEncryptedBaseline,
+  StaleEncryptedBaselineError,
+  ENCRYPTED_BASELINE_BLOB_BYTES,
+  fingerprintToBytes,
+  bytesToFingerprint,
+  bytes32ToBigint,
+} from "./identity/baseline";
 
 // Sensor types
 export type { AudioCapture, MotionSample, TouchSample, SensorData, CaptureOptions, CaptureStage, StageState } from "./sensor/types";

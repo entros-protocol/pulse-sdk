@@ -9,6 +9,47 @@ import { PROGRAM_IDS } from "../config";
 import { sdkLog, sdkWarn } from "../log";
 import { entrosAnchorIdl, entrosVerifierIdl } from "../protocol/idl";
 import { buildEd25519ReceiptIx } from "./receipt";
+import { ENCRYPTED_BASELINE_BLOB_BYTES } from "../identity/baseline";
+
+/**
+ * Build a `set_encrypted_baseline` instruction for the given anchor program
+ * + wallet pubkey + 96-byte encrypted blob. Callers pass a pre-built blob
+ * (from `encryptBaselineBlob`) and the helper derives both the IdentityState
+ * (UncheckedAccount) PDA and the EncryptedBaseline PDA from the wallet pubkey.
+ *
+ * The on-chain handler uses `init_if_needed`, so the first call for a wallet
+ * creates the PDA and subsequent calls overwrite the existing blob.
+ */
+async function buildSetEncryptedBaselineIx(
+  anchorProgram: any,
+  walletPubkey: any,
+  blob: Uint8Array,
+): Promise<any> {
+  if (blob.length !== ENCRYPTED_BASELINE_BLOB_BYTES) {
+    throw new Error(
+      `encrypted baseline blob must be ${ENCRYPTED_BASELINE_BLOB_BYTES} bytes, got ${blob.length}`,
+    );
+  }
+  const { PublicKey, SystemProgram } = await import("@solana/web3.js");
+  const programId = new PublicKey(PROGRAM_IDS.entrosAnchor);
+  const [identityPda] = PublicKey.findProgramAddressSync(
+    [new TextEncoder().encode("identity"), walletPubkey.toBuffer()],
+    programId,
+  );
+  const [encryptedBaselinePda] = PublicKey.findProgramAddressSync(
+    [new TextEncoder().encode("encrypted_baseline"), walletPubkey.toBuffer()],
+    programId,
+  );
+  return anchorProgram.methods
+    .setEncryptedBaseline(Array.from(blob))
+    .accounts({
+      authority: walletPubkey,
+      identityState: identityPda,
+      encryptedBaseline: encryptedBaselinePda,
+      systemProgram: SystemProgram.programId,
+    })
+    .instruction();
+}
 
 /**
  * Wait for a tx to confirm AND throw if the chain-side execution errored.
@@ -160,6 +201,15 @@ export async function submitViaWallet(
      * VerificationResult PDA instead.
      */
     signedReceipt?: SignedReceiptDto;
+    /**
+     * Encrypted baseline blob (master-list #98). When present, the SDK
+     * appends a `set_encrypted_baseline` instruction at the end of the
+     * atomic transaction so the wallet's on-chain baseline is rewritten
+     * to reflect the new fingerprint in the same wallet prompt as the
+     * mint / re-verify. Omitted when the wallet adapter lacks
+     * `signMessage` (the SDK can't derive the AES key without it).
+     */
+    encryptedBaselineBlob?: Uint8Array;
   }
 ): Promise<SubmissionResult> {
   try {
@@ -312,13 +362,25 @@ export async function submitViaWallet(
         })
         .instruction();
 
-      // Batch: compute budget + 3 program instructions → 1 wallet prompt
-      // Total CU ~205K; request 250K to exceed the 200K default limit.
+      // Batch: compute budget + 3 program instructions → 1 wallet prompt.
+      // Total CU ~205K alone, ~218K with set_encrypted_baseline appended.
+      // Request 300K when the encrypted-baseline ix is bundled (covers
+      // worst-case `verify_proof` + `update_anchor` + init-if-needed cost),
+      // 250K otherwise.
       const tx = new Transaction();
-      tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 250_000 }));
+      const computeUnitLimit = options.encryptedBaselineBlob ? 300_000 : 250_000;
+      tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnitLimit }));
       tx.add(createChallengeIx);
       tx.add(verifyProofIx);
       tx.add(updateAnchorIx);
+      if (options.encryptedBaselineBlob) {
+        const setBaselineIx = await buildSetEncryptedBaselineIx(
+          anchorProgram,
+          provider.wallet.publicKey,
+          options.encryptedBaselineBlob,
+        );
+        tx.add(setBaselineIx);
+      }
 
       tx.feePayer = provider.wallet.publicKey;
       tx.recentBlockhash = (
@@ -436,6 +498,7 @@ export async function submitViaWallet(
       //   [0] ComputeBudgetProgram.setComputeUnitLimit
       //   [1] (optional) Ed25519Program::verify(receipt)
       //   [2] mint_anchor(initial_commitment)
+      //   [3] (optional) set_encrypted_baseline(blob)
       //
       // Including an explicit compute-budget ix at index 0 prevents wallet
       // adapters that lazily inject one from inserting it between the
@@ -443,13 +506,28 @@ export async function submitViaWallet(
       // the receipt at `current_instruction_index - 1`, so any ix between
       // the Ed25519 prefix and `mint_anchor` would silently break the
       // binding while the check is log-only or hard-fail the mint once
-      // enforcement is enabled. 200K covers the mint_anchor compute cost;
-      // the Ed25519 precompile runs in the runtime, not against the
-      // program's CU budget.
+      // enforcement is enabled.
+      //
+      // `set_encrypted_baseline` is appended LAST because it depends on the
+      // IdentityState PDA created by `mint_anchor`; intra-tx instructions
+      // execute sequentially, so the existence check (`data_len() > 0`)
+      // passes when `mint_anchor` runs first. Budget 250K covers
+      // `mint_anchor` (~99K) + `set_encrypted_baseline` init (~17K) with
+      // headroom; the Ed25519 precompile runs in the runtime, not against
+      // the program's CU budget.
       const tx = new Transaction();
-      tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }));
+      const computeUnitLimit = options.encryptedBaselineBlob ? 250_000 : 200_000;
+      tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnitLimit }));
       if (ed25519Ix) tx.add(ed25519Ix);
       tx.add(mintAnchorIx);
+      if (options.encryptedBaselineBlob) {
+        const setBaselineIx = await buildSetEncryptedBaselineIx(
+          anchorProgram,
+          provider.wallet.publicKey,
+          options.encryptedBaselineBlob,
+        );
+        tx.add(setBaselineIx);
+      }
 
       tx.feePayer = provider.wallet.publicKey;
       tx.recentBlockhash = (
@@ -500,6 +578,15 @@ export async function submitResetViaWallet(
     connection: any;
     relayerUrl?: string;
     relayerApiKey?: string;
+    /**
+     * Encrypted baseline blob (master-list #98). When present, the SDK
+     * appends a `set_encrypted_baseline` instruction so the wallet's
+     * on-chain baseline is rewritten under the NEW post-reset commitment
+     * in the same atomic transaction. Without this, the prior blob would
+     * be stale on the next recovery attempt (auth-tag mismatch under the
+     * new commitment in AAD) and recovery would fall back to fresh capture.
+     */
+    encryptedBaselineBlob?: Uint8Array;
   }
 ): Promise<SubmissionResult> {
   try {
@@ -545,11 +632,20 @@ export async function submitResetViaWallet(
       })
       .instruction();
 
-    // Reset does no ZK verification; budget is well under the 200K default.
+    // Reset does no ZK verification; budget is well under the 200K default
+    // even with the encrypted-baseline ix bundled (~30K reset + ~17K init).
     // Keep an explicit limit for determinism and to match batched-tx ergonomics.
     const tx = new Transaction();
-    tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 150_000 }));
+    tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }));
     tx.add(resetIx);
+    if (options.encryptedBaselineBlob) {
+      const setBaselineIx = await buildSetEncryptedBaselineIx(
+        anchorProgram,
+        provider.wallet.publicKey,
+        options.encryptedBaselineBlob,
+      );
+      tx.add(setBaselineIx);
+    }
 
     tx.feePayer = provider.wallet.publicKey;
     tx.recentBlockhash = (

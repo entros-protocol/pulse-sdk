@@ -48,4 +48,40 @@ describe("statistics", () => {
     expect(skewness([1, 2])).toBe(0);
     expect(kurtosis([1, 2, 3])).toBe(0);
   });
+
+  // Pins the cross-person fingerprint-collapse fix: standardized moments
+  // (skewness, kurtosis) must be bounded so a single near-silent or low-
+  // variance frame cannot inject a 100,000+ value into the audio block,
+  // collapse the validator's per-modality z-score, and force ~half the
+  // audio bits to a deterministic value across all users.
+  describe("bounded standardized moments (cross-person collapse defense)", () => {
+    it("kurtosis on an outlier-dominated low-variance series clips at 50", () => {
+      // 31 zeros + one 1000 → raw excess kurtosis would be in the 30+ range
+      // for n=32; the bound caps it. (Production saw LTAS kurtosis 153,881
+      // on near-silent frames, with the same shape — many small values
+      // plus one extreme.)
+      const series = [...new Array(31).fill(0), 1000];
+      expect(kurtosis(series)).toBeLessThanOrEqual(50);
+    });
+
+    it("skewness on an outlier-dominated series clips at ±20", () => {
+      const series = [...new Array(31).fill(0), 1000];
+      const s = skewness(series);
+      expect(Math.abs(s)).toBeLessThanOrEqual(20);
+    });
+
+    it("normal-range data passes through unaltered (regression guard against over-clipping)", () => {
+      // Real human behavioral kurtosis sits in [0, 15]; this fixture
+      // returns ~-1.2 (platykurtic), which the bound must NOT clip to 0
+      // (kurtosis floor is 0 only because excess-kurtosis already
+      // subtracts 3, and clipping in [0, 50] preserves the natural
+      // post-correction range).
+      const k = kurtosis([2, 3, 4, 4, 5, 5, 5, 6, 6, 7, 7, 8]);
+      expect(k).toBeGreaterThanOrEqual(0);
+      expect(k).toBeLessThan(2);
+
+      const s = skewness([1, 2, 3, 4, 5]);
+      expect(Math.abs(s)).toBeLessThan(0.01);
+    });
+  });
 });
