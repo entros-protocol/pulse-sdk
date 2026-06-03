@@ -19,6 +19,7 @@
  */
 
 import type { PublicKey } from "@solana/web3.js";
+import { ed25519 } from "@noble/curves/ed25519";
 import { PROGRAM_IDS } from "../config";
 
 // --- Constants ---
@@ -126,6 +127,29 @@ export interface BaselineWallet {
 }
 
 /**
+ * Thrown when a `signMessage` result fails to verify against the wallet's own
+ * public key — i.e. a different wallet signed than the one connected. The most
+ * common cause is a second wallet extension (e.g. Backpack) set as the browser
+ * default and intercepting the prompt while a different wallet (e.g. Phantom)
+ * is the one actually connected. Surfaced so callers can tell the user to sign
+ * with the connected wallet, rather than deriving a key bound to the wrong
+ * wallet — which would silently corrupt the encrypted baseline and later
+ * misreport as a stale baseline.
+ */
+export class WalletSignatureMismatchError extends Error {
+  readonly expectedWallet: string;
+  constructor(expectedWallet: string) {
+    super(
+      `signMessage did not verify against the connected wallet ${expectedWallet}. ` +
+        `A different wallet likely signed the prompt — disable other wallet ` +
+        `extensions or set your selected wallet as the default, then retry.`,
+    );
+    this.name = "WalletSignatureMismatchError";
+    this.expectedWallet = expectedWallet;
+  }
+}
+
+/**
  * Derive an AES-256 key from the wallet's deterministic signature over
  * the domain-separated payload, via HKDF-SHA256.
  *
@@ -150,11 +174,32 @@ export async function deriveBaselineKey(
     throw new Error("wallet does not support signMessage");
   }
   const message = buildDomainMessage(wallet.publicKey);
-  const signature = await wallet.signMessage(new TextEncoder().encode(message));
+  const messageBytes = new TextEncoder().encode(message);
+  const signature = await wallet.signMessage(messageBytes);
   if (!(signature instanceof Uint8Array) || signature.length !== 64) {
     throw new Error(
       `expected 64-byte Ed25519 signature, got ${signature?.length ?? "non-Uint8Array"}`
     );
+  }
+
+  // Guard: the returned signature MUST verify against the wallet's own public
+  // key. If another extension (e.g. Backpack set as the browser's default
+  // Solana wallet) intercepts the prompt, the signature is from a different
+  // keypair and fails this check. Without it the SDK would derive an AES key
+  // bound to the wrong wallet, silently corrupt the on-chain encrypted
+  // baseline, and later surface the mismatch as a misleading "stale baseline".
+  let signatureValid: boolean;
+  try {
+    signatureValid = ed25519.verify(
+      signature,
+      messageBytes,
+      wallet.publicKey.toBytes()
+    );
+  } catch {
+    signatureValid = false;
+  }
+  if (!signatureValid) {
+    throw new WalletSignatureMismatchError(wallet.publicKey.toBase58());
   }
 
   const ikm = await crypto.subtle.importKey(

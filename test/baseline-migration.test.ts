@@ -12,6 +12,7 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { Keypair, PublicKey } from "@solana/web3.js";
+import { ed25519 } from "@noble/curves/ed25519";
 import {
   bytes32ToBigint,
   bytesToFingerprint,
@@ -24,6 +25,7 @@ import {
   fingerprintToBytes,
   getOrDeriveBaselineKey,
   StaleEncryptedBaselineError,
+  WalletSignatureMismatchError,
   type BaselineWallet,
 } from "../src/identity/baseline";
 import { bigintToBytes32 } from "../src/hashing/poseidon";
@@ -31,34 +33,27 @@ import { bigintToBytes32 } from "../src/hashing/poseidon";
 // --- Helpers ---
 
 /**
- * A mock wallet with deterministic `signMessage`. Returns the same
- * 64-byte "signature" for the same input message, mimicking RFC 8032
- * Ed25519 determinism. The bytes themselves are fixed-keyed pseudorandom
- * (derived from a stable seed) — sufficient for HKDF input under test.
+ * Real, deterministic Ed25519 signature for `kp` over `msg` (RFC 8032).
+ * `deriveBaselineKey` verifies the returned signature against the signer's
+ * public key, so mocks must produce genuine signatures, not placeholder bytes.
+ * Solana `Keypair.secretKey` is `seed(32) || pubkey(32)`; noble signs from the
+ * 32-byte seed and the result verifies against `kp.publicKey`.
+ */
+function realSign(kp: Keypair, msg: Uint8Array): Uint8Array {
+  return ed25519.sign(msg, kp.secretKey.slice(0, 32));
+}
+
+/**
+ * A mock wallet whose `signMessage` returns a genuine, deterministic Ed25519
+ * signature over the message — deterministic per RFC 8032 (so the key-
+ * derivation determinism tests hold) and valid (so the wallet-signature guard
+ * accepts it).
  */
 function makeMockWallet(seed: number): BaselineWallet {
   const kp = Keypair.fromSeed(new Uint8Array(32).fill(seed));
   return {
     publicKey: kp.publicKey,
-    signMessage: async (msg: Uint8Array) => {
-      // Construct a deterministic 64-byte "signature" by hashing
-      // (seed || message) twice. Cryptographically meaningless, but
-      // deterministic — which is the only property the tests need.
-      const seedPrefix = new Uint8Array([seed]);
-      const buf = new Uint8Array(seedPrefix.length + msg.length);
-      buf.set(seedPrefix, 0);
-      buf.set(msg, seedPrefix.length);
-      const h1 = new Uint8Array(
-        await crypto.subtle.digest("SHA-256", buf as Uint8Array<ArrayBuffer>)
-      );
-      const h2 = new Uint8Array(
-        await crypto.subtle.digest("SHA-256", h1 as Uint8Array<ArrayBuffer>)
-      );
-      const sig = new Uint8Array(64);
-      sig.set(h1, 0);
-      sig.set(h2, 32);
-      return sig;
-    },
+    signMessage: async (msg: Uint8Array) => realSign(kp, msg),
   };
 }
 
@@ -140,6 +135,22 @@ describe("deriveBaselineKey", () => {
     } as unknown as BaselineWallet;
     await expect(deriveBaselineKey(bogus)).rejects.toThrow(
       /signMessage/
+    );
+  });
+
+  it("rejects a signature from a different wallet (guards against extension hijack)", async () => {
+    // The connected wallet's pubkey, but a *different* wallet produces the
+    // signature — mimics another extension (e.g. Backpack set as default)
+    // intercepting the signMessage prompt while the connected wallet is, say,
+    // Phantom. The signature must not verify against the connected pubkey.
+    const connected = Keypair.fromSeed(new Uint8Array(32).fill(11));
+    const attacker = Keypair.fromSeed(new Uint8Array(32).fill(22));
+    const wallet: BaselineWallet = {
+      publicKey: connected.publicKey,
+      signMessage: async (msg: Uint8Array) => realSign(attacker, msg),
+    };
+    await expect(deriveBaselineKey(wallet)).rejects.toBeInstanceOf(
+      WalletSignatureMismatchError
     );
   });
 });
@@ -460,20 +471,7 @@ describe("getOrDeriveBaselineKey + clearBaselineKeyCache", () => {
       publicKey: kp.publicKey,
       signMessage: async (msg: Uint8Array) => {
         calls += 1;
-        const seedPrefix = new Uint8Array([seed]);
-        const buf = new Uint8Array(seedPrefix.length + msg.length);
-        buf.set(seedPrefix, 0);
-        buf.set(msg, seedPrefix.length);
-        const h1 = new Uint8Array(
-          await crypto.subtle.digest("SHA-256", buf as Uint8Array<ArrayBuffer>)
-        );
-        const h2 = new Uint8Array(
-          await crypto.subtle.digest("SHA-256", h1 as Uint8Array<ArrayBuffer>)
-        );
-        const sig = new Uint8Array(64);
-        sig.set(h1, 0);
-        sig.set(h2, 32);
-        return sig;
+        return realSign(kp, msg);
       },
     };
 
@@ -491,16 +489,7 @@ describe("getOrDeriveBaselineKey + clearBaselineKeyCache", () => {
       publicKey: kp.publicKey,
       signMessage: async (msg: Uint8Array) => {
         calls += 1;
-        const buf = new Uint8Array(1 + msg.length);
-        buf[0] = seed;
-        buf.set(msg, 1);
-        const h1 = new Uint8Array(
-          await crypto.subtle.digest("SHA-256", buf as Uint8Array<ArrayBuffer>)
-        );
-        const sig = new Uint8Array(64);
-        sig.set(h1, 0);
-        sig.set(h1, 32);
-        return sig;
+        return realSign(kp, msg);
       },
     };
 
@@ -521,16 +510,7 @@ describe("getOrDeriveBaselineKey + clearBaselineKeyCache", () => {
         calls += 1;
         // Yield a tick so a naive cache (resolved-key-only) would race.
         await new Promise((resolve) => setTimeout(resolve, 0));
-        const buf = new Uint8Array(1 + msg.length);
-        buf[0] = seed;
-        buf.set(msg, 1);
-        const h1 = new Uint8Array(
-          await crypto.subtle.digest("SHA-256", buf as Uint8Array<ArrayBuffer>)
-        );
-        const sig = new Uint8Array(64);
-        sig.set(h1, 0);
-        sig.set(h1, 32);
-        return sig;
+        return realSign(kp, msg);
       },
     };
 
@@ -555,16 +535,7 @@ describe("getOrDeriveBaselineKey + clearBaselineKeyCache", () => {
         if (shouldFail) {
           throw new Error("user cancelled");
         }
-        const buf = new Uint8Array(1 + msg.length);
-        buf[0] = seed;
-        buf.set(msg, 1);
-        const h1 = new Uint8Array(
-          await crypto.subtle.digest("SHA-256", buf as Uint8Array<ArrayBuffer>)
-        );
-        const sig = new Uint8Array(64);
-        sig.set(h1, 0);
-        sig.set(h1, 32);
-        return sig;
+        return realSign(kp, msg);
       },
     };
 

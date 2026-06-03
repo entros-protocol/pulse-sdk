@@ -511,6 +511,7 @@ async function processSensorData(
   // to support `signMessage` for AES key derivation; on success, the
   // recovered baseline is written to local storage and the flow continues
   // into normal re-verification.
+  let walletMismatch = false;
   if (!isFirstVerification && !previousData && wallet && connection) {
     const baselineWallet = resolveBaselineWallet(wallet);
     if (baselineWallet) {
@@ -520,6 +521,12 @@ async function processSensorData(
         previousData = await loadVerificationData();
         sdkLog("[Entros SDK] On-chain encrypted baseline recovered");
       } else {
+        // `wallet-mismatch` is distinct from a missing/stale baseline: the
+        // on-chain baseline is intact, but a different wallet signed the
+        // key-derivation prompt (commonly another extension set as the browser
+        // default), so the AES key couldn't be derived. Surface it so the UI
+        // prompts a wallet switch instead of a destructive reset.
+        walletMismatch = recovery.reason === "wallet-mismatch";
         sdkLog(
           `[Entros SDK] On-chain encrypted baseline recovery not available (${recovery.reason ?? "unknown"})`,
         );
@@ -528,6 +535,18 @@ async function processSensorData(
   }
 
   if (!isFirstVerification && !previousData) {
+    if (walletMismatch) {
+      // Contract: entros.io `categorizeFailure` matches "different wallet
+      // signed" to route this to a no-reset "wrong wallet" surface. Keep that
+      // phrase stable (mirrors the "baseline is missing" contract below).
+      return {
+        success: false,
+        commitment: tbh.commitmentBytes,
+        isFirstVerification: false,
+        error:
+          "A different wallet signed than the one connected. Another wallet extension likely intercepted the signature prompt. Sign with your connected wallet, or disable other wallet extensions (or unset their default), then try again.",
+      };
+    }
     return {
       success: false,
       commitment: tbh.commitmentBytes,
