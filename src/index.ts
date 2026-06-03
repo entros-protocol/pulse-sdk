@@ -67,6 +67,7 @@ export {
   decryptBaselineBlob,
   fetchEncryptedBaseline,
   StaleEncryptedBaselineError,
+  WalletSignatureMismatchError,
   ENCRYPTED_BASELINE_BLOB_BYTES,
   fingerprintToBytes,
   bytesToFingerprint,

@@ -12,6 +12,7 @@ import {
 import {
   BaselineWallet,
   StaleEncryptedBaselineError,
+  WalletSignatureMismatchError,
   bytes32ToBigint,
   bytesToFingerprint,
   decryptBaselineBlob,
@@ -277,6 +278,11 @@ export async function loadVerificationData(): Promise<StoredVerificationData | n
  *     can't `signMessage` (no method on the adapter, e.g., older Ledger
  *     firmware) OR the user cancelled the prompt OR the wallet erred. The
  *     `detail` field carries the specific cause when present.
+ *   - `wallet-mismatch`: the `signMessage` signature did not verify against
+ *     the connected wallet's public key — a different wallet signed the
+ *     prompt (commonly another extension set as the browser default). NOT a
+ *     stale baseline: the on-chain blob is intact. UX should ask the user to
+ *     sign with the connected wallet and must NOT offer a destructive reset.
  *   - `stale-baseline`: blob predates a `reset_identity_state` cycle.
  *     Treat as terminal recovery failure; route to fresh-capture flow.
  *   - `unknown-error`: catch-all (RPC failure, malformed blob, etc.).
@@ -285,6 +291,7 @@ export type BaselineRecoveryReason =
   | "no-on-chain-identity"
   | "no-encrypted-baseline"
   | "signing-unavailable"
+  | "wallet-mismatch"
   | "stale-baseline"
   | "unknown-error";
 
@@ -336,6 +343,13 @@ export async function recoverBaselineFromChain(
       key = await getOrDeriveBaselineKey(wallet);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
+      if (err instanceof WalletSignatureMismatchError) {
+        return {
+          recovered: false,
+          reason: "wallet-mismatch",
+          detail,
+        };
+      }
       return {
         recovered: false,
         reason: "signing-unavailable",
