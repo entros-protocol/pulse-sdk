@@ -36,6 +36,13 @@ export interface CaptureOptions {
   maxDurationMs?: number;
   /** Called with RMS audio level (0-1) on each buffer during audio capture (~4x per second). */
   onAudioLevel?: (rms: number) => void;
+  /**
+   * Called once, the first time a real audio frame is delivered (capture is
+   * live). Lets callers gate the "speak now" prompt on audio actually flowing
+   * rather than a fixed delay, avoiding the first-attempt cold-start gap where
+   * the AudioContext/mic isn't producing samples yet.
+   */
+  onReady?: () => void;
   /** Pre-acquired MediaStream. If provided, captureAudio skips getUserMedia. */
   stream?: MediaStream;
   /** If true, captureMotion skips requestMotionPermission (already acquired). */
