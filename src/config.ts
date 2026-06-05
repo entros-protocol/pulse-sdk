@@ -28,6 +28,13 @@ export const SIMHASH_SEED = "IAM-PROTOCOL-SIMHASH-V1";
 export const MIN_CAPTURE_MS = 2000;
 export const MAX_CAPTURE_MS = 60000;
 export const DEFAULT_CAPTURE_MS = 12000;
+/**
+ * Max time startAudio() waits for the first real audio frame before resolving
+ * anyway. Normal cold starts deliver the first frame in well under a second;
+ * this cap only matters if the mic never produces samples (e.g. hardware
+ * failure), so the verify flow degrades gracefully instead of hanging.
+ */
+export const AUDIO_READY_TIMEOUT_MS = 5000;
 
 export const PROGRAM_IDS = {
   entrosAnchor: "GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2",

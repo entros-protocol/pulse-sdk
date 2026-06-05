@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeCaptureRMS } from "../src/sensor/audio";
+import { captureAudio, normalizeCaptureRMS } from "../src/sensor/audio";
 
 // Helper: compute RMS over a Float32Array. Used by the assertions to
 // confirm the helper achieves the documented target without re-deriving
@@ -76,6 +76,89 @@ describe("normalizeCaptureRMS", () => {
     const out = normalizeCaptureRMS(adversarial);
     for (const v of out) {
       expect(Number.isFinite(v)).toBe(true);
+    }
+  });
+});
+
+// --- Capture-ready gate (first-attempt cold-start fix) ---
+//
+// Minimal Web Audio mock so captureAudio's onReady contract can be pinned
+// without a real microphone / AudioContext. Only the surface captureAudio
+// actually touches is implemented.
+
+class MockScriptProcessor {
+  onaudioprocess:
+    | ((e: { inputBuffer: { getChannelData: (ch: number) => Float32Array } }) => void)
+    | null = null;
+  connect() {}
+  disconnect() {}
+}
+
+class MockAudioContext {
+  static lastProcessor: MockScriptProcessor | null = null;
+  readonly sampleRate = 16000;
+  readonly destination = {};
+  constructor(_options?: unknown) {}
+  async resume() {}
+  createMediaStreamSource() {
+    return { connect() {}, disconnect() {} };
+  }
+  createScriptProcessor() {
+    const p = new MockScriptProcessor();
+    MockAudioContext.lastProcessor = p;
+    return p;
+  }
+  close() {
+    return Promise.resolve();
+  }
+}
+
+function fireFrame(p: MockScriptProcessor, value: number) {
+  const buf = new Float32Array(4096).fill(value);
+  p.onaudioprocess?.({ inputBuffer: { getChannelData: () => buf } });
+}
+
+describe("captureAudio onReady gate", () => {
+  it("fires onReady exactly once, on the first delivered audio frame", async () => {
+    const g = globalThis as { AudioContext?: unknown };
+    const original = g.AudioContext;
+    g.AudioContext = MockAudioContext as unknown as typeof AudioContext;
+    try {
+      const stream = { getTracks: () => [{ stop() {} }] } as unknown as MediaStream;
+      const controller = new AbortController();
+      let readyCount = 0;
+      const capture = captureAudio({
+        stream,
+        onReady: () => {
+          readyCount += 1;
+        },
+        signal: controller.signal,
+        minDurationMs: 0,
+        maxDurationMs: 1000,
+      });
+
+      // Let the async setup (new AudioContext + await resume + connect) run.
+      await new Promise((r) => setTimeout(r, 0));
+      const proc = MockAudioContext.lastProcessor;
+      expect(proc).toBeTruthy();
+
+      // The whole point: not "ready" until a real frame is delivered, so the
+      // speak prompt can't start before audio is flowing.
+      expect(readyCount).toBe(0);
+
+      fireFrame(proc!, 0.1);
+      expect(readyCount).toBe(1);
+
+      // Subsequent frames must not re-fire it.
+      fireFrame(proc!, 0.1);
+      fireFrame(proc!, 0.1);
+      expect(readyCount).toBe(1);
+
+      controller.abort();
+      const result = await capture;
+      expect(result.samples.length).toBeGreaterThan(0);
+    } finally {
+      g.AudioContext = original;
     }
   });
 });

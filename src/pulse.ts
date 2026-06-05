@@ -1,5 +1,5 @@
 import type { PulseConfig } from "./config";
-import { DEFAULT_THRESHOLD, DEFAULT_CAPTURE_MS, PROGRAM_IDS } from "./config";
+import { DEFAULT_THRESHOLD, DEFAULT_CAPTURE_MS, AUDIO_READY_TIMEOUT_MS, PROGRAM_IDS } from "./config";
 import { setDebug, sdkLog, sdkWarn } from "./log";
 import type { SensorData, AudioCapture, MotionSample, TouchSample, StageState } from "./sensor/types";
 import type { TBH } from "./hashing/types";
@@ -913,14 +913,36 @@ export class PulseSession {
 
     this.audioStageState = "capturing";
     this.audioController = new AbortController();
+
+    // Resolve startAudio() only once audio is actually flowing — i.e. the
+    // first real frame has been delivered — so callers don't begin the
+    // "speak now" prompt during the AudioContext/mic cold-start gap (which
+    // dropped the start of the phrase on first attempts). The timeout caps
+    // the wait so a non-delivering mic can't hang the flow indefinitely.
+    let signalReady!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      signalReady = resolve;
+    });
     this.audioPromise = captureAudio({
       signal: this.audioController.signal,
       onAudioLevel,
+      onReady: () => signalReady(),
       stream,
     }).catch(() => {
       stream.getTracks().forEach((t) => t.stop());
+      signalReady(); // unblock startAudio if setup failed before the first frame
       return null;
     });
+    let readyTimer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      ready,
+      new Promise<void>((resolve) => {
+        readyTimer = setTimeout(resolve, AUDIO_READY_TIMEOUT_MS);
+      }),
+    ]);
+    // Clear the safety timer if the first frame won the race, so a resolved
+    // startAudio() never leaves a dangling timeout pending.
+    if (readyTimer !== undefined) clearTimeout(readyTimer);
   }
 
   async stopAudio(): Promise<AudioCapture | null> {

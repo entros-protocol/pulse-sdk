@@ -94,6 +94,7 @@ export async function captureAudio(
     minDurationMs = MIN_CAPTURE_MS,
     maxDurationMs = MAX_CAPTURE_MS,
     onAudioLevel,
+    onReady,
     stream: preAcquiredStream,
   } = options;
 
@@ -158,9 +159,20 @@ export async function captureAudio(
     const bufferSize = 4096;
     const processor = ctx.createScriptProcessor(bufferSize, 1, 1);
 
+    let firstFrameSeen = false;
     processor.onaudioprocess = (e: AudioProcessingEvent) => {
       const data = e.inputBuffer.getChannelData(0);
       chunks.push(new Float32Array(data));
+
+      // Signal "capture is live" the moment real samples start flowing, so
+      // callers can gate the speak prompt on actual audio rather than a fixed
+      // delay. The first onaudioprocess proves the AudioContext + mic are
+      // delivering frames — this is what fixes the first-attempt cold-start
+      // miss where the start of the phrase fell into dead air.
+      if (!firstFrameSeen) {
+        firstFrameSeen = true;
+        onReady?.();
+      }
 
       if (onAudioLevel) {
         let sum = 0;
