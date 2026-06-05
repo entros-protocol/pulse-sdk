@@ -933,10 +933,16 @@ export class PulseSession {
       signalReady(); // unblock startAudio if setup failed before the first frame
       return null;
     });
+    let readyTimer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
       ready,
-      new Promise<void>((resolve) => setTimeout(resolve, AUDIO_READY_TIMEOUT_MS)),
+      new Promise<void>((resolve) => {
+        readyTimer = setTimeout(resolve, AUDIO_READY_TIMEOUT_MS);
+      }),
     ]);
+    // Clear the safety timer if the first frame won the race, so a resolved
+    // startAudio() never leaves a dangling timeout pending.
+    if (readyTimer !== undefined) clearTimeout(readyTimer);
   }
 
   async stopAudio(): Promise<AudioCapture | null> {
