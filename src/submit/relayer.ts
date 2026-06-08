@@ -1,5 +1,6 @@
 import type { SolanaProof } from "../proof/types";
 import type { SubmissionResult } from "./types";
+import { errToString } from "./errors";
 
 const RELAYER_TIMEOUT_MS = 30_000;
 
@@ -78,6 +79,6 @@ export async function submitViaRelayer(
         error: `Relayer request timed out after ${RELAYER_TIMEOUT_MS / 1000}s. Check network connectivity and relayerUrl reachability.`,
       };
     }
-    return { success: false, error: err.message ?? String(err) };
+    return { success: false, error: errToString(err) };
   }
 }
