@@ -92,23 +92,18 @@ function isPlaintextData(obj: unknown): obj is StoredVerificationData {
  * `protocol-core/target/idl/entros_anchor.json` into `src/protocol/idl/`
  * and bump the SDK minor version.
  */
-export async function fetchIdentityState(
-  walletPubkey: string,
-  connection: any
+/**
+ * Decode raw IdentityState account bytes into the public shape. Split out of
+ * `fetchIdentityState` so a caller that already holds the account data (e.g.
+ * the verify flow's existence check) can read the chain-head commitment
+ * WITHOUT a second RPC round-trip. Returns null on a decode miss (wrong/stale
+ * layout) — the same swallow contract as `fetchIdentityState`.
+ */
+export async function decodeIdentityState(
+  accountData: Uint8Array
 ): Promise<IdentityState | null> {
   try {
-    const { PublicKey } = await import("@solana/web3.js");
     const anchor = await import("@coral-xyz/anchor");
-
-    const programId = new PublicKey(PROGRAM_IDS.entrosAnchor);
-    const [identityPda] = PublicKey.findProgramAddressSync(
-      [new TextEncoder().encode("identity"), new PublicKey(walletPubkey).toBuffer()],
-      programId
-    );
-
-    const accountInfo = await connection.getAccountInfo(identityPda);
-    if (!accountInfo) return null;
-
     const coder = new anchor.BorshAccountsCoder(entrosAnchorIdl as Idl);
     // Anchor 0.30+ IDL spec: account names are PascalCase and the
     // BorshAccountsCoder lookup is strict — passing camelCase silently
@@ -116,8 +111,14 @@ export async function fetchIdentityState(
     // The decoded object preserves the IDL's snake_case field names, so
     // we destructure with snake_case before mapping to the public
     // camelCase IdentityState type.
-    const decoded = coder.decode("IdentityState", accountInfo.data);
-
+    //
+    // `accountData` is the Buffer that web3.js' getAccountInfo returns; the SDK
+    // targets the browser lib (no Node `Buffer` global type), so we assert the
+    // coder's own parameter type rather than naming `Buffer`.
+    const decoded = coder.decode(
+      "IdentityState",
+      accountData as Parameters<typeof coder.decode>[1],
+    );
     return {
       owner: decoded.owner.toBase58(),
       creationTimestamp: decoded.creation_timestamp.toNumber(),
@@ -133,6 +134,45 @@ export async function fetchIdentityState(
     };
   } catch {
     return null;
+  }
+}
+
+export async function fetchIdentityState(
+  walletPubkey: string,
+  connection: any
+): Promise<IdentityState | null> {
+  try {
+    const { PublicKey } = await import("@solana/web3.js");
+    const programId = new PublicKey(PROGRAM_IDS.entrosAnchor);
+    const [identityPda] = PublicKey.findProgramAddressSync(
+      [new TextEncoder().encode("identity"), new PublicKey(walletPubkey).toBuffer()],
+      programId
+    );
+    const accountInfo = await connection.getAccountInfo(identityPda);
+    if (!accountInfo) return null;
+    return decodeIdentityState(accountInfo.data);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True when a locally-stored commitment (decimal string) equals the on-chain
+ * `current_commitment` (32-byte big-endian). Used to detect a local baseline
+ * that has fallen behind the on-chain verification chain — which would make
+ * `update_anchor` revert with PrevCommitmentMismatch (6011) AFTER the user
+ * signs and pays. Malformed/unparseable input returns false (conservatively
+ * "not a match", so the caller re-syncs or fails cleanly rather than risking
+ * a doomed on-chain submission).
+ */
+export function localCommitmentMatchesChain(
+  localCommitmentDecimal: string,
+  onChainCommitment: Uint8Array,
+): boolean {
+  try {
+    return BigInt(localCommitmentDecimal) === bytes32ToBigint(onChainCommitment);
+  } catch {
+    return false;
   }
 }
 
