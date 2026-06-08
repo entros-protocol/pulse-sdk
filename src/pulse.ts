@@ -1,5 +1,5 @@
 import type { PulseConfig } from "./config";
-import { DEFAULT_THRESHOLD, DEFAULT_CAPTURE_MS, AUDIO_READY_TIMEOUT_MS, PROGRAM_IDS } from "./config";
+import { DEFAULT_THRESHOLD, DEFAULT_MIN_DISTANCE, DEFAULT_CAPTURE_MS, AUDIO_READY_TIMEOUT_MS, PROGRAM_IDS } from "./config";
 import { setDebug, sdkLog, sdkWarn } from "./log";
 import type { SensorData, AudioCapture, MotionSample, TouchSample, StageState } from "./sensor/types";
 import type { TBH } from "./hashing/types";
@@ -24,7 +24,7 @@ import { fuseFeatures, fuseRawFeatures } from "./extraction/statistics";
 import { yieldToMainThread } from "./yield";
 import { simhash, hammingDistance } from "./hashing/simhash";
 import { generateTBH, bigintToBytes32 } from "./hashing/poseidon";
-import { prepareCircuitInput, generateProof } from "./proof/prover";
+import { prepareCircuitInput, generateProof, classifyHammingDistance } from "./proof/prover";
 import { serializeProof } from "./proof/serializer";
 import { submitViaWallet, submitResetViaWallet } from "./submit/wallet";
 import { submitViaRelayer } from "./submit/relayer";
@@ -34,6 +34,8 @@ import {
   loadVerificationData,
   setPrivacyFallback,
   recoverBaselineFromChain,
+  decodeIdentityState,
+  localCommitmentMatchesChain,
 } from "./identity/anchor";
 import {
   BaselineWallet,
@@ -476,15 +478,23 @@ async function processSensorData(
   const { fingerprint, tbh, features, signedReceipt } = extraction;
 
   // Determine if this is a first verification.
-  // Wallet-connected: check on-chain IdentityState PDA (source of truth).
-  // Walletless: check localStorage for stored fingerprint.
+  // Wallet-connected: read the on-chain IdentityState PDA (source of truth).
+  // Walletless: check localStorage for a stored fingerprint.
   let isFirstVerification: boolean;
   let previousData = await loadVerificationData();
+  // The on-chain `current_commitment` is the authoritative head of the
+  // verification chain — each successful verify advances it. We read it from
+  // the SAME account as the existence check (no extra round-trip) so we can
+  // detect a local baseline that has fallen BEHIND the chain (a verify landed
+  // from another origin/device, or a success store-back was dropped). A stale
+  // local `commitment_prev` is exactly what makes `update_anchor` revert with
+  // PrevCommitmentMismatch (6011) AFTER the user has signed and paid; reading
+  // it here lets us re-sync (or fail cleanly) BEFORE building the proof.
+  let onChainCommitment: Uint8Array | null = null;
 
   if (wallet && connection) {
     const walletPubkey = wallet.adapter?.publicKey ?? wallet.publicKey;
     if (walletPubkey) {
-      // Check if IdentityState PDA exists on-chain (simple existence check, no IDL needed)
       try {
         const { PublicKey } = await import("@solana/web3.js");
         const programId = new PublicKey(PROGRAM_IDS.entrosAnchor);
@@ -492,9 +502,21 @@ async function processSensorData(
           [new TextEncoder().encode("identity"), walletPubkey.toBuffer()],
           programId
         );
+        // `getAccountInfo` THROWS on an RPC failure (caught below), so an RPC
+        // blip can never be misread as "no identity" — which would wrongly
+        // route a returning user to the mint path. A null result is a genuine
+        // "account does not exist" → first verification.
         const accountInfo = await connection.getAccountInfo(identityPda);
         isFirstVerification = !accountInfo;
+        // Decode the chain head from the SAME account read; a decode miss
+        // leaves it null and staleness simply isn't asserted below.
+        onChainCommitment = accountInfo
+          ? ((await decodeIdentityState(accountInfo.data))?.currentCommitment ??
+            null)
+          : null;
       } catch {
+        // RPC failure: defer to local presence (prior behavior). Leave
+        // onChainCommitment null so staleness is not (falsely) asserted.
         isFirstVerification = !previousData;
       }
     } else {
@@ -504,22 +526,46 @@ async function processSensorData(
     isFirstVerification = !previousData;
   }
 
-  // Edge case: on-chain identity exists but local fingerprint is missing
-  // (cleared browser data, new device, different browser). Before forcing a
-  // reset, attempt to recover the baseline from the on-chain
-  // `EncryptedBaseline` PDA (master-list #98). Recovery requires the wallet
-  // to support `signMessage` for AES key derivation; on success, the
-  // recovered baseline is written to local storage and the flow continues
-  // into normal re-verification.
+  // A local baseline is STALE when it exists but its commitment no longer
+  // equals the on-chain head — proving from it would revert with 6011. We
+  // evaluate it both before and after recovery (which may rewrite
+  // `previousData`), so the check lives in one helper.
+  const isBaselineStale = (data: typeof previousData): boolean =>
+    !isFirstVerification &&
+    data !== null &&
+    onChainCommitment !== null &&
+    !localCommitmentMatchesChain(data.commitment, onChainCommitment);
+
+  const localBaselineStale = isBaselineStale(previousData);
+
+  // Recover the in-sync baseline from the on-chain `EncryptedBaseline` PDA
+  // when the local copy is MISSING (cleared data, new device) OR STALE (fell
+  // behind the chain, e.g. a verify from another origin/device). Recovery
+  // decrypts the blob — which is bound to the current on-chain commitment —
+  // and rewrites local storage with the matching fingerprint + current
+  // commitment, so the rebuilt proof's `commitment_prev` equals the chain
+  // head. Requires the wallet to sign for AES key derivation; the
+  // session-cached key short-circuits a second prompt (master-list #98).
   let walletMismatch = false;
-  if (!isFirstVerification && !previousData && wallet && connection) {
+  if (
+    !isFirstVerification &&
+    (previousData === null || localBaselineStale) &&
+    wallet &&
+    connection
+  ) {
     const baselineWallet = resolveBaselineWallet(wallet);
     if (baselineWallet) {
-      onProgress?.("Recovering baseline from chain...");
+      onProgress?.(
+        localBaselineStale
+          ? "Re-syncing baseline with chain..."
+          : "Recovering baseline from chain..."
+      );
       const recovery = await recoverBaselineFromChain(baselineWallet, connection);
       if (recovery.recovered) {
         previousData = await loadVerificationData();
-        sdkLog("[Entros SDK] On-chain encrypted baseline recovered");
+        sdkLog(
+          `[Entros SDK] On-chain encrypted baseline ${localBaselineStale ? "re-synced" : "recovered"}`
+        );
       } else {
         // `wallet-mismatch` is distinct from a missing/stale baseline: the
         // on-chain baseline is intact, but a different wallet signed the
@@ -534,17 +580,35 @@ async function processSensorData(
     }
   }
 
-  if (!isFirstVerification && !previousData) {
+  // Re-confirm against the chain head AFTER any recovery attempt. If local is
+  // still missing or stale, proving would revert with 6011 — so fail HERE,
+  // before a signature/fee is spent, and route the user to the right surface.
+  const baselineStillStale = isBaselineStale(previousData);
+
+  if (!isFirstVerification && (previousData === null || baselineStillStale)) {
     if (walletMismatch) {
       // Contract: entros.io `categorizeFailure` matches "different wallet
-      // signed" to route this to a no-reset "wrong wallet" surface. Keep that
-      // phrase stable (mirrors the "baseline is missing" contract below).
+      // signed" to route this to a no-reset "wrong wallet" surface.
       return {
         success: false,
         commitment: tbh.commitmentBytes,
         isFirstVerification: false,
         error:
           "A different wallet signed than the one connected. Another wallet extension likely intercepted the signature prompt. Sign with your connected wallet, or disable other wallet extensions (or unset their default), then try again.",
+      };
+    }
+    if (baselineStillStale) {
+      // Local baseline is behind the on-chain verification chain and could
+      // not be re-synced from the on-chain EncryptedBaseline (none stored, a
+      // prior reset cycle, or signing unavailable). Contract: entros.io
+      // `categorizeFailure` matches "out of sync with your on-chain identity"
+      // to route this to the no-data-loss "reset to re-sync" surface.
+      return {
+        success: false,
+        commitment: tbh.commitmentBytes,
+        isFirstVerification: false,
+        error:
+          "Your baseline is out of sync with your on-chain identity. It may have advanced on another browser or device. Reset your baseline to re-sync from here, or verify from the device with the up-to-date baseline.",
       };
     }
     return {
@@ -567,14 +631,45 @@ async function processSensorData(
     };
 
     const distance = hammingDistance(fingerprint, previousData.fingerprint);
+    // Single source for the circuit's accept band: the same threshold and
+    // min_distance feed BOTH the pre-check below and the proof input, so the
+    // pre-check can never disagree with what entros_hamming.circom enforces.
+    const threshold = config.threshold ?? DEFAULT_THRESHOLD;
+    const minDistance = DEFAULT_MIN_DISTANCE;
+    const verdict = classifyHammingDistance(distance, threshold, minDistance);
     sdkLog(
-      `[Entros SDK] Re-verification: Hamming distance = ${distance} / 256 bits (threshold = ${config.threshold})`
+      `[Entros SDK] Re-verification: Hamming distance = ${distance} / 256 bits (threshold = ${threshold}, min = ${minDistance}) -> ${verdict}`
     );
+
+    // The capture already violates the circuit's bounds — return a clean,
+    // user-actionable result instead of attempting a proof that would throw a
+    // raw circom assert. Skips proof setup AND the submit signature.
+    if (verdict === "drift_too_high") {
+      return {
+        success: false,
+        commitment: tbh.commitmentBytes,
+        isFirstVerification: false,
+        error:
+          "This capture didn't closely match your usual pattern. That can happen when the recording is interrupted or your movements are rushed. Please try again with a steady, uninterrupted capture.",
+      };
+    }
+    if (verdict === "below_min_distance") {
+      // Replay floor: the new capture is near-identical to the previous one.
+      // Stay opaque (don't reveal "too similar") — route to the same
+      // validation-rejected surface as other attack-signal rejections.
+      return {
+        success: false,
+        commitment: tbh.commitmentBytes,
+        isFirstVerification: false,
+        error: "Verification rejected. Please try again.",
+      };
+    }
 
     const circuitInput = prepareCircuitInput(
       tbh,
       previousTBH,
-      config.threshold
+      threshold,
+      minDistance
     );
 
     const wasmPath = config.wasmUrl;
@@ -597,9 +692,12 @@ async function processSensorData(
       );
       solanaProof = serializeProof(proof, publicSignals);
     } catch (proofErr: any) {
-      // Include diagnostics in error for mobile debugging (no devtools).
-      // Block boundaries derived from extractor constants so they stay in
-      // sync with the v2 layout if any modality count shifts.
+      // Bounds violations (drift / replay floor) are handled by the pre-check
+      // above, so reaching here means a genuine proving failure (artifact
+      // fetch, snarkjs internal, OOM). Diagnostics go to gated dev logs only —
+      // derived feature values must never reach the UI or default production
+      // logs (privacy). Block boundaries derived from extractor constants so
+      // they stay in sync with the v2 layout if any modality count shifts.
       const motionStart = SPEAKER_FEATURE_COUNT;
       const touchStart = motionStart + MOTION_FEATURE_COUNT;
       const touchEnd = touchStart + TOUCH_FEATURE_COUNT;
@@ -609,13 +707,17 @@ async function processSensorData(
       const rawAudio = sensorData.audio?.samples.length ?? 0;
       const rawMotion = sensorData.motion.length;
       const rawTouch = sensorData.touch.length;
-      // First 3 feature values as a fingerprint to detect identical data
+      // First 3 feature values as a fingerprint to detect identical data.
       const sig = features.slice(0, 3).map((v) => v.toFixed(4)).join(",");
+      sdkWarn(
+        `[Entros SDK] Proof generation failed: ${proofErr?.message ?? proofErr}. dist=${distance}, nz=${audioNZ}/${motionNZ}/${touchNZ}, raw=${rawAudio}/${rawMotion}/${rawTouch}, sig=${sig}`
+      );
       return {
         success: false,
         commitment: tbh.commitmentBytes,
         isFirstVerification: false,
-        error: `Proof generation failed: ${proofErr?.message ?? proofErr}. Check wasmUrl/zkeyUrl reachability. Diagnostics: dist=${distance}, nz=${audioNZ}/${motionNZ}/${touchNZ}, raw=${rawAudio}/${rawMotion}/${rawTouch}, sig=${sig}`,
+        error:
+          "We couldn't generate the verification proof. Check your connection and try again.",
       };
     }
   }

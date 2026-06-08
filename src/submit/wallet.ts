@@ -10,6 +10,7 @@ import { sdkLog, sdkWarn } from "../log";
 import { entrosAnchorIdl, entrosVerifierIdl } from "../protocol/idl";
 import { buildEd25519ReceiptIx } from "./receipt";
 import { ENCRYPTED_BASELINE_BLOB_BYTES } from "../identity/baseline";
+import { errToString } from "./errors";
 
 /**
  * Build a `set_encrypted_baseline` instruction for the given anchor program
@@ -552,7 +553,7 @@ export async function submitViaWallet(
 
     return { success: true, txSignature: txSig, attestationTx };
   } catch (err: any) {
-    return { success: false, error: err.message ?? String(err) };
+    return { success: false, error: errToString(err) };
   }
 }
 
@@ -674,6 +675,6 @@ export async function submitResetViaWallet(
 
     return { success: true, txSignature: txSig, attestationTx };
   } catch (err: any) {
-    return { success: false, error: err.message ?? String(err) };
+    return { success: false, error: errToString(err) };
   }
 }

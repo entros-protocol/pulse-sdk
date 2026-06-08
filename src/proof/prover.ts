@@ -34,6 +34,31 @@ export function prepareCircuitInput(
   };
 }
 
+export type HammingVerdict = "in_bounds" | "drift_too_high" | "below_min_distance";
+
+/**
+ * Classify a Hamming distance against the circuit's accept band, mirroring
+ * entros_hamming.circom:54-66 exactly:
+ *   - LessThan      enforces  distance <  threshold    (maximum allowed drift)
+ *   - GreaterEqThan enforces  distance >= minDistance  (replay floor)
+ * so the accept band is [minDistance, threshold).
+ *
+ * Pass the SAME `threshold`/`minDistance` here that are fed to
+ * `prepareCircuitInput`. The parameters are required (no defaults) so a caller
+ * cannot accidentally classify against different bounds than the proof enforces.
+ * Computing this before proving lets the SDK return a clean, user-actionable
+ * result for a capture that would otherwise throw a raw circom assert.
+ */
+export function classifyHammingDistance(
+  distance: number,
+  threshold: number,
+  minDistance: number
+): HammingVerdict {
+  if (distance >= threshold) return "drift_too_high";
+  if (distance < minDistance) return "below_min_distance";
+  return "in_bounds";
+}
+
 /**
  * Generate a Groth16 proof for the Hamming distance circuit.
  *
@@ -63,9 +88,13 @@ export async function generateSolanaProof(
   previous: TBH,
   wasmPath: string,
   zkeyPath: string,
-  threshold?: number
+  threshold?: number,
+  minDistance?: number
 ): Promise<SolanaProof> {
-  const input = prepareCircuitInput(current, previous, threshold);
+  // Low-level primitive: performs NO bounds pre-check. An out-of-band Hamming
+  // distance produces an unsatisfiable witness and throws a circuit assert —
+  // call classifyHammingDistance first (as processSensorData does) or catch.
+  const input = prepareCircuitInput(current, previous, threshold, minDistance);
   const { proof, publicSignals } = await generateProof(
     input,
     wasmPath,
