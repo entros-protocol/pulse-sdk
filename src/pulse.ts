@@ -23,7 +23,7 @@ import {
 import { fuseFeatures, fuseRawFeatures } from "./extraction/statistics";
 import { yieldToMainThread } from "./yield";
 import { simhash, hammingDistance } from "./hashing/simhash";
-import { generateTBH, bigintToBytes32 } from "./hashing/poseidon";
+import { generateTBH, bigintToBytes32, computeCommitment } from "./hashing/poseidon";
 import { prepareCircuitInput, generateProof, classifyHammingDistance } from "./proof/prover";
 import { serializeProof } from "./proof/serializer";
 import { submitViaWallet, submitResetViaWallet } from "./submit/wallet";
@@ -141,12 +141,13 @@ type ExtractionResult =
       fingerprint: number[];
       tbh: TBH;
       /**
-       * Validator-signed mint receipt. Present only when the request
-       * reached the validator with `commitment_new_hex` AND the validator
-       * has a signing key configured. `undefined` indicates the SDK
-       * should mint without an Ed25519 prefix; while the on-chain check
-       * is log-only this is harmless, but once enforcement is enabled
-       * missing receipts cause `mint_anchor` to hard-fail.
+       * Validator-signed mint receipt. Present only when the request signaled
+       * mint intent AND the validator has a signing key configured.
+       * `undefined` means mint without an Ed25519 prefix — which the on-chain
+       * `mint_anchor` rejects whenever the protocol's `validator_pubkey` is
+       * configured (it is, on devnet): a missing or mismatched receipt
+       * hard-fails the mint. The receipt binds the SERVER-derived commitment,
+       * so the SDK must mint exactly that commitment (see the tbh swap below).
        */
       signedReceipt?: SignedReceiptDto;
     }
@@ -205,7 +206,11 @@ async function extractFingerprintAndValidate(
   // transmit it in the request. SimHash + Poseidon together cost ~20ms —
   // trivial overhead even on rejection paths.
   const fingerprint = simhash(normalizedFeatures);
-  const tbh = await generateTBH(fingerprint);
+  // Local TBH with a client-random salt. This is the fallback used when the
+  // validator doesn't return a server-derived commitment (older deploys); when
+  // it does, we swap in the server's salt + commitment below (C2). The
+  // fingerprint stays ours either way.
+  let tbh = await generateTBH(fingerprint);
 
   let signedReceipt: SignedReceiptDto | undefined;
 
@@ -266,6 +271,10 @@ async function extractFingerprintAndValidate(
           audio_samples_b64: audioSamplesB64,
           audio_sample_rate_hz: audioSampleRateHz,
           commitment_new_hex: commitmentNewHex,
+          // Explicit mint-intent signal. New validators sign a receipt over a
+          // commitment THEY derive from `features`; `commitment_new_hex` is
+          // still sent so older validators (which trust it) keep working.
+          request_receipt: true,
         }),
         signal: validateController.signal,
       });
@@ -282,19 +291,51 @@ async function extractFingerprintAndValidate(
         };
       }
 
-      // Parse the validator's success body for the signed receipt. Older
-      // validator deploys omit the field entirely — the SDK proceeds
-      // without a receipt and the on-chain log-only check writes "no
-      // preceding instruction" to the tx logs. Once on-chain enforcement
-      // is enabled, missing receipts will hard-fail mint_anchor; the
-      // executor + validator deploys must therefore be brought up to
-      // receipt-supporting versions before the enforcement flag flips.
+      // Parse the validator's success body for the signed receipt and the
+      // server-derived commitment + salt. Older validator deploys omit these
+      // fields — the SDK then keeps its local TBH and proceeds; note that
+      // `mint_anchor` rejects a missing receipt whenever the protocol's
+      // `validator_pubkey` is configured, so a pre-receipt validator must be
+      // upgraded before that mint path is exercised.
       try {
         const successBody = (await validateResponse.json()) as {
           signed_receipt?: SignedReceiptDto;
+          commitment_hex?: string;
+          salt_hex?: string;
         };
         if (successBody.signed_receipt) {
           signedReceipt = successBody.signed_receipt;
+        }
+        // C2: adopt the validator-derived commitment + salt. The validator
+        // signs — and the chain enforces — a commitment it computed from the
+        // features we sent, not one we chose, so we must mint exactly that.
+        // Our local `fingerprint` is unchanged and stays consistent with the
+        // server commitment: the validator derived it from a byte-identical
+        // fingerprint (parity-tested across SDK/validator/circuit) under this
+        // salt, so the {fingerprint, salt, commitment} triple still opens for
+        // future rotation proofs.
+        if (successBody.commitment_hex && successBody.salt_hex) {
+          const serverCommitment = BigInt("0x" + successBody.commitment_hex);
+          const serverSalt = BigInt("0x" + successBody.salt_hex);
+          tbh = {
+            fingerprint,
+            salt: serverSalt,
+            commitment: serverCommitment,
+            commitmentBytes: bigintToBytes32(serverCommitment),
+          };
+          if (config.debug) {
+            // Runtime cross-check of the parity contract: the commitment we'd
+            // compute locally from our fingerprint under the server salt must
+            // equal the server's. A mismatch means the SDK and validator
+            // SimHash/Poseidon have drifted (independently deployed) — future
+            // rotation proofs would silently fail to open — so flag it loudly.
+            const localCheck = await computeCommitment(fingerprint, serverSalt);
+            if (localCheck !== serverCommitment) {
+              sdkWarn(
+                "[Entros SDK] Commitment parity check failed: the validator-derived commitment does not match a local recomputation. SDK and validator may be out of sync."
+              );
+            }
+          }
         }
       } catch (err) {
         // Body wasn't JSON — typically an older validator returning an

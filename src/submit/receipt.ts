@@ -48,8 +48,9 @@ function hexToBytes(hex: string, expectedLen: number): Uint8Array | null {
 /**
  * Decoded byte form of a `SignedReceiptDto`. `null` slots indicate the
  * caller should treat the receipt as unusable and fall back to the
- * no-receipt mint flow (the on-chain check is currently log-only and
- * proceeds when no preceding Ed25519 ix is present).
+ * no-receipt mint flow — which `mint_anchor` rejects whenever the protocol's
+ * `validator_pubkey` is configured (so the fallback only mints on a
+ * pre-migration / unconfigured program).
  */
 export interface DecodedReceipt {
   publicKey: Uint8Array;
@@ -75,11 +76,10 @@ export function decodeSignedReceipt(receipt: SignedReceiptDto): DecodedReceipt |
  * mint receipt to the immediately-following `mint_anchor` instruction.
  *
  * Returns `null` if the receipt fails to decode — caller should fall back to
- * sending `mint_anchor` without an Ed25519 prefix. The on-chain check is
- * currently log-only, so the fallback still works on the deployed program;
- * once enforcement is enabled, missing receipts hard-fail and the SDK's
- * no-op fallback becomes a deliberate "no-receipt" path that `mint_anchor`
- * rejects.
+ * sending `mint_anchor` without an Ed25519 prefix. That fallback only mints
+ * successfully against a program whose `validator_pubkey` is unconfigured;
+ * wherever it is configured (e.g. devnet) `mint_anchor` hard-fails a mint with
+ * no preceding receipt.
  *
  * Web3.js's `Ed25519Program.createInstructionWithPublicKey` defaults the
  * three `*_instruction_index` fields to `0xFFFF`, which is the exact

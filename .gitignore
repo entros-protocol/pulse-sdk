@@ -4,3 +4,4 @@ dist-internal/
 coverage/
 .env
 .DS_Store
+parity-scratch.ts
