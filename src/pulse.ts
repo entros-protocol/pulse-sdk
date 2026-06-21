@@ -22,6 +22,7 @@ import {
 } from "./extraction/kinematic";
 import { fuseFeatures, fuseRawFeatures } from "./extraction/statistics";
 import { yieldToMainThread } from "./yield";
+import { collectClientSignals } from "./client-signals/automation";
 import { simhash, hammingDistance } from "./hashing/simhash";
 import { generateTBH, bigintToBytes32, computeCommitment } from "./hashing/poseidon";
 import { prepareCircuitInput, generateProof, classifyHammingDistance } from "./proof/prover";
@@ -254,6 +255,15 @@ async function extractFingerprintAndValidate(
       // the field for `update_anchor`).
       const commitmentNewHex = bytesToHex(tbh.commitmentBytes);
 
+      // Layer A1 (observe-only): collect the client-signals envelope so the
+      // executor can measure the bot-vs-human automation signal on real
+      // traffic. Privacy-first — detects the automation harness driving the
+      // page (Selenium/Puppeteer/Playwright/CDP), never the user; no
+      // fingerprinting. The executor logs it and does NOT feed it into the
+      // pass/fail decision. Non-browser runtimes (React Native) return a clean
+      // marker. Synchronous + exception-safe, so it can never break submission.
+      const clientSignals = collectClientSignals();
+
       // Server-side transcription adds ~1s to the validation round trip.
       // Extend timeout from 10s to 15s to tolerate cold-start model load
       // without aborting on legitimate requests.
@@ -275,6 +285,10 @@ async function extractFingerprintAndValidate(
           // commitment THEY derive from `features`; `commitment_new_hex` is
           // still sent so older validators (which trust it) keep working.
           request_receipt: true,
+          // Observe-only automation-detection signal (Layer A1). Optional and
+          // additive — the executor logs it; older executors ignore the
+          // unknown field. Never affects the verification decision.
+          client_signals: clientSignals,
         }),
         signal: validateController.signal,
       });
