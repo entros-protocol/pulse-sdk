@@ -60,7 +60,7 @@ const result = await pulse.verify(touchElement);
 
 ```bash
 npm install
-npm test          # 60 vitest tests (including 8-phase adversarial pen test)
+npm test          # full vitest suite, including an 8-phase adversarial pen test
 npm run build     # ESM + CJS output
 npm run typecheck # TypeScript strict mode
 ```
