@@ -4,6 +4,7 @@ export interface SubmissionResult {
   txSignature?: string;
   attestationTx?: string;
   error?: string;
+  compositeRiskScore?: number;
 }
 
 /**
@@ -35,6 +36,7 @@ export interface VerificationResult {
   attestationTx?: string;
   isFirstVerification: boolean;
   error?: string;
+  compositeRiskScore?: number;
   /**
    * Reason label when verification fails. Two-source taxonomy:
    *
