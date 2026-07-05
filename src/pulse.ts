@@ -151,6 +151,7 @@ type ExtractionResult =
        * so the SDK must mint exactly that commitment (see the tbh swap below).
        */
       signedReceipt?: SignedReceiptDto;
+      compositeRiskScore?: number;
     }
   | { ok: false; error: string; reason?: string };
 
@@ -214,6 +215,7 @@ async function extractFingerprintAndValidate(
   let tbh = await generateTBH(fingerprint);
 
   let signedReceipt: SignedReceiptDto | undefined;
+  let compositeRiskScore: number | undefined;
 
   onProgress?.("Validating...");
   // Same rationale as the "Extracting features..." yield above — give
@@ -316,9 +318,14 @@ async function extractFingerprintAndValidate(
           signed_receipt?: SignedReceiptDto;
           commitment_hex?: string;
           salt_hex?: string;
+          composite_risk_score?: number;
         };
         if (successBody.signed_receipt) {
           signedReceipt = successBody.signed_receipt;
+        }
+        if (successBody.composite_risk_score !== undefined) {
+          compositeRiskScore = successBody.composite_risk_score;
+          sdkLog(`[Entros SDK] Validation composite risk score: ${compositeRiskScore.toFixed(4)}`);
         }
         // C2: adopt the validator-derived commitment + salt. The validator
         // signs — and the chain enforces — a commitment it computed from the
@@ -380,7 +387,7 @@ async function extractFingerprintAndValidate(
     }
   }
 
-  return { ok: true, features, f0Contour, accelMagnitude, fingerprint, tbh, signedReceipt };
+  return { ok: true, features, f0Contour, accelMagnitude, fingerprint, tbh, signedReceipt, compositeRiskScore };
 }
 
 /**
@@ -530,7 +537,7 @@ async function processSensorData(
       reason: extraction.reason,
     };
   }
-  const { fingerprint, tbh, features, signedReceipt } = extraction;
+  const { fingerprint, tbh, features, signedReceipt, compositeRiskScore } = extraction;
 
   // Determine if this is a first verification.
   // Wallet-connected: read the on-chain IdentityState PDA (source of truth).
@@ -855,6 +862,7 @@ async function processSensorData(
     attestationTx: submission.attestationTx,
     isFirstVerification,
     error: submission.error,
+    compositeRiskScore,
   };
 }
 
@@ -929,7 +937,7 @@ async function processResetSensorData(
       reason: extraction.reason,
     };
   }
-  const { tbh } = extraction;
+  const { tbh, compositeRiskScore } = extraction;
 
   // Best-effort: build the encrypted-baseline blob bound to the NEW
   // post-reset commitment so `submitResetViaWallet` can overwrite the
@@ -979,6 +987,7 @@ async function processResetSensorData(
           "Re-verification from this device will not work. Try clearing site data and " +
           "resetting again after the 7-day cooldown, or transfer a baseline from another " +
           "device.",
+        compositeRiskScore,
       };
     }
   }
@@ -993,6 +1002,7 @@ async function processResetSensorData(
     // success copy that matches first-time flows.
     isFirstVerification: true,
     error: submission.error,
+    compositeRiskScore,
   };
 }
 
