@@ -3,7 +3,9 @@ export interface AudioCapture {
   samples: Float32Array;
   sampleRate: number;
   duration: number;
+  virtualDevice?: boolean;
 }
+
 
 /** Single IMU reading */
 export interface MotionSample {

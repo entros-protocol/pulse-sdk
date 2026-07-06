@@ -265,6 +265,11 @@ async function extractFingerprintAndValidate(
       // pass/fail decision. Non-browser runtimes (React Native) return a clean
       // marker. Synchronous + exception-safe, so it can never break submission.
       const clientSignals = collectClientSignals();
+      if (sensorData.audio?.virtualDevice) {
+        clientSignals.capture = {
+          virtual_device: true,
+        };
+      }
 
       // Server-side transcription adds ~1s to the validation round trip.
       // Extend timeout from 10s to 15s to tolerate cold-start model load

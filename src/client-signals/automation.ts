@@ -66,6 +66,10 @@ export interface ClientSignals {
   env: "browser" | "non-browser";
   /** Automation-framework detection group. */
   automation: AutomationSignals;
+  /** Capture environment signals (e.g. virtual devices) */
+  capture?: {
+    virtual_device: boolean;
+  };
 }
 
 /**
