@@ -161,4 +161,34 @@ describe("captureAudio onReady gate", () => {
       g.AudioContext = original;
     }
   });
+
+  it("detects virtual device when track label matches loopback keyword", async () => {
+    const g = globalThis as { AudioContext?: unknown };
+    const original = g.AudioContext;
+    g.AudioContext = MockAudioContext as unknown as typeof AudioContext;
+    try {
+      const stream = {
+        getTracks: () => [{ stop() {} }],
+        getAudioTracks: () => [{ label: "VB-Audio Cable" }],
+      } as unknown as MediaStream;
+      const controller = new AbortController();
+      const capture = captureAudio({
+        stream,
+        signal: controller.signal,
+        minDurationMs: 0,
+        maxDurationMs: 1000,
+      });
+
+      await new Promise((r) => setTimeout(r, 0));
+      const proc = MockAudioContext.lastProcessor;
+      expect(proc).toBeTruthy();
+      fireFrame(proc!, 0.1);
+
+      controller.abort();
+      const result = await capture;
+      expect(result.virtualDevice).toBe(true);
+    } finally {
+      g.AudioContext = original;
+    }
+  });
 });

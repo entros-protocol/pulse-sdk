@@ -129,6 +129,33 @@ export async function captureAudio(
     },
   });
 
+  let isVirtual = false;
+  try {
+    const track = stream.getAudioTracks()[0];
+    if (track) {
+      const label = track.label.toLowerCase();
+      const virtualKeywords = ["blackhole", "vb-audio", "loopback", "virtual", "soundflower", "cable", "vac ", "audio cable"];
+      if (virtualKeywords.some(kw => label.includes(kw))) {
+        isVirtual = true;
+      }
+    }
+    if (!isVirtual && typeof navigator !== "undefined" && navigator.mediaDevices?.enumerateDevices) {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const virtualKeywords = ["blackhole", "vb-audio", "loopback", "virtual", "soundflower", "cable", "vac ", "audio cable"];
+      for (const d of devices) {
+        if (d.kind === "audioinput") {
+          const label = d.label.toLowerCase();
+          if (virtualKeywords.some(kw => label.includes(kw))) {
+            isVirtual = true;
+            break;
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore any device enumeration/label query errors to prevent capture blocker
+  }
+
   // If anything between `getUserMedia` and the Promise constructor throws
   // (AudioContext construction, ctx.resume(), createMediaStreamSource) the
   // stream we just acquired would leak indefinitely. Wrap the setup in a
@@ -212,6 +239,7 @@ export async function captureAudio(
         samples: normalized,
         sampleRate: capturedSampleRate,
         duration: totalLength / capturedSampleRate,
+        virtualDevice: isVirtual,
       });
     }
 
