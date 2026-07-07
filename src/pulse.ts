@@ -7,7 +7,7 @@ import type { SolanaProof } from "./proof/types";
 import type { SignedReceiptDto, VerificationResult } from "./submit/types";
 import type { StoredVerificationData } from "./identity/types";
 
-import { captureAudio } from "./sensor/audio";
+import { captureAudio, analyzeAcousticRealism } from "./sensor/audio";
 import { encodeAudioAsBase64 } from "./sensor/encode";
 import { captureMotion, requestMotionPermission } from "./sensor/motion";
 import { captureTouch } from "./sensor/touch";
@@ -265,9 +265,12 @@ async function extractFingerprintAndValidate(
       // pass/fail decision. Non-browser runtimes (React Native) return a clean
       // marker. Synchronous + exception-safe, so it can never break submission.
       const clientSignals = collectClientSignals();
-      if (sensorData.audio?.virtualDevice) {
+      if (sensorData.audio) {
+        const acoustic = analyzeAcousticRealism(sensorData.audio.samples, sensorData.audio.sampleRate);
         clientSignals.capture = {
-          virtual_device: true,
+          virtual_device: !!sensorData.audio.virtualDevice,
+          flatness: parseFloat(acoustic.flatness.toFixed(4)),
+          centroid: parseFloat(acoustic.centroid.toFixed(2)),
         };
       }
 

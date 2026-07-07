@@ -1,5 +1,6 @@
 import type { AudioCapture, CaptureOptions } from "./types";
 import { MIN_CAPTURE_MS, MAX_CAPTURE_MS } from "../config";
+import { realFFT } from "../extraction/fft";
 
 const TARGET_SAMPLE_RATE = 16000;
 
@@ -261,4 +262,83 @@ export async function captureAudio(
       }
     }
   });
+}
+
+export function analyzeAcousticRealism(
+  samples: Float32Array,
+  sampleRate: number
+): { flatness: number; centroid: number } {
+  if (samples.length === 0) {
+    return { flatness: 0, centroid: 0 };
+  }
+
+  const frameSize = 1024;
+  const numFrames = Math.floor(samples.length / frameSize);
+  if (numFrames === 0) {
+    return { flatness: 0, centroid: 0 };
+  }
+
+  let totalFlatness = 0;
+  let totalCentroid = 0;
+  let validFrames = 0;
+
+  for (let f = 0; f < numFrames; f++) {
+    const frameData: number[] = [];
+    const offset = f * frameSize;
+    for (let i = 0; i < frameSize; i++) {
+      frameData.push(samples[offset + i]!);
+    }
+
+    const { real, imag } = realFFT(frameData, frameSize);
+    const numBins = frameSize / 2 + 1;
+    const magnitudes = new Float32Array(numBins);
+    const power = new Float32Array(numBins);
+
+    let magSum = 0;
+    for (let k = 0; k < numBins; k++) {
+      const r = real[k]!;
+      const im = imag[k]!;
+      const m = Math.sqrt(r * r + im * im);
+      magnitudes[k] = m;
+      power[k] = m * m + 1e-10;
+      magSum += m;
+    }
+
+    if (magSum < 1e-6) {
+      continue;
+    }
+
+    // Compute Centroid
+    let centroidNumerator = 0;
+    for (let k = 0; k < numBins; k++) {
+      const freq = (k * sampleRate) / frameSize;
+      centroidNumerator += freq * magnitudes[k]!;
+    }
+    const frameCentroid = centroidNumerator / magSum;
+
+    // Compute Flatness (Wiener Entropy)
+    let lnSum = 0;
+    let powerSum = 0;
+    for (let k = 0; k < numBins; k++) {
+      const p = power[k]!;
+      lnSum += Math.log(p);
+      powerSum += p;
+    }
+    const geomMean = Math.exp(lnSum / numBins);
+    const arithMean = powerSum / numBins;
+    const frameFlatness = arithMean > 0 ? geomMean / arithMean : 0;
+
+    totalCentroid += frameCentroid;
+    totalFlatness += frameFlatness;
+    validFrames++;
+  }
+
+  if (validFrames === 0) {
+    return { flatness: 0, centroid: 0 };
+  }
+
+  return {
+    flatness: totalFlatness / validFrames,
+    centroid: totalCentroid / validFrames
+  };
 }

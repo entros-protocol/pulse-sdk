@@ -69,6 +69,8 @@ export interface ClientSignals {
   /** Capture environment signals (e.g. virtual devices) */
   capture?: {
     virtual_device: boolean;
+    flatness?: number;
+    centroid?: number;
   };
 }
 
