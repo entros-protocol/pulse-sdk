@@ -494,6 +494,9 @@ async function processSensorData(
     };
   }
 
+  const walletAddress = wallet?.adapter?.publicKey?.toBase58?.()
+    ?? wallet?.publicKey?.toBase58?.();
+
   // Re-verification requires audio + at least one other modality.
   // Audio-only fingerprints lack inter-session variance from motion/touch,
   // producing identical SimHash results that fail the min_distance constraint.
@@ -511,13 +514,13 @@ async function processSensorData(
         const accountInfo = await connection.getAccountInfo(identityPda);
         hasPreviousData = !!accountInfo;
       } catch {
-        hasPreviousData = (await loadVerificationData()) !== null;
+        hasPreviousData = (await loadVerificationData(walletAddress)) !== null;
       }
     } else {
-      hasPreviousData = (await loadVerificationData()) !== null;
+      hasPreviousData = (await loadVerificationData(walletAddress)) !== null;
     }
   } else {
-    hasPreviousData = (await loadVerificationData()) !== null;
+    hasPreviousData = (await loadVerificationData(walletAddress)) !== null;
   }
   if (hasPreviousData && !hasMotion && !hasTouch) {
     return {
@@ -528,8 +531,6 @@ async function processSensorData(
     };
   }
 
-  const walletAddress = wallet?.adapter?.publicKey?.toBase58?.()
-    ?? wallet?.publicKey?.toBase58?.();
   const extraction = await extractFingerprintAndValidate(
     sensorData,
     config,
@@ -551,7 +552,7 @@ async function processSensorData(
   // Wallet-connected: read the on-chain IdentityState PDA (source of truth).
   // Walletless: check localStorage for a stored fingerprint.
   let isFirstVerification: boolean;
-  let previousData = await loadVerificationData();
+  let previousData = await loadVerificationData(walletAddress);
   // The on-chain `current_commitment` is the authoritative head of the
   // verification chain — each successful verify advances it. We read it from
   // the SAME account as the existence check (no extra round-trip) so we can
@@ -608,6 +609,13 @@ async function processSensorData(
 
   const localBaselineStale = isBaselineStale(previousData);
 
+  // If the legacy baseline matched, migrate it to the keyed location and remove the legacy storage entry.
+  const STORAGE_KEY = "entros-protocol-verification-data";
+  if (previousData && !localBaselineStale && walletAddress && typeof localStorage !== "undefined" && !localStorage.getItem(`${STORAGE_KEY}_${walletAddress}`)) {
+    await storeVerificationData(previousData, walletAddress);
+    localStorage.removeItem(STORAGE_KEY);
+  }
+
   // Recover the in-sync baseline from the on-chain `EncryptedBaseline` PDA
   // when the local copy is MISSING (cleared data, new device) OR STALE (fell
   // behind the chain, e.g. a verify from another origin/device). Recovery
@@ -632,7 +640,7 @@ async function processSensorData(
       );
       const recovery = await recoverBaselineFromChain(baselineWallet, connection);
       if (recovery.recovered) {
-        previousData = await loadVerificationData();
+        previousData = await loadVerificationData(walletAddress);
         sdkLog(
           `[Entros SDK] On-chain encrypted baseline ${localBaselineStale ? "re-synced" : "recovered"}`
         );
@@ -860,7 +868,7 @@ async function processSensorData(
       salt: tbh.salt.toString(),
       commitment: tbh.commitment.toString(),
       timestamp: Date.now(),
-    });
+    }, walletAddress);
   }
 
   return {
@@ -980,7 +988,7 @@ async function processResetSensorData(
         salt: tbh.salt.toString(),
         commitment: tbh.commitment.toString(),
         timestamp: Date.now(),
-      });
+      }, walletAddress);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       sdkWarn(`[Entros SDK] Reset succeeded on chain but local baseline persistence failed: ${msg}`);

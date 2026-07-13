@@ -2,6 +2,12 @@
 
 All notable changes to the `@entros/pulse-sdk` package will be documented in this file.
 
+## [3.13.0] - 2026-07-13
+
+### Changed
+- **Cross-Wallet baseline isolation**: Partitioned client-side LocalStorage cache using wallet-specific keys to eliminate signature friction and database corruption when switching wallets.
+- **SSR compatibility**: Hardened storage layer with `typeof localStorage` guards to prevent ReferenceErrors during Next.js SSR build and prerender stages.
+
 ## [3.12.0] - 2026-07-07
 
 ### Added

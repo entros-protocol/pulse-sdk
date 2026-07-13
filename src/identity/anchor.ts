@@ -188,7 +188,15 @@ export function localCommitmentMatchesChain(
  *   3. Otherwise, in-memory only (lost on reload). Safer default —
  *      never silently writes plaintext to localStorage.
  */
-export async function storeVerificationData(data: StoredVerificationData): Promise<void> {
+export async function storeVerificationData(
+  data: StoredVerificationData,
+  walletAddress?: string
+): Promise<void> {
+  if (typeof localStorage === "undefined") {
+    inMemoryStore = data;
+    return;
+  }
+  const keyName = walletAddress ? `${STORAGE_KEY}_${walletAddress}` : STORAGE_KEY;
   try {
     if (!hasCryptoSupport()) {
       // Crypto unavailable → consult the host-provided privacy callback.
@@ -201,7 +209,7 @@ export async function storeVerificationData(data: StoredVerificationData): Promi
         sdkWarn(
           "[Entros SDK] Crypto unavailable; user-approved plaintext storage"
         );
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        localStorage.setItem(keyName, JSON.stringify(data));
       } else {
         sdkWarn(
           "[Entros SDK] Crypto unavailable and no privacy-fallback approval — using in-memory storage (data lost on reload)"
@@ -221,7 +229,7 @@ export async function storeVerificationData(data: StoredVerificationData): Promi
         sdkWarn(
           "[Entros SDK] Encryption key unavailable; user-approved plaintext storage"
         );
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        localStorage.setItem(keyName, JSON.stringify(data));
       } else {
         sdkWarn(
           "[Entros SDK] Encryption key unavailable and no privacy-fallback approval — using in-memory storage"
@@ -233,7 +241,7 @@ export async function storeVerificationData(data: StoredVerificationData): Promi
 
     const { iv, ct } = await encrypt(JSON.stringify(data), key);
     const envelope: EncryptedEnvelope = { v: ENCRYPTED_VERSION, iv, ct };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(envelope));
+    localStorage.setItem(keyName, JSON.stringify(envelope));
   } catch {
     inMemoryStore = data;
   }
@@ -243,9 +251,23 @@ export async function storeVerificationData(data: StoredVerificationData): Promi
  * Load previously stored verification data.
  * Decrypts if encrypted, migrates plaintext to encrypted on first load.
  */
-export async function loadVerificationData(): Promise<StoredVerificationData | null> {
+export async function loadVerificationData(
+  walletAddress?: string
+): Promise<StoredVerificationData | null> {
+  if (typeof localStorage === "undefined") return inMemoryStore;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const keyName = walletAddress ? `${STORAGE_KEY}_${walletAddress}` : STORAGE_KEY;
+    let raw = localStorage.getItem(keyName);
+    let isLegacyFallback = false;
+
+    // Fallback to legacy unkeyed key if keyed storage does not exist yet
+    if (!raw && walletAddress) {
+      raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        isLegacyFallback = true;
+      }
+    }
+
     if (!raw) return inMemoryStore;
 
     const parsed: unknown = JSON.parse(raw);
@@ -292,13 +314,16 @@ export async function loadVerificationData(): Promise<StoredVerificationData | n
 
     // Plaintext legacy data — migrate to encrypted
     if (isPlaintextData(parsed)) {
-      await storeVerificationData(parsed);
+      await storeVerificationData(parsed, walletAddress);
+      if (isLegacyFallback) {
+        localStorage.removeItem(STORAGE_KEY);
+      }
       return parsed;
     }
 
     // Unrecognized format
     sdkWarn("[Entros SDK] Unrecognized verification data format — clearing");
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(isLegacyFallback ? STORAGE_KEY : keyName);
     return inMemoryStore;
   } catch {
     return inMemoryStore;
@@ -428,7 +453,7 @@ export async function recoverBaselineFromChain(
         identity.lastVerificationTimestamp > 0
           ? identity.lastVerificationTimestamp * 1000
           : Date.now(),
-    });
+    }, wallet.publicKey.toBase58());
     sdkLog(
       "[Entros SDK] Recovered local baseline from on-chain EncryptedBaseline PDA"
     );
