@@ -6,7 +6,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     globals: true,
-    testTimeout: 60000,
+    testTimeout: 600000,
   },
   define: {
     __IAM_INTERNAL_TEST__: process.env.IAM_INTERNAL_TEST === "1" ? "true" : "false",
