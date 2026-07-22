@@ -10,6 +10,8 @@ export interface LissajousParams {
   b: number;
   delta: number;
   points: number;
+  anchorX?: number;
+  anchorY?: number;
 }
 
 export interface Point2D {

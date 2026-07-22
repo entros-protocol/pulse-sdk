@@ -14,6 +14,7 @@
  */
 
 import { sdkWarn } from "../log";
+import type { LissajousParams } from "./lissajous";
 
 /**
  * Server-issued challenge artifacts. Returned by `fetchChallenge`.
@@ -25,6 +26,8 @@ export interface ChallengeResponse {
   phrase: string;
   /** Nonce TTL in seconds (default 60). */
   expiresIn: number;
+  /** Server-issued Lissajous curve parameters for touch challenge binding. */
+  curve?: LissajousParams;
 }
 
 /**
@@ -74,6 +77,14 @@ export async function fetchChallenge(
     nonce: number[];
     expires_in: number;
     phrase: string;
+    curve?: {
+      a: number;
+      b: number;
+      delta: number;
+      points: number;
+      anchor_x?: number;
+      anchor_y?: number;
+    };
   };
 
   if (!Array.isArray(body.nonce) || body.nonce.length !== 32) {
@@ -83,9 +94,21 @@ export async function fetchChallenge(
     throw new Error("Executor returned empty challenge phrase");
   }
 
+  const curve: LissajousParams | undefined = body.curve
+    ? {
+        a: body.curve.a,
+        b: body.curve.b,
+        delta: body.curve.delta,
+        points: body.curve.points ?? 200,
+        anchorX: body.curve.anchor_x,
+        anchorY: body.curve.anchor_y,
+      }
+    : undefined;
+
   return {
     nonce: Uint8Array.from(body.nonce),
     phrase: body.phrase,
     expiresIn: body.expires_in ?? 60,
+    curve,
   };
 }

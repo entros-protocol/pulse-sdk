@@ -32,6 +32,38 @@ describe("fetchChallenge", () => {
     expect(url).toContain("/challenge?wallet=");
   });
 
+  it("parses server-issued curve when provided", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        nonce: NONCE_BYTES,
+        expires_in: 60,
+        phrase: "bada lita mupe ruso poto",
+        curve: {
+          a: 2,
+          b: 3,
+          delta: 1.57,
+          points: 200,
+          anchor_x: 100,
+          anchor_y: 50,
+        },
+      }),
+    } as Response);
+    vi.stubGlobal("fetch", mockFetch);
+
+    const result = await fetchChallenge(
+      "https://executor.example.com",
+      "So11111111111111111111111111111111111111112",
+    );
+
+    expect(result.curve).toBeDefined();
+    expect(result.curve?.a).toBe(2);
+    expect(result.curve?.b).toBe(3);
+    expect(result.curve?.delta).toBe(1.57);
+    expect(result.curve?.anchorX).toBe(100);
+    expect(result.curve?.anchorY).toBe(50);
+  });
+
   it("sends X-API-Key header when apiKey provided", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
