@@ -75,7 +75,8 @@ export {
 } from "./identity/baseline";
 
 // Sensor types
-export type { AudioCapture, MotionSample, TouchSample, SensorData, CaptureOptions, CaptureStage, StageState } from "./sensor/types";
+export type { AudioCapture, MotionSample, TouchSample, SensorData, CaptureOptions, CaptureStage, StageState, CurveTracePoint, CurveTraceOutline } from "./sensor/types";
+export { CURVE_OUTLINE_POINTS } from "./sensor/curve";
 
 // Challenge
 export { generatePhrase, generatePhraseSequence } from "./challenge/phrase";

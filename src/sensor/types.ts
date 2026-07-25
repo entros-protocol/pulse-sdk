@@ -28,6 +28,31 @@ export interface TouchSample {
   height: number;
 }
 
+/**
+ * Single raw curve-trace sample from the "trace the curve" challenge, in the
+ * 200x200 viewBox coordinate frame. Captured on-device only; resampled to a
+ * coarse, timestamp-free `CurveTraceOutline` before anything leaves the device.
+ */
+export interface CurveTracePoint {
+  x: number;
+  y: number;
+  /**
+   * `performance.now()` timestamp (ms); used only for on-device equal-time
+   * resampling, never transmitted.
+   */
+  t: number;
+}
+
+/**
+ * Coarse, equal-time-resampled curve outline sent to the validation service for
+ * touch content-binding. Tuple points keep the wire form compact and match the
+ * executor's `curve_trace.points: [[x,y],...]`; no per-point timestamps.
+ */
+export interface CurveTraceOutline {
+  points: [number, number][];
+  duration_ms: number;
+}
+
 /** Options for event-driven sensor capture */
 export interface CaptureOptions {
   /** AbortSignal to stop capture. If omitted, captures for maxDurationMs. */
@@ -62,6 +87,12 @@ export interface SensorData {
   audio: AudioCapture | null;
   motion: MotionSample[];
   touch: TouchSample[];
+  /**
+   * Raw curve-trace outline from the "trace the curve" UI (wallet-connected
+   * verify only). On-device only — resampled to a coarse `CurveTraceOutline` at
+   * send time. Absent for reset and walletless flows.
+   */
+  curveTrace?: CurveTracePoint[];
   modalities: {
     audio: boolean;
     motion: boolean;
