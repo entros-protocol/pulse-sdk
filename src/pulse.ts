@@ -1,7 +1,7 @@
 import type { PulseConfig } from "./config";
 import { DEFAULT_THRESHOLD, DEFAULT_MIN_DISTANCE, DEFAULT_CAPTURE_MS, AUDIO_READY_TIMEOUT_MS, PROGRAM_IDS } from "./config";
 import { setDebug, sdkLog, sdkWarn } from "./log";
-import type { SensorData, AudioCapture, MotionSample, TouchSample, StageState } from "./sensor/types";
+import type { SensorData, AudioCapture, MotionSample, TouchSample, StageState, CurveTracePoint } from "./sensor/types";
 import type { TBH } from "./hashing/types";
 import type { SolanaProof } from "./proof/types";
 import type { SignedReceiptDto, VerificationResult } from "./submit/types";
@@ -9,6 +9,7 @@ import type { StoredVerificationData } from "./identity/types";
 
 import { captureAudio, analyzeAcousticRealism } from "./sensor/audio";
 import { encodeAudioAsBase64 } from "./sensor/encode";
+import { resampleCurveTrace } from "./sensor/curve";
 import { captureMotion, requestMotionPermission } from "./sensor/motion";
 import { captureTouch } from "./sensor/touch";
 import { extractSpeakerFeaturesDetailed, SPEAKER_FEATURE_COUNT } from "./extraction/speaker";
@@ -248,6 +249,14 @@ async function extractFingerprintAndValidate(
         : undefined;
       const audioSampleRateHz = sensorData.audio?.sampleRate;
 
+      // Touch-curve outline (wallet-connected verify only). Resampled to a
+      // coarse, equal-time, timestamp-free outline — only the {x,y} points +
+      // duration leave the device. Observe-only server-side; never affects the
+      // decision. Absent (→ undefined → dropped) for reset/walletless.
+      const curveTrace = sensorData.curveTrace
+        ? resampleCurveTrace(sensorData.curveTrace)
+        : undefined;
+
       // Hex-encode the 32-byte commitment for the validator's signing
       // input. The validator only signs when this field is present AND
       // its own signing key is configured; the SDK only consumes the
@@ -299,6 +308,10 @@ async function extractFingerprintAndValidate(
           // additive — the executor logs it; older executors ignore the
           // unknown field. Never affects the verification decision.
           client_signals: clientSignals,
+          // Observe-only touch content-binding signal (curve-trace outline).
+          // Optional + additive; older executors ignore it. `undefined` when no
+          // outline was captured, and JSON.stringify then omits it entirely.
+          curve_trace: curveTrace,
         }),
         signal: validateController.signal,
       });
@@ -1287,7 +1300,7 @@ export class PulseSession {
   // --- Complete ---
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Solana types are optional peer deps
-  async complete(wallet?: any, connection?: any, onProgress?: (stage: string) => void): Promise<VerificationResult> {
+  async complete(wallet?: any, connection?: any, onProgress?: (stage: string) => void, outline?: CurveTracePoint[]): Promise<VerificationResult> {
     const active: string[] = [];
     if (this.audioStageState === "capturing") active.push("audio");
     if (this.motionStageState === "capturing") active.push("motion");
@@ -1302,6 +1315,7 @@ export class PulseSession {
       audio: this.audioData,
       motion: this.motionData,
       touch: this.touchData,
+      curveTrace: outline,
       modalities: {
         audio: this.audioData !== null,
         motion: this.motionData.length > 0,
