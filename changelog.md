@@ -2,6 +2,32 @@
 
 All notable changes to the `@entros/pulse-sdk` package will be documented in this file.
 
+> Entries from 3.12.0 onward are written at release time. Everything below it was
+> reconstructed after the fact in `4d79649` (2026-07-07) and the dates were
+> inferred rather than recorded. Treat them as approximate and check `git log`
+> before relying on one. The 3.3.0 date was wrong by two and a half months and
+> that error propagated into master-list #186, where it made a pre-feature
+> anchor read as a post-feature anchor that had mysteriously lost its baseline.
+
+## [4.1.0] - 2026-07-31
+
+### Fixed
+- **Baseline reset could not land on chain, for any wallet, since 2026-07-27.** The bundled Anchor IDL was three protocol commits behind, so `reset_identity_state` was encoded with one argument where the deployed program requires two. Every reset was broadcast, charged, and reverted with `InstructionDidNotDeserialize`. The IDL is now synced from `protocol-core/target/idl/`, the SDK passes `PROJECTION_VERSION`, and preflight is left on for the reset path so a client-side encoding error is refused for free rather than paid for. Do not regenerate the IDL from chain: the published IDL account is stale too and reproduces the bug.
+- **No timeout existed on the wallet signature or on confirmation.** A wallet that never prompted was reported as "Proof generation timed out", because the only clock in the stack was a single host-side race covering the whole verification. `SIGNATURE_TIMEOUT_MS` and `CONFIRMATION_TIMEOUT_MS` bound each step, and each reports its own phase.
+- **On-chain baseline recovery reported one reason out of six.** An anchor minted before on-chain baselines existed, a blob that no longer decrypts, and a wallet that cannot sign all rendered as one screen telling the user their device had lost something. Most had never had it: 13 of 107 devnet anchors carry an `EncryptedBaseline` PDA. Each situation now names its own obstacle and its own way out.
+- A wallet adapter without `signMessage` skipped baseline recovery with no trace under any configuration, since both SDK log helpers are gated on `debug`.
+- Feature extraction failures escaped `complete()` as a bare throw with no phase and nothing to route on. They return a result like every other failure.
+
+### Added
+- **Phase taxonomy** (`VerificationPhase`, `phaseChargesAttempt`, `phaseSpend`, `isVerificationPhase`): which of the eight stages failed, and what a host may conclude from it. Routing by prose put an on-chain revert on the screen that says validation rejected the attempt, because the matcher for a validator rejection also matched `custom program error`.
+- **`VerificationResult.failedAt`**, and **`VerificationResult.opaque`** as a second axis over it. A replay-floor rejection in `proving`, an attack-signal rejection in `validation` and a program revert in `confirmation` must render identically, so an honest phase is only safe alongside the flag that says how much may be shown.
+- **`VerificationResult.baselineRecovery`**, the reason the on-chain baseline could not be restored.
+- **`VerificationResult.portableBaseline`**, false when a verification succeeded and advanced the commitment but wrote no portable copy. Left silent, that is exactly how an identity stops being recoverable anywhere else.
+- `phaseChargesAttempt` corrects an attempt budget that charged for every failure carrying no client-origin reason, so three declined wallet prompts hard-failed a user whose capture had passed validation each time.
+- `test/idl-parity.test.ts`, which diffs the bundled IDL against `protocol-core`'s build output. It fails 5 of 6 against the IDL that shipped the reset bug.
+- **`MAX_VERIFICATION_MS`**, the longest a `complete()` can legitimately run. A host with its own backstop timer must set it above this. Derived from `VALIDATE_DEADLINE_MS`, `SIGNATURE_TIMEOUT_MS` and `CONFIRMATION_TIMEOUT_MS` rather than written down, so raising a clock raises it in step. Three hosts each raced the whole of `complete()` against 120 seconds, which is less than the validate deadline on its own.
+- **`isUserRejection`** is exported. The SDK runs it to decide whether a failure was `signing` or `submission`, and a host keeping its own copy could recognise a phrasing the SDK's does not, at which point the two disagree about the same error. Two host copies existed.
+
 ## [4.0.0] - 2026-07-31
 
 ### Changed
@@ -92,7 +118,7 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 ### Fixed
 - Aligned `fetchIdentityState` account decoding with Anchor v0.30+ IDL specifications (mapping to PascalCase account names and snake_case fields).
 
-## [3.3.0] - 2026-03-02
+## [3.3.0] - 2026-05-14
 
 ### Added
 - **Encrypted Baseline Recovery**: Implemented wallet-keyed AES-GCM-256 baseline encryption bound to AAD commitments.
