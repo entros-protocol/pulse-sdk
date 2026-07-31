@@ -8,6 +8,8 @@ import type { SignedReceiptDto, VerificationResult, ProgressCallback } from "./s
 import type { PostJsonResponse } from "./transport/post-json";
 import { postJson, TransportError } from "./transport/post-json";
 import type { StoredVerificationData } from "./identity/types";
+import type { VerificationPhase } from "./phases";
+import type { BaselineRecoveryReason } from "./identity/anchor";
 
 import { captureAudio, analyzeAcousticRealism } from "./sensor/audio";
 import { encodeAudioAsBase64 } from "./sensor/encode";
@@ -156,7 +158,14 @@ type ExtractionResult =
       signedReceipt?: SignedReceiptDto;
       compositeRiskScore?: number;
     }
-  | { ok: false; error: string; reason?: string; retryAfterSec?: number };
+  | {
+      ok: false;
+      error: string;
+      reason?: string;
+      retryAfterSec?: number;
+      failedAt: VerificationPhase;
+      opaque?: boolean;
+    };
 
 /**
  * Turn a non-2xx `/validate-features` response into a rejection the host can
@@ -204,6 +213,7 @@ function rejectionFromStatus(response: PostJsonResponse): ExtractionResult {
       ok: false,
       error: "Validation service unreachable. Please check your connection and try again.",
       reason: "validation_unavailable",
+      failedAt: "validation",
     };
   }
 
@@ -217,6 +227,7 @@ function rejectionFromStatus(response: PostJsonResponse): ExtractionResult {
       error:
         "The connection stalled while sending your verification. Move somewhere with better signal and try again.",
       reason: "validation_timeout",
+      failedAt: "validation",
     };
   }
 
@@ -227,6 +238,7 @@ function rejectionFromStatus(response: PostJsonResponse): ExtractionResult {
       error:
         serverError ?? "Your verification data was too large to send. Please start over.",
       reason: "payload_too_large",
+      failedAt: "validation",
     };
   }
 
@@ -240,6 +252,7 @@ function rejectionFromStatus(response: PostJsonResponse): ExtractionResult {
       // named rather than flattening them.
       reason: serverReason ?? "rate_limited",
       retryAfterSec,
+      failedAt: "validation",
     };
   }
 
@@ -250,6 +263,7 @@ function rejectionFromStatus(response: PostJsonResponse): ExtractionResult {
       ok: false,
       error: "Validation service is temporarily unavailable. Please try again.",
       reason: "validation_unavailable",
+      failedAt: "validation",
     };
   }
 
@@ -259,6 +273,13 @@ function rejectionFromStatus(response: PostJsonResponse): ExtractionResult {
     error: serverError ?? "Feature validation failed",
     reason: serverReason,
     retryAfterSec,
+    failedAt: "validation",
+    // A rejection the validator declined to label is an attack-signal
+    // rejection: Sybil match, synthetic speech, or one of the checks it keeps
+    // deliberately unnamed. The generic body it returns is all a host may
+    // show. A labelled rejection names a capture-quality problem the user can
+    // act on, so its text is safe.
+    opaque: serverReason === undefined,
   };
 }
 
@@ -287,12 +308,29 @@ async function extractFingerprintAndValidate(
   // the spinner can repaint, and the user sees the previous stage's
   // label until extraction completes.
   await yieldToMainThread();
+  // Extraction throws on malformed or unusable capture data, and that throw
+  // used to escape `complete()` entirely, reaching the host as a bare string
+  // with no phase, no reason and nothing to route on. Turning it into a
+  // result keeps every failure on one typed surface.
+  let extracted: ExtractedFeatures;
+  try {
+    extracted = await extractFeatures(sensorData);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    sdkWarn(`[Entros SDK] Feature extraction failed: ${msg}`);
+    return {
+      ok: false,
+      error:
+        "We couldn't read the capture from your device. Start over and let the recording run to the end.",
+      failedAt: "extraction",
+    };
+  }
   const {
     raw: features,
     normalized: normalizedFeatures,
     f0Contour,
     accelMagnitude,
-  } = await extractFeatures(sensorData);
+  } = extracted;
 
   // Diagnostic: log feature vector composition. Block boundaries follow the
   // v2 layout, derived from the canonical per-modality counts so any future
@@ -511,6 +549,7 @@ async function extractFingerprintAndValidate(
           error:
             "The connection stalled while sending your verification. Move somewhere with better signal and try again.",
           reason: "validation_timeout",
+          failedAt: "validation",
         };
       }
       sdkWarn(`[Entros SDK] Feature validation unavailable: ${msg}`);
@@ -518,6 +557,7 @@ async function extractFingerprintAndValidate(
         ok: false,
         error: "Validation service unreachable. Please check your connection and try again.",
         reason: "validation_unavailable",
+        failedAt: "validation",
       };
     }
   }
@@ -585,6 +625,59 @@ async function buildEncryptedBaselineBlobBestEffort(
   }
 }
 
+/**
+ * Explain why a re-verification cannot proceed without a baseline.
+ *
+ * One screen used to cover every one of these, which was wrong for most of the
+ * population it was shown to. Only 13 of 107 anchors on devnet have an
+ * `EncryptedBaseline` PDA at all: the rest were minted before the feature
+ * existed, and telling those users that a fingerprint was "not found on this
+ * device" describes a search that could never have succeeded and points at a
+ * device that was never at fault.
+ *
+ * Each branch names the actual obstacle and the way past it. The substrings
+ * `different wallet signed`, `out of sync with your on-chain identity` and
+ * `baseline is missing` are a routing contract with `entros.io`, which matches
+ * them to pick a surface. They stay until every host reads
+ * `VerificationResult.baselineRecovery` instead.
+ */
+function baselineFailureMessage(
+  reason: BaselineRecoveryReason | undefined,
+  localIsStale: boolean,
+): string {
+  switch (reason) {
+    case "wallet-mismatch":
+      // The on-chain baseline is intact. This one must not offer a reset.
+      return (
+        "A different wallet signed than the one connected. Another wallet extension likely intercepted the signature prompt. " +
+        "Sign with your connected wallet, or disable other wallet extensions (or unset their default), then try again."
+      );
+    case "no-encrypted-baseline":
+      return (
+        "Your Entros Anchor was created before on-chain baseline storage existed, so the local baseline is missing and there is no encrypted copy on chain to restore it from. " +
+        "Reset your baseline once from this device and it becomes recoverable on any device."
+      );
+    case "signing-unavailable":
+      return (
+        "This wallet cannot sign the message that unlocks your on-chain baseline, so the local baseline is missing and cannot be restored here. " +
+        "Connect a wallet that supports message signing, or reset your baseline to re-enrol from this device."
+      );
+    case "stale-baseline":
+      return (
+        "Your on-chain baseline was written under an earlier verification and can no longer be unlocked, so the local baseline is missing. " +
+        "Reset your baseline to re-enrol from this device."
+      );
+    default:
+      // `no-on-chain-identity`, `unknown-error`, and the walletless path where
+      // recovery was never attempted.
+      return localIsStale
+        ? "Your baseline is out of sync with your on-chain identity. It may have advanced on another browser or device. " +
+            "Reset your baseline to re-sync from here, or verify from the device with the up-to-date baseline."
+        : "Previous behavioral fingerprint not found on this device. Your Entros Anchor exists on-chain but the local baseline is missing. " +
+            "Reset your baseline to re-enroll from this device, or verify from the device that has the original baseline.";
+  }
+}
+
 async function processSensorData(
   sensorData: SensorData,
   config: ResolvedConfig,
@@ -609,6 +702,7 @@ async function processSensorData(
       commitment: new Uint8Array(32),
       isFirstVerification: true,
       error: "Insufficient behavioral data. Please speak the phrase and trace the curve during capture.",
+      failedAt: "capture",
     };
   }
 
@@ -618,6 +712,7 @@ async function processSensorData(
       commitment: new Uint8Array(32),
       isFirstVerification: true,
       error: "No voice data detected. Please speak the phrase clearly during capture.",
+      failedAt: "capture",
     };
   }
 
@@ -655,6 +750,7 @@ async function processSensorData(
       commitment: new Uint8Array(32),
       isFirstVerification: false,
       error: "Insufficient sensor data for re-verification. Please trace the curve and allow motion access.",
+      failedAt: "capture",
     };
   }
 
@@ -672,6 +768,8 @@ async function processSensorData(
       error: extraction.error,
       reason: extraction.reason,
       retryAfterSec: extraction.retryAfterSec,
+      failedAt: extraction.failedAt,
+      opaque: extraction.opaque,
     };
   }
   const { fingerprint, tbh, features, signedReceipt, compositeRiskScore } = extraction;
@@ -752,7 +850,7 @@ async function processSensorData(
   // commitment, so the rebuilt proof's `commitment_prev` equals the chain
   // head. Requires the wallet to sign for AES key derivation; the
   // session-cached key short-circuits a second prompt (master-list #98).
-  let walletMismatch = false;
+  let recoveryReason: BaselineRecoveryReason | undefined;
   if (
     !isFirstVerification &&
     (previousData === null || localBaselineStale) &&
@@ -760,7 +858,20 @@ async function processSensorData(
     connection
   ) {
     const baselineWallet = resolveBaselineWallet(wallet);
-    if (baselineWallet) {
+    if (!baselineWallet) {
+      // The adapter cannot sign a message, so the key that decrypts the
+      // on-chain blob cannot be derived and recovery is never attempted.
+      //
+      // This branch used to fall through in total silence. Its only trace was
+      // an `sdkLog` that never ran, because both `sdkLog` and `sdkWarn` are
+      // gated on `debug` and `entros.io` derives `debug` from
+      // `NODE_ENV === "development"`. In production it was indistinguishable
+      // from every other reason recovery might not have happened, and the user
+      // was told their baseline was missing with no way to learn why. A louder
+      // log would not have fixed that either, since nobody reads a console:
+      // the reason travels in the result instead.
+      recoveryReason = "signing-unavailable";
+    } else {
       onProgress?.(
         localBaselineStale
           ? "Re-syncing baseline with chain..."
@@ -773,14 +884,14 @@ async function processSensorData(
           `[Entros SDK] On-chain encrypted baseline ${localBaselineStale ? "re-synced" : "recovered"}`
         );
       } else {
-        // `wallet-mismatch` is distinct from a missing/stale baseline: the
-        // on-chain baseline is intact, but a different wallet signed the
-        // key-derivation prompt (commonly another extension set as the browser
-        // default), so the AES key couldn't be derived. Surface it so the UI
-        // prompts a wallet switch instead of a destructive reset.
-        walletMismatch = recovery.reason === "wallet-mismatch";
+        // All six reasons are kept, not just `wallet-mismatch`. Collapsing the
+        // other five put three different situations on one screen: an anchor
+        // that predates on-chain baselines entirely, a blob that can no longer
+        // be decrypted, and a wallet that cannot sign. Each has a different
+        // way out, and the user was shown none of them.
+        recoveryReason = recovery.reason ?? "unknown-error";
         sdkLog(
-          `[Entros SDK] On-chain encrypted baseline recovery not available (${recovery.reason ?? "unknown"})`,
+          `[Entros SDK] On-chain encrypted baseline recovery not available (${recoveryReason})`,
         );
       }
     }
@@ -792,36 +903,13 @@ async function processSensorData(
   const baselineStillStale = isBaselineStale(previousData);
 
   if (!isFirstVerification && (previousData === null || baselineStillStale)) {
-    if (walletMismatch) {
-      // Contract: entros.io `categorizeFailure` matches "different wallet
-      // signed" to route this to a no-reset "wrong wallet" surface.
-      return {
-        success: false,
-        commitment: tbh.commitmentBytes,
-        isFirstVerification: false,
-        error:
-          "A different wallet signed than the one connected. Another wallet extension likely intercepted the signature prompt. Sign with your connected wallet, or disable other wallet extensions (or unset their default), then try again.",
-      };
-    }
-    if (baselineStillStale) {
-      // Local baseline is behind the on-chain verification chain and could
-      // not be re-synced from the on-chain EncryptedBaseline (none stored, a
-      // prior reset cycle, or signing unavailable). Contract: entros.io
-      // `categorizeFailure` matches "out of sync with your on-chain identity"
-      // to route this to the no-data-loss "reset to re-sync" surface.
-      return {
-        success: false,
-        commitment: tbh.commitmentBytes,
-        isFirstVerification: false,
-        error:
-          "Your baseline is out of sync with your on-chain identity. It may have advanced on another browser or device. Reset your baseline to re-sync from here, or verify from the device with the up-to-date baseline.",
-      };
-    }
     return {
       success: false,
       commitment: tbh.commitmentBytes,
       isFirstVerification: false,
-      error: "Previous behavioral fingerprint not found on this device. Your Entros Anchor exists on-chain but the local baseline is missing. Reset your baseline to re-enroll from this device, or verify from the device that has the original baseline.",
+      error: baselineFailureMessage(recoveryReason, baselineStillStale),
+      failedAt: "baseline",
+      baselineRecovery: recoveryReason,
     };
   }
 
@@ -857,6 +945,7 @@ async function processSensorData(
         isFirstVerification: false,
         error:
           "This capture didn't closely match your usual pattern. That can happen when the recording is interrupted or your movements are rushed. Please try again with a steady, uninterrupted capture.",
+        failedAt: "proving",
       };
     }
     if (verdict === "below_min_distance") {
@@ -868,6 +957,11 @@ async function processSensorData(
         commitment: tbh.commitmentBytes,
         isFirstVerification: false,
         error: "Verification rejected. Please try again.",
+        failedAt: "proving",
+        // The replay floor is an attack signal, so it must read exactly like a
+        // validator rejection in `validation` and a program revert in
+        // `confirmation`. An honest phase is only safe alongside this flag.
+        opaque: true,
       };
     }
 
@@ -887,6 +981,7 @@ async function processSensorData(
         commitment: tbh.commitmentBytes,
         isFirstVerification: false,
         error: "Re-verification requires wasmUrl and zkeyUrl in PulseConfig. Host the entros_hamming.wasm and entros_hamming_final.zkey circuit artifacts at public URLs.",
+        failedAt: "proving",
       };
     }
 
@@ -924,6 +1019,7 @@ async function processSensorData(
         isFirstVerification: false,
         error:
           "We couldn't generate the verification proof. Check your connection and try again.",
+        failedAt: "proving",
       };
     }
   }
@@ -931,6 +1027,12 @@ async function processSensorData(
   // Submit
   onProgress?.("Submitting to Solana...");
   let submission;
+  // Whether this verification also wrote the portable on-chain copy of the
+  // baseline. Hoisted out of the wallet branch so the result can report it:
+  // a verification that advances the commitment without rewriting the blob is
+  // how an identity quietly stops being recoverable anywhere else, and the
+  // user found out about it on their next device rather than here.
+  let portableBaseline: boolean | undefined;
 
   if (wallet && connection) {
     // Best-effort: build the encrypted-baseline blob bound to the NEW
@@ -944,6 +1046,7 @@ async function processSensorData(
       tbh.salt,
       tbh.commitmentBytes,
     );
+    portableBaseline = encryptedBaselineBlob !== undefined;
 
     if (isFirstVerification) {
       // Pass the validator-signed receipt (when present) so submitViaWallet
@@ -986,6 +1089,7 @@ async function processSensorData(
       commitment: tbh.commitmentBytes,
       isFirstVerification,
       error: "No submission path available. Pass wallet+connection to verify() for wallet-connected mode, or set relayerUrl in PulseConfig for walletless mode.",
+      failedAt: "submission",
     };
   }
 
@@ -1006,6 +1110,20 @@ async function processSensorData(
     attestationTx: submission.attestationTx,
     isFirstVerification,
     error: submission.error,
+    // Only meaningful when the transaction landed. On a failure nothing was
+    // written, so reporting `true` here would describe an instruction that was
+    // built and then thrown away.
+    portableBaseline: submission.success ? portableBaseline : undefined,
+    failedAt: submission.failedAt,
+    // A program revert has to read like a validator rejection, or which layer
+    // caught the attempt becomes calibration information. A host may still
+    // match `Custom 6011` and `Custom 6012` first: those name protocol state
+    // the user has to act on, not the outcome of a detection check.
+    //
+    // Only `confirmation` qualifies, and by construction it is only ever set
+    // when the cluster reported an execution failure. A declined prompt or a
+    // network problem carries a message that is safe to show.
+    opaque: submission.failedAt === "confirmation",
     compositeRiskScore,
   };
 }
@@ -1041,6 +1159,7 @@ async function processResetSensorData(
       commitment: new Uint8Array(32),
       isFirstVerification: true,
       error: "Insufficient behavioral data. Please speak the phrase and trace the curve during capture.",
+      failedAt: "capture",
     };
   }
 
@@ -1050,6 +1169,7 @@ async function processResetSensorData(
       commitment: new Uint8Array(32),
       isFirstVerification: true,
       error: "No voice data detected. Please speak the phrase clearly during capture.",
+      failedAt: "capture",
     };
   }
 
@@ -1061,6 +1181,7 @@ async function processResetSensorData(
       commitment: new Uint8Array(32),
       isFirstVerification: true,
       error: "Insufficient sensor data for baseline reset. Please trace the curve and allow motion access.",
+      failedAt: "capture",
     };
   }
 
@@ -1080,6 +1201,8 @@ async function processResetSensorData(
       error: extraction.error,
       reason: extraction.reason,
       retryAfterSec: extraction.retryAfterSec,
+      failedAt: extraction.failedAt,
+      opaque: extraction.opaque,
     };
   }
   const { tbh, compositeRiskScore } = extraction;
@@ -1095,6 +1218,7 @@ async function processResetSensorData(
     tbh.salt,
     tbh.commitmentBytes,
   );
+  const portableBaseline = encryptedBaselineBlob !== undefined;
 
   onProgress?.("Submitting reset to Solana...");
   const submission = await submitResetViaWallet(tbh.commitmentBytes, {
@@ -1132,6 +1256,9 @@ async function processResetSensorData(
           "Re-verification from this device will not work. Try clearing site data and " +
           "resetting again after the 7-day cooldown, or transfer a baseline from another " +
           "device.",
+        // The chain write landed. What failed is local baseline storage, which
+        // is what `baseline` covers, and the message is safe to show as-is.
+        failedAt: "baseline",
         compositeRiskScore,
       };
     }
@@ -1147,6 +1274,9 @@ async function processResetSensorData(
     // success copy that matches first-time flows.
     isFirstVerification: true,
     error: submission.error,
+    portableBaseline: submission.success ? portableBaseline : undefined,
+    failedAt: submission.failedAt,
+    opaque: submission.failedAt === "confirmation",
     compositeRiskScore,
   };
 }
@@ -1509,6 +1639,7 @@ export class PulseSession {
         error:
           "Baseline reset requires a connected wallet and Solana connection. " +
           "Reset cannot be performed in walletless mode.",
+        failedAt: "submission",
       };
     }
 
@@ -1620,6 +1751,12 @@ export class PulseSDK {
         commitment: new Uint8Array(32),
         isFirstVerification: true,
         error: err.message ?? String(err),
+        // This catch wraps the whole one-shot capture, so what reaches it is
+        // a sensor that would not start or stop: a denied microphone, a denied
+        // motion permission, a stream that never opened. It also nets a throw
+        // out of `complete()`, which is a caller error rather than a capture
+        // one, and rare enough not to justify a phase of its own.
+        failedAt: "capture",
       };
     }
   }
@@ -1695,6 +1832,12 @@ export class PulseSDK {
         commitment: new Uint8Array(32),
         isFirstVerification: true,
         error: err.message ?? String(err),
+        // This catch wraps the whole one-shot capture, so what reaches it is
+        // a sensor that would not start or stop: a denied microphone, a denied
+        // motion permission, a stream that never opened. It also nets a throw
+        // out of `complete()`, which is a caller error rather than a capture
+        // one, and rare enough not to justify a phase of its own.
+        failedAt: "capture",
       };
     }
   }

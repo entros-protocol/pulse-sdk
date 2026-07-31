@@ -1,3 +1,6 @@
+import type { VerificationPhase } from "../phases";
+import type { BaselineRecoveryReason } from "../identity/anchor";
+
 /** Result of a verification submission */
 export interface SubmissionResult {
   success: boolean;
@@ -5,6 +8,15 @@ export interface SubmissionResult {
   attestationTx?: string;
   error?: string;
   compositeRiskScore?: number;
+  /**
+   * Which of the three submission stages failed. Absent on success.
+   *
+   * Only ever `signing`, `submission` or `confirmation`, and only
+   * `confirmation` when the cluster reported a definite on-chain failure.
+   * Anything ambiguous, including both timeouts, reports `submission`, whose
+   * `phaseSpend` is `possible` rather than a claim either way.
+   */
+  failedAt?: VerificationPhase;
 }
 
 /**
@@ -75,6 +87,65 @@ export interface VerificationResult {
    * them in `Access-Control-Expose-Headers`.
    */
   retryAfterSec?: number;
+  /**
+   * Which stage of the verification failed. Absent on success, and absent on
+   * a failure that escaped as a throw rather than a result.
+   *
+   * Hosts should route on this rather than on the wording of `error`. Doing it
+   * by prose put an on-chain revert on the "validation rejected this attempt"
+   * screen, because the matchers for a validator rejection also matched
+   * `custom program error`.
+   *
+   * See `phaseChargesAttempt`, which is the correct basis for an attempt
+   * budget: only `validation` judged whether a person was present, so only
+   * `validation` may charge for it.
+   */
+  failedAt?: VerificationPhase;
+  /**
+   * Whether the underlying cause must not be described to the user.
+   *
+   * A second axis over {@link failedAt}, not a phase. Three failures in three
+   * different phases have to render identically or the difference between them
+   * tells an attacker which layer caught them: the replay floor in `proving`,
+   * an attack-signal rejection in `validation`, and a program revert in
+   * `confirmation`.
+   *
+   * The contract is narrow. A host may still match a specific, user-actionable
+   * condition first, exactly as it does today for `Custom 6011` and
+   * `Custom 6012`. This flag decides only what is shown when nothing matched:
+   * `true` means render the generic rejection, `false` means `error` is safe
+   * to show.
+   */
+  opaque?: boolean;
+  /**
+   * Why the on-chain baseline could not be restored, when {@link failedAt} is
+   * `baseline`.
+   *
+   * `recoverBaselineFromChain` distinguishes six situations and only
+   * `wallet-mismatch` used to survive the trip to a host, so an anchor minted
+   * before on-chain baselines existed, a blob that no longer decrypts, and a
+   * wallet that cannot sign all rendered as one screen telling the user their
+   * device had lost something. Most of them had never had it.
+   *
+   * Route on this rather than on the wording of `error`. The prose still
+   * carries the phrases hosts matched before, but only until they read this
+   * field instead.
+   */
+  baselineRecovery?: BaselineRecoveryReason;
+  /**
+   * Whether this verification also wrote the encrypted baseline that makes the
+   * identity recoverable on another device.
+   *
+   * Present on the wallet-connected path only. `undefined` in walletless mode,
+   * where no on-chain baseline is written at all.
+   *
+   * `false` means the verification succeeded and the commitment advanced, but
+   * the wallet could not sign the key derivation, so nothing portable was
+   * stored. A host should say so. Left silent, this is precisely how an
+   * identity stops being recoverable anywhere else, and the user learns it on
+   * the device where it is already too late to act.
+   */
+  portableBaseline?: boolean;
 }
 
 /** Bytes sent so far, and the total, for the one request big enough to matter. */
