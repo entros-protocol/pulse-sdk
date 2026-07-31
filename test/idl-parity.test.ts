@@ -36,11 +36,16 @@ interface IdlInstruction {
   name: string;
   args?: IdlArg[];
 }
+interface IdlError {
+  code: number;
+  name: string;
+}
 interface Idl {
   address?: string;
   instructions: IdlInstruction[];
   accounts?: { name: string }[];
   types?: { name: string; type?: { fields?: { name: string }[] } }[];
+  errors?: IdlError[];
 }
 
 function load(path: string): Idl {
@@ -122,6 +127,34 @@ describe.skipIf(!coreAvailable)("bundled IDL matches the built program", () => {
     // error and simply cannot see the new fields. That is how
     // `projection_version` stayed invisible to the SDK.
     expect(drifted).toEqual({});
+  });
+
+  it("assigns the same code to every error name", () => {
+    // Anchor numbers error variants by declaration order from 6000, so
+    // inserting one in the middle silently renumbers every variant after it.
+    // Hosts route on the number: `entros.io` matches `Custom 6011` to the
+    // stale-baseline surface and `Custom 6012` to the reset cooldown, and a
+    // shift would send each of them to the wrong screen with no build error
+    // anywhere.
+    //
+    // Messages are deliberately not compared. They are copy, they change, and
+    // nothing routes on them.
+    const codes = (idl: Idl) =>
+      new Map((idl.errors ?? []).map((e) => [e.name, e.code]));
+    const sdk = codes(load(SDK_IDL));
+    const core = codes(load(CORE_IDL));
+    const drifted: Record<string, { bundled?: number; built: number }> = {};
+    for (const [name, builtCode] of core) {
+      const bundledCode = sdk.get(name);
+      if (bundledCode !== builtCode) {
+        drifted[name] = { bundled: bundledCode, built: builtCode };
+      }
+    }
+    expect(
+      drifted,
+      "an error code moved. Retiring a variant must leave it in place so the " +
+        "numbering after it holds.",
+    ).toEqual({});
   });
 });
 
