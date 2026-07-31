@@ -1870,7 +1870,7 @@
     {
       "code": 6025,
       "name": "VerificationIntervalTooShort",
-      "msg": "Verification interval too short: must wait at least 1 hour between verifications"
+      "msg": "Retired. Verifications are no longer rate limited on chain."
     }
   ],
   "types": [
@@ -2105,9 +2105,10 @@
           {
             "name": "recent_timestamps",
             "docs": [
-              "Timestamps of last 52 verifications (newest at index 0).",
-              "52 slots covers 1 year of weekly or 4+ years of monthly verifications.",
-              "Older entries contribute negligible score due to exponential recency decay."
+              "Activity ring, newest at index 0, holding at most one entry per weekly",
+              "scoring bin. The Trust Score reads bin activation rather than a count,",
+              "so a repeat inside an active bin is not recorded and 52 slots cover a",
+              "full year however often a wallet verifies. See `record_verification`."
             ],
             "type": {
               "array": [
