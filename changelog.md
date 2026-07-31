@@ -2,6 +2,36 @@
 
 All notable changes to the `@entros/pulse-sdk` package will be documented in this file.
 
+## [4.0.0] - 2026-07-31
+
+### Changed
+- **BREAKING, canonical 16 kHz capture**: Every capture is band-limited and decimated to 16 kHz before feature extraction, not only captures that arrive at another rate. Browsers treat `new AudioContext({ sampleRate })` as a request: Chromium honours 16 kHz, WebKit commonly returns the hardware's 48 kHz. The 72 MFCC features build their mel bank over `0..sampleRate/2`, the 40 LPC and formant features fix `lpcOrder` at 12, and the jitter, shimmer and HNR windows are defined in samples, so the same voice at the two rates produced two incomparable feature vectors. Filtering unconditionally makes this the last filter in every chain, whatever a browser did upstream. **Every existing fingerprint moves.** Baselines from 3.x do not carry forward.
+- **`onProgress` signature widened** to `(stage: string, progress?: UploadProgress)`. Not a breaking change: a `(stage) => void` callback still satisfies the wider type, so no existing caller needs editing. The stage strings are unchanged and remain part of the contract, since the embed popup matches on them.
+- **Transport rebuilt around stalls, not deadlines**: `/validate-features` now goes out over `XMLHttpRequest` with upload progress, falling back to `fetch` where no XHR exists. A body that is still moving is never aborted, however slowly. A body that has stopped moving is abandoned quickly. The previous fixed 15-second abort covered the upload as well as the server's work, so a healthy 9.4-second mobile upload was cut off and reported as an unreachable service.
+
+### Added
+- **Reason taxonomy** (`reasonDisposition`, `isVerificationReason`, `isClientOriginReason`, `RETRYABLE_REASONS`, `COOLDOWN_REASONS`): one exported source for what a failure means and what a host should do about it. Six copies of this list existed across the web and mobile apps and had already drifted, to the point where the same rejection offered a retry on one and dead-ended on the other.
+- **Real status handling**: 413, 429 and 5xx are now distinguished instead of collapsing into one string, `retry_after` reaches the host as `VerificationResult.retryAfterSec`, and a timeout is reported as `validation_timeout` rather than as an unreachable service.
+- **`markCaptureStart()`**: marks the point where the speak prompt appears, so the dead air recorded during the challenge fetch and countdown is discarded before extraction rather than fingerprinted and transmitted as speech.
+- **`MAX_TRANSMITTED_CAPTURE_MS`**: caps transmitted audio at 20 s, which is the validator's own analysis bound. Audio past it is truncated server-side, so an unbounded capture used to lose its phrase check.
+- Exports `CANONICAL_SAMPLE_RATE`, `toCanonicalCapture`, `resampleTo`, `normalizeCaptureRMS` and `postJson`.
+
+## [3.16.0] - 2026-07-25
+
+### Added
+- **Curve-trace outline transmission**: the wallet-connected `/validate-features` body carries a coarse equal-time outline of the traced challenge curve for the touch content-binding check. The outline is a downsampled geometric summary of 64 points, with no timestamps and no pressure. The raw touch stream stays on the device.
+- `CurveTracePoint` and `CurveTraceOutline` types, and an equal-time resampler that produces the outline.
+
+## [3.15.0] - 2026-07-23
+
+### Added
+- Client-side test coverage for the acoustic-realism spectral signals (flatness and centroid) introduced in 3.12.0.
+
+## [3.14.0] - 2026-07-22
+
+### Added
+- **Server-issued Lissajous curve challenge**: `fetchChallenge` parses the curve parameters the executor issues alongside the phrase, so the traced curve is server-chosen rather than client-generated.
+
 ## [3.13.0] - 2026-07-13
 
 ### Changed
