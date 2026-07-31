@@ -9,6 +9,14 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+## [4.1.2] - 2026-08-01
+
+### Fixed
+- **A confirmed verification could be held open forever by the attestation prompt.** The SAS attestation runs after the transaction confirms, is best-effort, and needs a wallet signature. That signature was unbounded. On mobile the prompt arrives after the user has dismissed the wallet on "Sent!", so it never surfaces and the promise never settles: a verification that landed on chain at 22:38:36 left the page on "Submitting to Solana..." with no end, and the executor logs show `/attest` was never called. `ATTESTATION_SIGNATURE_TIMEOUT_MS` bounds it at 20 seconds, and the existing handler already treats a failure as "no attestation", which is the correct outcome for a best-effort step.
+- **A confirmed verification is now structurally protected from everything after it.** The attestation call is isolated at both submit sites rather than left to the outer catch, so a throw there cannot report a landed transaction as a failure. On the verify path, a local-storage failure no longer discards the result either: the chain already accepted it, and the next attempt recovers the baseline from chain.
+
+The second half mattered as much as the first. `storeVerificationData` runs only once the submission resolves, so the hang also left the device's local baseline behind the chain it had just advanced.
+
 ## [4.1.1] - 2026-07-31
 
 ### Fixed
