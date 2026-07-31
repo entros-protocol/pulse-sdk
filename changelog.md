@@ -9,6 +9,15 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+## [4.1.1] - 2026-07-31
+
+### Fixed
+- **Accounts written before `IdentityState` last grew could not be decoded, so cross-device recovery was impossible for almost every anchor.** `decodeIdentityState` handed the raw bytes to Anchor's Borsh coder, which throws on anything shorter than the current 593, and `fetchIdentityState` swallowed that to `null`. `recoverBaselineFromChain` reads the identity **before** it fetches the encrypted baseline, so the blob was never reached. Measured on devnet: 105 of 107 accounts on a legacy layout, 12 of them holding a valid `EncryptedBaseline` that no client could use. Recovery worked on 2026-05-20 and broke on 2026-07-14 when the program appended `projection_version` and `last_rebaseline_timestamp`, the same commit that broke the reset in 4.1.0. A short account is now zero-filled to the current layout before decoding, which is what the program's own realloc writes. The floor is 543 bytes: below that `recent_timestamps` had ten slots rather than fifty-two, so every later offset moves and padding would read one field's bytes as another's.
+- The bundled IDL now pins error **codes** as well as instruction and account shapes. Anchor numbers error variants by declaration order, so removing one renumbers every variant after it, and hosts route on the number: `entros.io` sends `Custom 6011` to the stale-baseline screen and `Custom 6012` to the reset cooldown. A shift would have sent each to the wrong surface with no build error anywhere.
+
+### Changed
+- `VerificationIntervalTooShort` (6025) is retired. `update_anchor` no longer rate limits verifications on chain, so an integrator can ask for a live verification at the point of a gated action. The variant stays in the enum so the numbering after it holds.
+
 ## [4.1.0] - 2026-07-31
 
 ### Fixed
