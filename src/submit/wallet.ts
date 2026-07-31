@@ -7,6 +7,7 @@ import type { SolanaProof } from "../proof/types";
 import type { SignedReceiptDto, SubmissionResult } from "./types";
 import type { VerificationPhase } from "../phases";
 import {
+  ATTESTATION_SIGNATURE_TIMEOUT_MS,
   CONFIRMATION_TIMEOUT_MS,
   PROGRAM_IDS,
   PROJECTION_VERSION,
@@ -204,12 +205,22 @@ async function requestSasAttestation(
     const timestamp = Math.floor(Date.now() / 1000);
     message = `Entros-ATTEST:${walletAddress}:${timestamp}`;
     const messageBytes = new TextEncoder().encode(message);
-    const sigBytes: Uint8Array = await wallet.signMessage(messageBytes);
+    // Bounded because this prompt comes after the transaction has confirmed.
+    // A wallet that never surfaces it must not be able to hold a successful
+    // verification open: the caller stores the local baseline and reports
+    // success only once this function returns.
+    const sigBytes: Uint8Array = await withTimeout(
+      wallet.signMessage(messageBytes),
+      ATTESTATION_SIGNATURE_TIMEOUT_MS,
+      "wallet did not sign the attestation message",
+    );
     signature = Array.from(sigBytes)
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
-  } catch {
-    sdkWarn("[Entros SDK] Wallet signMessage failed, skipping SAS attestation");
+  } catch (err) {
+    sdkWarn(
+      `[Entros SDK] Attestation signature unavailable, skipping SAS attestation: ${errToString(err)}`,
+    );
     return undefined;
   }
 
@@ -635,15 +646,25 @@ export async function submitViaWallet(
       txSig = sent.txSig;
     }
 
-    const attestationTx = options.relayerUrl
-      ? await requestSasAttestation(
+    // The transaction has confirmed, so the verification is durable on chain
+    // from here. Nothing below may turn it into a failure: the caller stores
+    // the local baseline and shows success only on what this returns, and the
+    // attestation is best-effort. Isolated rather than left to the outer catch
+    // so that stays true if anything else is ever added after the confirm.
+    let attestationTx: string | undefined;
+    if (options.relayerUrl) {
+      try {
+        attestationTx = await requestSasAttestation(
           options.wallet,
           provider.wallet.publicKey.toBase58(),
           options.relayerUrl,
           options.relayerApiKey,
           serverNonce ? nonce : undefined,
-        )
-      : undefined;
+        );
+      } catch (err) {
+        sdkWarn(`[Entros SDK] SAS attestation skipped: ${errToString(err)}`);
+      }
+    }
 
     return { success: true, txSignature: txSig, attestationTx };
   } catch (err: any) {
@@ -768,18 +789,24 @@ export async function submitResetViaWallet(
     }
     const txSig = sent.txSig;
 
-    // Request a fresh SAS attestation. The executor's /attest handler
-    // closes any prior attestation for this wallet and creates a new one
-    // bound to the current commitment.
-    const attestationTx = options.relayerUrl
-      ? await requestSasAttestation(
+    // Request a fresh SAS attestation. The executor's /attest handler closes
+    // any prior attestation for this wallet and creates a new one bound to the
+    // current commitment. Isolated for the same reason as the verify path: the
+    // reset has already confirmed on chain and nothing here may undo that.
+    let attestationTx: string | undefined;
+    if (options.relayerUrl) {
+      try {
+        attestationTx = await requestSasAttestation(
           options.wallet,
           provider.wallet.publicKey.toBase58(),
           options.relayerUrl,
           options.relayerApiKey,
           undefined,
-        )
-      : undefined;
+        );
+      } catch (err) {
+        sdkWarn(`[Entros SDK] SAS attestation skipped: ${errToString(err)}`);
+      }
+    }
 
     return { success: true, txSignature: txSig, attestationTx };
   } catch (err: any) {

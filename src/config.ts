@@ -119,6 +119,23 @@ export const SIGNATURE_TIMEOUT_MS = 180000;
 export const CONFIRMATION_TIMEOUT_MS = 90000;
 
 /**
+ * How long to wait for the wallet to sign the SAS attestation message.
+ *
+ * This prompt is raised *after* the verification transaction has confirmed, so
+ * nothing about the identity depends on it: the attestation is best-effort and
+ * a failure returns `undefined`. That made an unbounded wait the worst kind of
+ * bug. On 2026-07-31 a mobile verification landed on chain, the user dismissed
+ * the wallet after seeing "Sent!", the fourth prompt never surfaced, and the
+ * page sat on "Submitting to Solana..." indefinitely for a verification that
+ * had already succeeded. The local baseline was never stored either, because
+ * that only runs once the submission resolves.
+ *
+ * Twenty seconds is enough for a prompt a user can see, and short enough that
+ * one they cannot see costs them very little.
+ */
+export const ATTESTATION_SIGNATURE_TIMEOUT_MS = 20000;
+
+/**
  * Work inside a verification that no SDK clock bounds.
  *
  * Feature extraction, Groth16 proving, the challenge fetch and the
