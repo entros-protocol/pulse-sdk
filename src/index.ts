@@ -3,7 +3,7 @@ export { PulseSDK, PulseSession, MIN_AUDIO_SAMPLES, MIN_MOTION_SAMPLES, MIN_TOUC
 
 // Configuration
 export type { PulseConfig } from "./config";
-export { PROGRAM_IDS, DEFAULT_THRESHOLD, DEFAULT_MIN_DISTANCE, FINGERPRINT_BITS, MIN_CAPTURE_MS, MAX_CAPTURE_MS, DEFAULT_CAPTURE_MS } from "./config";
+export { PROGRAM_IDS, DEFAULT_THRESHOLD, DEFAULT_MIN_DISTANCE, FINGERPRINT_BITS, MIN_CAPTURE_MS, MAX_CAPTURE_MS, DEFAULT_CAPTURE_MS, MAX_TRANSMITTED_CAPTURE_MS } from "./config";
 
 // Hashing
 export type { TemporalFingerprint, TBH, PackedFingerprint } from "./hashing/types";
@@ -88,3 +88,44 @@ export type { ChallengeResponse } from "./challenge/fetch";
 // Audio encoding helper (transmits captured PCM to the validation service
 // for server-side verification).
 export { encodeAudioAsBase64 } from "./sensor/encode";
+
+// Canonical capture format. Exported so the red-team harness can band-limit its
+// synthesized corpora exactly as a browser now does, rather than with the plain
+// linear interpolation it used to, which left far more energy above the cutoff
+// than any real client can produce and made the corpus distinguishable by
+// resampling artefact rather than by anything a campaign is trying to measure.
+export {
+  CANONICAL_SAMPLE_RATE,
+  toCanonicalCapture,
+  resampleTo,
+  type CanonicalCapture,
+} from "./sensor/resample";
+export { normalizeCaptureRMS } from "./sensor/audio";
+
+// The verification-failure reason taxonomy. Hosts should classify with
+// `reasonDisposition` rather than keeping a local list. Six local copies
+// existed before this was exported and they had already drifted apart, to the
+// point where the same rejection offered a retry on the web and dead-ended on
+// mobile.
+export {
+  RETRYABLE_REASONS,
+  COOLDOWN_REASONS,
+  CLIENT_ORIGIN_REASONS,
+  isVerificationReason,
+  isClientOriginReason,
+  reasonDisposition,
+  type VerificationReason,
+  type RetryableReason,
+  type ReasonDisposition,
+} from "./reasons";
+
+// Request transport. Exported for hosts that want to talk to
+// `/validate-features` directly and need the same stall-not-duration
+// behaviour the SDK uses.
+export { postJson, TransportError } from "./transport/post-json";
+export type {
+  PostJsonOptions,
+  PostJsonResponse,
+  TransportFailureKind,
+} from "./transport/post-json";
+export type { ProgressCallback, UploadProgress } from "./submit/types";
