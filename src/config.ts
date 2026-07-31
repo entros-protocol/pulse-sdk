@@ -88,6 +88,80 @@ export const VALIDATE_DEADLINE_MS = 120000;
  */
 export const AUDIO_READY_TIMEOUT_MS = 5000;
 
+/**
+ * How long to wait for the wallet to return a signed transaction.
+ *
+ * There was no clock here at all, which is why a wallet that never prompted
+ * was reported as "Proof generation timed out": the only timer in the stack
+ * was a single 120-second race in `entros.io` covering the whole of
+ * `complete()`, and its message named the slowest step anyone expected rather
+ * than the step that hung.
+ *
+ * Three minutes is long on purpose. A mobile approval leaves the browser,
+ * opens the wallet app, authenticates, returns, and each hop can stall on a
+ * cold app or a slow deep link. It is also unsafe to be brisk: nothing can
+ * cancel a prompt once it is shown, so an approval that arrives after the
+ * clock expires still broadcasts, and the local baseline is not stored for a
+ * transaction the SDK has already given up on. That is the stale-baseline
+ * state this release exists to remove, so the timeout is set where it fires
+ * for a hung wallet and effectively never for a slow user.
+ */
+export const SIGNATURE_TIMEOUT_MS = 180000;
+
+/**
+ * How long to wait for the cluster to confirm a broadcast transaction.
+ *
+ * A blockhash is valid for 150 slots, about 60 seconds, and a transaction that
+ * has not landed by then cannot land at all. Ninety seconds covers slot-time
+ * variance and leaves the timeout meaning what it says: past this point there
+ * is nothing left to wait for.
+ */
+export const CONFIRMATION_TIMEOUT_MS = 90000;
+
+/**
+ * Work inside a verification that no SDK clock bounds.
+ *
+ * Feature extraction, Groth16 proving, the challenge fetch and the
+ * best-effort SAS attestation. Proving dominates it and is the part that
+ * varies most: seconds on a laptop, tens of seconds on a low-end phone.
+ */
+const UNCLOCKED_WORK_MS = 90000;
+
+/**
+ * Longest a single `complete()` can legitimately run.
+ *
+ * Exported for hosts that keep their own backstop timer. Set yours above this
+ * or it pre-empts the SDK's per-step clocks, and the failure is reported
+ * against whichever step the backstop's message happens to name rather than
+ * the one that hung. That is exactly how a pending wallet prompt came to be
+ * reported as a proof-generation timeout: three hosts each raced the whole of
+ * `complete()` against 120 seconds, which is less than the validate deadline
+ * on its own.
+ *
+ * Derived rather than written down, so raising any clock above raises this in
+ * step and no host has to be told.
+ */
+export const MAX_VERIFICATION_MS =
+  VALIDATE_DEADLINE_MS +
+  SIGNATURE_TIMEOUT_MS +
+  CONFIRMATION_TIMEOUT_MS +
+  UNCLOCKED_WORK_MS;
+
+/**
+ * Feature-projection generation this SDK build produces fingerprints in.
+ *
+ * Written to `IdentityState.projection_version` by `reset_identity_state` and
+ * `rebaseline_anchor`. Held at 0 because nothing reads it yet: master-list
+ * #215 is the work that makes a stored baseline declare its projection and
+ * routes a mismatch to re-enrolment instead of to a drift rejection. Bump it
+ * there, in step with the validator, not here alone.
+ *
+ * It exists now because the deployed program has required the argument since
+ * 2026-07-27 and the SDK was not passing it, which made every baseline reset
+ * fail to deserialize on chain.
+ */
+export const PROJECTION_VERSION = 0;
+
 export const PROGRAM_IDS = {
   entrosAnchor: "GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2",
   entrosVerifier: "4F97jNoxQzT2qRbkWpW3ztC3Nz2TtKj3rnKG8ExgnrfV",
