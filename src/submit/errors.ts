@@ -25,6 +25,91 @@ export function errToString(err: unknown): string {
   return jsonOrString(err);
 }
 
+/**
+ * Marker names for the two throws the SDK raises itself.
+ *
+ * Carried on `Error.name` rather than as subclasses. A bundled SDK and a host
+ * can end up with separate copies of a class, and `instanceof` across that
+ * boundary is false while the name still matches.
+ */
+const TIMEOUT_ERROR_NAME = "EntrosTimeoutError";
+const CHAIN_REVERT_ERROR_NAME = "EntrosChainRevertError";
+
+/**
+ * Build the error {@link isChainRevertError} recognises.
+ *
+ * Reserved for a transaction that landed and whose execution the cluster
+ * reported as failed. It is the one outcome where a fee was definitely taken
+ * and the state definitely did not change, and it is the only thing that may
+ * be attributed to the `confirmation` phase.
+ */
+export function chainRevertError(message: string): Error {
+  const err = new Error(message);
+  err.name = CHAIN_REVERT_ERROR_NAME;
+  return err;
+}
+
+/** True when the cluster reported a definite on-chain execution failure. */
+export function isChainRevertError(err: unknown): boolean {
+  return err instanceof Error && err.name === CHAIN_REVERT_ERROR_NAME;
+}
+
+/**
+ * True when the user dismissed or declined the wallet prompt.
+ *
+ * The only unambiguous signal that nothing was broadcast. Every other throw
+ * out of `sendTransaction` leaves the transaction's fate unknown, so this
+ * predicate is what separates a `signing` failure from a `submission` one.
+ *
+ * Adapters word it differently and none of them expose a code, so the match is
+ * on prose. The strings below are the ones Phantom, Solflare and Backpack
+ * emit. A miss is safe: the failure is attributed to `submission`, which
+ * reports the outcome as unknown rather than claiming nothing was sent.
+ */
+export function isUserRejection(err: unknown): boolean {
+  const e = errToString(err).toLowerCase();
+  return (
+    e.includes("user rejected") ||
+    e.includes("rejected the request") ||
+    e.includes("user denied") ||
+    e.includes("rejected by user")
+  );
+}
+
+/**
+ * Reject with a timeout when `work` has not settled in `ms`.
+ *
+ * `work` is not cancelled, because nothing in a wallet adapter or in web3.js
+ * can be. It keeps running, and a wallet prompt approved after the clock
+ * expires still broadcasts. Callers must therefore treat a timeout as an
+ * unknown outcome, never as a failure to send.
+ *
+ * The timer is always cleared. An uncleared one holds the Node event loop open
+ * for the full duration after a fast success, which is a hung test suite
+ * rather than a hung verification, but is a defect either way.
+ */
+export async function withTimeout<T>(
+  work: Promise<T>,
+  ms: number,
+  message: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          const err = new Error(message);
+          err.name = TIMEOUT_ERROR_NAME;
+          reject(err);
+        }, ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 function jsonOrString(value: unknown): string {
   try {
     const json = JSON.stringify(value);
