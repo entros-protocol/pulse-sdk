@@ -1093,14 +1093,28 @@ async function processSensorData(
     };
   }
 
-  // Store verification data locally for next re-verification
+  // Store verification data locally for next re-verification.
+  //
+  // A throw here must not discard a verification the chain already accepted.
+  // Storage fails for reasons that have nothing to do with the capture: a full
+  // quota, a private-browsing mode, a wiped keystore. Unlike the reset path,
+  // which cannot leave the user with a usable identity if this fails, a verify
+  // that loses its local copy is recoverable. The next attempt finds no local
+  // baseline and pulls the encrypted one from chain.
   if (submission.success) {
-    await storeVerificationData({
-      fingerprint: tbh.fingerprint,
-      salt: tbh.salt.toString(),
-      commitment: tbh.commitment.toString(),
-      timestamp: Date.now(),
-    }, walletAddress);
+    try {
+      await storeVerificationData({
+        fingerprint: tbh.fingerprint,
+        salt: tbh.salt.toString(),
+        commitment: tbh.commitment.toString(),
+        timestamp: Date.now(),
+      }, walletAddress);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      sdkWarn(
+        `[Entros SDK] Verification confirmed on chain but the local baseline could not be saved. The next verification will recover it from chain: ${msg}`,
+      );
+    }
   }
 
   return {
