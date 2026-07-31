@@ -9,6 +9,13 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+## [4.1.3] - 2026-08-01
+
+### Fixed
+- **The baseline key-derivation prompt was also unbounded.** `deriveBaselineKey` awaited `wallet.signMessage` with no ceiling, so a wallet that never raised the prompt held the verification on whichever stage the host last rendered. It is the first prompt a returning user sees on a new device, and the same failure that stranded the attestation in 4.1.2 applies to it. Bounded at `SIGNATURE_TIMEOUT_MS`, matching the transaction prompt, because the user has to see this one and act on it.
+
+Every wallet round trip in the SDK now has a ceiling. The pattern that produced both bugs was the same: a promise returned by a wallet provider is not guaranteed to settle, and mobile is where that stops being theoretical, because the provider lives in another view and may decline to raise a prompt at all.
+
 ## [4.1.2] - 2026-08-01
 
 ### Fixed
