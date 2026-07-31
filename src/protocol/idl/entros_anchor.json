@@ -764,6 +764,220 @@
       ]
     },
     {
+      "name": "rebaseline_anchor",
+      "docs": [
+        "Rebaseline the user's commitment to the new version projection space.",
+        "Skips the cross-space Hamming proof. Verification is performed via a",
+        "validator-signed humanness receipt for the new-version commitment."
+      ],
+      "discriminator": [
+        129,
+        211,
+        18,
+        16,
+        17,
+        54,
+        143,
+        18
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "identity_state",
+          "docs": [
+            "legacy-layout accounts to the new layout before deserialization.",
+            "PDA validated by seeds; ownership verified in instruction body after deserialization."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "protocol_config",
+          "docs": [
+            "Supplies the verification fee amount charged on rebaseline."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                81,
+                130,
+                250,
+                230,
+                30,
+                253,
+                246,
+                69,
+                82,
+                96,
+                7,
+                173,
+                78,
+                160,
+                131,
+                188,
+                70,
+                106,
+                173,
+                59,
+                102,
+                163,
+                198,
+                189,
+                82,
+                37,
+                225,
+                38,
+                52,
+                233,
+                157,
+                117
+              ]
+            }
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                81,
+                130,
+                250,
+                230,
+                30,
+                253,
+                246,
+                69,
+                82,
+                96,
+                7,
+                173,
+                78,
+                160,
+                131,
+                188,
+                70,
+                106,
+                173,
+                59,
+                102,
+                163,
+                198,
+                189,
+                82,
+                37,
+                225,
+                38,
+                52,
+                233,
+                157,
+                117
+              ]
+            }
+          }
+        },
+        {
+          "name": "instructions_sysvar",
+          "docs": [
+            "Ed25519Program::verify instruction containing the validator-signed receipt."
+          ],
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "new_commitment",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "projection_version",
+          "type": "u16"
+        }
+      ]
+    },
+    {
       "name": "reset_identity_state",
       "docs": [
         "Reset the caller's identity state to a fresh baseline.",
@@ -984,6 +1198,10 @@
               32
             ]
           }
+        },
+        {
+          "name": "projection_version",
+          "type": "u16"
         }
       ]
     },
@@ -1458,6 +1676,19 @@
       ]
     },
     {
+      "name": "AnchorRebaselined",
+      "discriminator": [
+        67,
+        164,
+        86,
+        111,
+        122,
+        42,
+        157,
+        174
+      ]
+    },
+    {
       "name": "AnchorReset",
       "discriminator": [
         183,
@@ -1578,53 +1809,68 @@
     },
     {
       "code": 6013,
+      "name": "RebaselineCooldownActive",
+      "msg": "Rebaseline cooldown has not elapsed since the last rebaseline"
+    },
+    {
+      "code": 6014,
       "name": "UnauthorizedNewWallet",
       "msg": "caller is not authorized by the old identity"
     },
     {
-      "code": 6014,
+      "code": 6015,
       "name": "ProofFromFuture",
       "msg": "VerificationResult.verified_at is in the future relative to the cluster clock"
     },
     {
-      "code": 6015,
+      "code": 6016,
       "name": "MissingValidatorReceipt",
       "msg": "mint_anchor expected a preceding Ed25519Program::verify instruction with a validator-signed receipt; none found"
     },
     {
-      "code": 6016,
+      "code": 6017,
       "name": "ReceiptValidatorMismatch",
       "msg": "Receipt was signed by a key that does not match ProtocolConfig.validator_pubkey"
     },
     {
-      "code": 6017,
+      "code": 6018,
       "name": "ReceiptCommitmentMismatch",
       "msg": "Receipt commitment does not match the mint_anchor commitment argument"
     },
     {
-      "code": 6018,
+      "code": 6019,
       "name": "ReceiptWalletMismatch",
       "msg": "Receipt wallet does not match the mint signer"
     },
     {
-      "code": 6019,
+      "code": 6020,
       "name": "ReceiptExpired",
       "msg": "Receipt has aged past MAX_RECEIPT_AGE_SECS"
     },
     {
-      "code": 6020,
+      "code": 6021,
       "name": "ReceiptFromFuture",
       "msg": "Receipt validated_at is in the future relative to the cluster clock"
     },
     {
-      "code": 6021,
+      "code": 6022,
       "name": "MalformedReceiptMessage",
       "msg": "Receipt message has malformed length or layout"
     },
     {
-      "code": 6022,
+      "code": 6023,
       "name": "IdentityStateNotFound",
       "msg": "set_encrypted_baseline called before mint_anchor — IdentityState PDA does not exist"
+    },
+    {
+      "code": 6024,
+      "name": "ValidatorNotConfigured",
+      "msg": "ProtocolConfig.validator_pubkey is unset (all-zero); minting is disabled until a validator is configured"
+    },
+    {
+      "code": 6025,
+      "name": "VerificationIntervalTooShort",
+      "msg": "Verification interval too short: must wait at least 1 hour between verifications"
     }
   ],
   "types": [
@@ -1649,6 +1895,31 @@
                 32
               ]
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "AnchorRebaselined",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "commitment",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "projection_version",
+            "type": "u16"
           }
         ]
       }
@@ -1860,6 +2131,20 @@
               "new wallet for migrate_identity()"
             ],
             "type": "pubkey"
+          },
+          {
+            "name": "projection_version",
+            "docs": [
+              "Version of the fingerprint projection space used for the current_commitment (master-list #192)"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "last_rebaseline_timestamp",
+            "docs": [
+              "Most recent `rebaseline_anchor` invocation"
+            ],
+            "type": "i64"
           }
         ]
       }
