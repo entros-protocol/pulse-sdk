@@ -27,7 +27,59 @@ export const SIMHASH_SEED = "IAM-PROTOCOL-SIMHASH-V1";
 // Capture duration bounds (ms)
 export const MIN_CAPTURE_MS = 2000;
 export const MAX_CAPTURE_MS = 60000;
+
+/**
+ * Hard ceiling on the audio that leaves the device, measured from the capture
+ * mark. Independent of `MAX_CAPTURE_MS`, which bounds how long the recorder
+ * runs rather than how much of it is used.
+ *
+ * Mirrors `entros-validation::phrase_binding::MAX_AUDIO_SAMPLES` (320_000,
+ * i.e. 20 s at 16 kHz). The validator truncates anything longer to that bound
+ * before transcribing, so overrunning costs a client the tail of its audio
+ * and, with it, the phrase check.
+ *
+ * The two meet exactly rather than leaving room. Both comparisons are strict
+ * `>`, so a capture of precisely 320,000 samples is untouched on both sides,
+ * and loosening either to `>=` would truncate every maxed capture. That is
+ * the invariant `test/audio.test.ts` pins against the server's constant, not
+ * against this one.
+ *
+ * It also keeps the body inside the executor's 1 MiB limit by construction.
+ * Measured against a real 320,000-sample capture, the full body is 910,172
+ * bytes: 853,338 of base64 audio, 37,140 and 9,941 for the two contours,
+ * 6,751 for the 308 features and 2,529 for the curve trace. That leaves
+ * 138,404 bytes of headroom, and pushing every float to its longest
+ * round-trip representation still leaves about 106 KB.
+ */
+export const MAX_TRANSMITTED_CAPTURE_MS = 20000;
 export const DEFAULT_CAPTURE_MS = 12000;
+
+/**
+ * How long the validate request may go without upload progress before the SDK
+ * gives up on it.
+ *
+ * This bounds silence, not duration. A slow uplink that is still delivering
+ * bytes resets the clock on every progress event and is never cut off, which
+ * is the failure this replaces: a fixed 15-second abort covering both upload
+ * and server work killed a healthy 9.4-second mobile upload and reported the
+ * service as unreachable.
+ *
+ * Mirrors `RequestBodyTimeoutLayer` on both Rust services, which reclaims a
+ * stalled body on the same principle from the other end.
+ */
+export const VALIDATE_UPLOAD_STALL_MS = 20000;
+
+/**
+ * Absolute ceiling on a validate request, used when the caller has no better
+ * information.
+ *
+ * Prefer deriving the ceiling from the challenge's own remaining validity:
+ * `/challenge` returns `expires_in`, and an upload landing after that is
+ * refused regardless, because the executor looks the phrase up under the same
+ * TTL. This constant is the fallback for callers that never fetched a
+ * challenge.
+ */
+export const VALIDATE_DEADLINE_MS = 120000;
 /**
  * Max time startAudio() waits for the first real audio frame before resolving
  * anyway. Normal cold starts deliver the first frame in well under a second;

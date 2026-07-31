@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { MAX_TRANSMITTED_CAPTURE_MS } from "../src/config";
 import { captureAudio, normalizeCaptureRMS } from "../src/sensor/audio";
 
 // Helper: compute RMS over a Float32Array. Used by the assertions to
@@ -190,5 +191,243 @@ describe("captureAudio onReady gate", () => {
     } finally {
       g.AudioContext = original;
     }
+  });
+});
+
+/**
+ * The branch the canonical-rate change exists for, and the one nothing
+ * exercised: a browser that ignores the 16 kHz `AudioContext` request.
+ *
+ * `test/resample.test.ts` covers the transform in isolation, but nothing
+ * previously drove `stopCapture` at a non-16 kHz rate, so the wiring itself
+ * (resample before RMS normalization, the reported rate, the reported
+ * duration) was untested.
+ */
+class MockAudioContext48k extends MockAudioContext {
+  override readonly sampleRate = 48000;
+}
+
+describe("captureAudio canonicalizes the sample rate", () => {
+  async function capture(ctx: unknown, frames: number) {
+    const g = globalThis as { AudioContext?: unknown };
+    const original = g.AudioContext;
+    g.AudioContext = ctx as typeof AudioContext;
+    try {
+      const stream = {
+        getTracks: () => [{ stop() {} }],
+        getAudioTracks: () => [{ label: "Built-in Microphone" }],
+      } as unknown as MediaStream;
+      const controller = new AbortController();
+      const pending = captureAudio({
+        stream,
+        signal: controller.signal,
+        minDurationMs: 0,
+        maxDurationMs: 5000,
+      });
+      await new Promise((r) => setTimeout(r, 0));
+      const proc = MockAudioContext.lastProcessor!;
+      for (let i = 0; i < frames; i++) fireFrame(proc, 0.1);
+      controller.abort();
+      return await pending;
+    } finally {
+      g.AudioContext = original;
+    }
+  }
+
+  it("reports 16 kHz and a decimated buffer when the browser delivers 48 kHz", async () => {
+    const frames = 60; // 60 x 4096 = 245,760 source samples, 5.12 s at 48 kHz
+    const result = await capture(MockAudioContext48k, frames);
+
+    expect(result.sampleRate).toBe(16000);
+    expect(result.samples.length).toBe(Math.round((frames * 4096) / 3));
+    // Duration is the length of the buffer handed over, which here equals
+    // wall-clock because nothing was trimmed or capped.
+    expect(result.duration).toBeCloseTo((frames * 4096) / 48000, 3);
+  });
+
+  it("keeps a 16 kHz capture at its original length while still filtering it", async () => {
+    const frames = 60;
+    const result = await capture(MockAudioContext, frames);
+
+    expect(result.sampleRate).toBe(16000);
+    expect(result.samples.length).toBe(frames * 4096);
+    expect(result.duration).toBeCloseTo((frames * 4096) / 16000, 3);
+  });
+});
+
+/**
+ * The capture window mark. `startAudio` resolves as soon as audio is genuinely
+ * flowing, so the speak prompt never appears during the microphone's cold
+ * start, which means recording begins before the prompt does, with the
+ * challenge fetch and the countdown inside that gap. The host marks when the
+ * window actually opens and everything before it is discarded.
+ */
+describe("captureAudio capture-window mark", () => {
+  async function captureWithMark(
+    framesBefore: number,
+    framesAfter: number,
+    opts: { markTimes?: number; markAfterStop?: boolean } = {}
+  ) {
+    const g = globalThis as { AudioContext?: unknown };
+    const original = g.AudioContext;
+    g.AudioContext = MockAudioContext as unknown as typeof AudioContext;
+    try {
+      const stream = {
+        getTracks: () => [{ stop() {} }],
+        getAudioTracks: () => [{ label: "Built-in Microphone" }],
+      } as unknown as MediaStream;
+      const controller = new AbortController();
+      const windowController = new AbortController();
+      const mark = () => windowController.abort();
+      const pending = captureAudio({
+        stream,
+        signal: controller.signal,
+        minDurationMs: 0,
+        maxDurationMs: 5000,
+        captureWindowSignal: windowController.signal,
+      });
+      await new Promise((r) => setTimeout(r, 0));
+      const proc = MockAudioContext.lastProcessor!;
+
+      for (let i = 0; i < framesBefore; i++) fireFrame(proc, 0.02);
+      if (!opts.markAfterStop) {
+        for (let i = 0; i < (opts.markTimes ?? 1); i++) mark();
+      }
+      for (let i = 0; i < framesAfter; i++) fireFrame(proc, 0.2);
+
+      controller.abort();
+      const result = await pending;
+      if (opts.markAfterStop) mark();
+      return result;
+    } finally {
+      g.AudioContext = original;
+    }
+  }
+
+  it("keeps only what was recorded after the window opened", async () => {
+    const result = await captureWithMark(12, 30);
+    expect(result.samples.length).toBe(30 * 4096);
+  });
+
+  /**
+   * The returned buffer must own exactly its own bytes. A `subarray` view
+   * would hand callers a `Float32Array` whose `.buffer` is larger than its
+   * contents and keep the whole pre-trim recording alive behind it.
+   */
+  it("returns a buffer that owns exactly its own bytes", async () => {
+    const result = await captureWithMark(12, 30);
+    expect(result.samples.buffer.byteLength).toBe(result.samples.byteLength);
+  });
+
+  it("cannot be moved by a second signal, so a double-invoked effect is safe", async () => {
+    const result = await captureWithMark(12, 30, { markTimes: 3 });
+    expect(result.samples.length).toBe(30 * 4096);
+  });
+
+  it("keeps the whole recording when the host never marks", async () => {
+    const g = globalThis as { AudioContext?: unknown };
+    const original = g.AudioContext;
+    g.AudioContext = MockAudioContext as unknown as typeof AudioContext;
+    try {
+      const stream = {
+        getTracks: () => [{ stop() {} }],
+        getAudioTracks: () => [{ label: "Built-in Microphone" }],
+      } as unknown as MediaStream;
+      const controller = new AbortController();
+      const pending = captureAudio({
+        stream,
+        signal: controller.signal,
+        minDurationMs: 0,
+        maxDurationMs: 5000,
+      });
+      await new Promise((r) => setTimeout(r, 0));
+      for (let i = 0; i < 20; i++) fireFrame(MockAudioContext.lastProcessor!, 0.1);
+      controller.abort();
+      const result = await pending;
+      expect(result.samples.length).toBe(20 * 4096);
+    } finally {
+      g.AudioContext = original;
+    }
+  });
+
+  it("ignores a mark that arrives after the capture has already closed", async () => {
+    const result = await captureWithMark(12, 30, { markAfterStop: true });
+    expect(result.samples.length).toBe(42 * 4096);
+  });
+});
+
+/**
+ * The transmitted-length cap. It mirrors the validator's own
+ * `MAX_AUDIO_SAMPLES`, past which phrase binding is skipped and the
+ * verification silently passes, so the cap exists to make that unreachable.
+ *
+ * Which end survives depends on where the phrase is. With a mark, index 0 is
+ * the prompt and speech is at the front. Without one, every integrator who
+ * has not adopted `markCaptureStart`, index 0 is recorder start and speech is
+ * at the end, so keeping the head would delete it and leave the validator
+ * transcribing silence.
+ */
+describe("captureAudio transmitted-length cap", () => {
+  const CAP_SAMPLES = (MAX_TRANSMITTED_CAPTURE_MS / 1000) * 16000;
+  const FRAMES_PAST_CAP = Math.ceil(CAP_SAMPLES / 4096) + 1;
+
+  async function overrun(mark: boolean) {
+    const g = globalThis as { AudioContext?: unknown };
+    const original = g.AudioContext;
+    g.AudioContext = MockAudioContext as unknown as typeof AudioContext;
+    try {
+      const stream = {
+        getTracks: () => [{ stop() {} }],
+        getAudioTracks: () => [{ label: "Built-in Microphone" }],
+      } as unknown as MediaStream;
+      const controller = new AbortController();
+      const windowController = new AbortController();
+      const pending = captureAudio({
+        stream,
+        signal: controller.signal,
+        minDurationMs: 0,
+        maxDurationMs: 120_000,
+        captureWindowSignal: windowController.signal,
+      });
+      await new Promise((r) => setTimeout(r, 0));
+      const proc = MockAudioContext.lastProcessor!;
+
+      if (mark) windowController.abort();
+      // Sign, not magnitude: `normalizeCaptureRMS` rescales every capture to
+      // the same RMS, so only the sign survives to identify which end was kept.
+      for (let i = 0; i < FRAMES_PAST_CAP; i++) fireFrame(proc, 0.5);
+      for (let i = 0; i < 20; i++) fireFrame(proc, -0.5);
+
+      controller.abort();
+      return await pending;
+    } finally {
+      g.AudioContext = original;
+    }
+  }
+
+  /**
+   * Pinned against the server's number, not against our own constant, or the
+   * assertion moves with whatever it is meant to be checking.
+   *
+   * `entros-validation::phrase_binding::MAX_AUDIO_SAMPLES` is 320_000, and the
+   * comparison there is `projected > MAX`, so 320_000 exactly is the largest
+   * capture that still gets phrase binding. Margin is zero by design: one
+   * sample more and the validator skips the check and passes silently.
+   */
+  it("caps at exactly the validator's MAX_AUDIO_SAMPLES", async () => {
+    expect(CAP_SAMPLES).toBe(320_000);
+    const result = await overrun(true);
+    expect(result.samples.length).toBe(320_000);
+  });
+
+  it("keeps the head when the host marked, because speech starts at the mark", async () => {
+    const result = await overrun(true);
+    expect(result.samples[1000]).toBeGreaterThan(0);
+  });
+
+  it("keeps the tail when the host did not mark, because speech ends the capture", async () => {
+    const result = await overrun(false);
+    expect(result.samples.length).toBe(CAP_SAMPLES);
+    expect(result.samples[result.samples.length - 1000]!).toBeLessThan(0);
   });
 });
