@@ -5,12 +5,24 @@
 import type { Idl } from "@coral-xyz/anchor";
 import type { SolanaProof } from "../proof/types";
 import type { SignedReceiptDto, SubmissionResult } from "./types";
-import { PROGRAM_IDS } from "../config";
+import type { VerificationPhase } from "../phases";
+import {
+  CONFIRMATION_TIMEOUT_MS,
+  PROGRAM_IDS,
+  PROJECTION_VERSION,
+  SIGNATURE_TIMEOUT_MS,
+} from "../config";
 import { sdkLog, sdkWarn } from "../log";
 import { entrosAnchorIdl, entrosVerifierIdl } from "../protocol/idl";
 import { buildEd25519ReceiptIx } from "./receipt";
 import { ENCRYPTED_BASELINE_BLOB_BYTES } from "../identity/baseline";
-import { errToString } from "./errors";
+import {
+  chainRevertError,
+  errToString,
+  isChainRevertError,
+  isUserRejection,
+  withTimeout,
+} from "./errors";
 
 /**
  * Build a `set_encrypted_baseline` instruction for the given anchor program
@@ -73,10 +85,85 @@ async function confirmAndCheck(
   }
   const confirmation = await connection.confirmTransaction(signature, "confirmed");
   if (confirmation?.value?.err != null) {
-    throw new Error(
+    // Marked so `sendAndConfirm` can tell a reported on-chain failure, where
+    // the fee was definitely taken, from an RPC that stopped answering, where
+    // the transaction may still be in flight. Only the former is the
+    // `confirmation` phase.
+    throw chainRevertError(
       `Transaction failed on chain: ${JSON.stringify(confirmation.value.err)} (sig=${signature})`,
     );
   }
+}
+
+/**
+ * Sign, broadcast and confirm, attributing any failure to the phase it
+ * belongs to.
+ *
+ * Wallet adapters merge signing and sending into one `sendTransaction` call,
+ * and that seam is where both of the 2026-07-31 production failures lived: a
+ * prompt that never appeared was reported as a proving timeout, and an on-chain
+ * revert was reported as a validator rejection. Splitting the outcomes here is
+ * what lets a host describe each of them correctly.
+ *
+ * Two rules, both deliberately conservative:
+ *
+ *   - Only a declined prompt is `signing`. It is the single outcome that is
+ *     certainly not on the wire. Everything else out of `sendTransaction`,
+ *     including this function's own timeout, is `submission`, whose spend is
+ *     `possible` rather than a claim in either direction.
+ *   - Only a cluster-reported execution failure is `confirmation`. A
+ *     confirmation timeout is `submission` for the same reason.
+ *
+ * Neither timeout cancels the work it bounds, because nothing in a wallet
+ * adapter or in web3.js can be cancelled. A prompt approved after the clock
+ * expires still broadcasts, which is why `SIGNATURE_TIMEOUT_MS` is set where it
+ * fires for a hung wallet and effectively never for a slow user.
+ */
+async function sendAndConfirm(
+  wallet: any,
+  connection: any,
+  tx: any,
+  sendOptions?: { skipPreflight: boolean },
+): Promise<
+  | { ok: true; txSig: string }
+  | { ok: false; error: string; failedAt: VerificationPhase }
+> {
+  let txSig: string;
+  try {
+    // The third argument is omitted rather than passed as `undefined`. The
+    // standard adapter defaults it, but wrappers in the wild read
+    // `options.skipPreflight` without one, and the reset path is the caller
+    // that relies on preflight staying on.
+    txSig = await withTimeout(
+      sendOptions
+        ? wallet.sendTransaction(tx, connection, sendOptions)
+        : wallet.sendTransaction(tx, connection),
+      SIGNATURE_TIMEOUT_MS,
+      "Your wallet did not respond to the signature request. Open your wallet, check whether a request is still pending, then try again.",
+    );
+  } catch (err) {
+    return {
+      ok: false,
+      error: errToString(err),
+      failedAt: isUserRejection(err) ? "signing" : "submission",
+    };
+  }
+
+  try {
+    await withTimeout(
+      confirmAndCheck(connection, txSig),
+      CONFIRMATION_TIMEOUT_MS,
+      "The network did not confirm your transaction in time. It may still land. Check your wallet's recent activity before trying again.",
+    );
+  } catch (err) {
+    return {
+      ok: false,
+      error: errToString(err),
+      failedAt: isChainRevertError(err) ? "confirmation" : "submission",
+    };
+  }
+
+  return { ok: true, txSig };
 }
 
 /**
@@ -388,10 +475,13 @@ export async function submitViaWallet(
         await options.connection.getLatestBlockhash("confirmed")
       ).blockhash;
 
-      txSig = await options.wallet.sendTransaction(tx, options.connection, {
+      const sent = await sendAndConfirm(options.wallet, options.connection, tx, {
         skipPreflight: true,
       });
-      await confirmAndCheck(options.connection, txSig);
+      if (!sent.ok) {
+        return { success: false, error: sent.error, failedAt: sent.failedAt };
+      }
+      txSig = sent.txSig;
     } else {
       // First verification: mint anchor. Bundles an `Ed25519Program::verify`
       // instruction before `mint_anchor` when the validator returned a
@@ -478,7 +568,8 @@ export async function submitViaWallet(
           return {
             success: false,
             error:
-              "Validator returned a signed receipt that failed to decode (malformed hex or wrong byte length). Refusing to mint without a valid binding. The validator service may be misconfigured — check the validation-service logs.",
+              "Validator returned a signed receipt that failed to decode (malformed hex or wrong byte length). Refusing to mint without a valid binding. The validator service may be misconfigured. Check the validation-service logs.",
+            failedAt: "submission",
           };
         }
         sdkLog(
@@ -535,10 +626,13 @@ export async function submitViaWallet(
         await options.connection.getLatestBlockhash("confirmed")
       ).blockhash;
 
-      txSig = await options.wallet.sendTransaction(tx, options.connection, {
+      const sent = await sendAndConfirm(options.wallet, options.connection, tx, {
         skipPreflight: true,
       });
-      await confirmAndCheck(options.connection, txSig);
+      if (!sent.ok) {
+        return { success: false, error: sent.error, failedAt: sent.failedAt };
+      }
+      txSig = sent.txSig;
     }
 
     const attestationTx = options.relayerUrl
@@ -553,7 +647,12 @@ export async function submitViaWallet(
 
     return { success: true, txSignature: txSig, attestationTx };
   } catch (err: any) {
-    return { success: false, error: errToString(err) };
+    // Everything `sendAndConfirm` handles has already returned, so reaching
+    // here means the transaction was never built: an RPC that would not answer,
+    // a PDA derivation, a dynamic import. Nothing was spent, and `submission`
+    // reports `possible` rather than `none`, which is the one direction it is
+    // safe to be wrong in.
+    return { success: false, error: errToString(err), failedAt: "submission" };
   }
 }
 
@@ -623,7 +722,7 @@ export async function submitResetViaWallet(
     );
 
     const resetIx = await anchorProgram.methods
-      .resetIdentityState(Array.from(commitment))
+      .resetIdentityState(Array.from(commitment), PROJECTION_VERSION)
       .accounts({
         authority: provider.wallet.publicKey,
         identityState: identityPda,
@@ -653,12 +752,21 @@ export async function submitResetViaWallet(
       await options.connection.getLatestBlockhash("confirmed")
     ).blockhash;
 
-    const txSig: string = await options.wallet.sendTransaction(
-      tx,
-      options.connection,
-      { skipPreflight: true }
-    );
-    await confirmAndCheck(options.connection, txSig);
+    // Preflight left ON deliberately, unlike the verify and mint paths above,
+    // which still skip it. Those two work in production, and changing them
+    // would be an untested behaviour change on a path that is not broken.
+    // This one was.
+    //
+    // Preflight is what turns a client-side encoding error into a free
+    // rejection instead of a paid revert. `skipPreflight: true` here meant
+    // that when the bundled IDL fell behind the deployed program, every reset
+    // was broadcast, charged, and reverted on chain with
+    // `InstructionDidNotDeserialize` rather than being refused for nothing.
+    const sent = await sendAndConfirm(options.wallet, options.connection, tx);
+    if (!sent.ok) {
+      return { success: false, error: sent.error, failedAt: sent.failedAt };
+    }
+    const txSig = sent.txSig;
 
     // Request a fresh SAS attestation. The executor's /attest handler
     // closes any prior attestation for this wallet and creates a new one
@@ -675,6 +783,11 @@ export async function submitResetViaWallet(
 
     return { success: true, txSignature: txSig, attestationTx };
   } catch (err: any) {
-    return { success: false, error: errToString(err) };
+    // Everything `sendAndConfirm` handles has already returned, so reaching
+    // here means the transaction was never built: an RPC that would not answer,
+    // a PDA derivation, a dynamic import. Nothing was spent, and `submission`
+    // reports `possible` rather than `none`, which is the one direction it is
+    // safe to be wrong in.
+    return { success: false, error: errToString(err), failedAt: "submission" };
   }
 }
