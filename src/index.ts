@@ -4,6 +4,10 @@ export { PulseSDK, PulseSession, MIN_AUDIO_SAMPLES, MIN_MOTION_SAMPLES, MIN_TOUC
 // Configuration
 export type { PulseConfig } from "./config";
 export { PROGRAM_IDS, DEFAULT_THRESHOLD, DEFAULT_MIN_DISTANCE, FINGERPRINT_BITS, MIN_CAPTURE_MS, MAX_CAPTURE_MS, DEFAULT_CAPTURE_MS, MAX_TRANSMITTED_CAPTURE_MS } from "./config";
+// Clocks. `MAX_VERIFICATION_MS` is the one a host with its own backstop timer
+// needs: it is derived from the other two plus the validate deadline, so a
+// host that reads it cannot fall behind a change here.
+export { SIGNATURE_TIMEOUT_MS, CONFIRMATION_TIMEOUT_MS, MAX_VERIFICATION_MS } from "./config";
 
 // Hashing
 export type { TemporalFingerprint, TBH, PackedFingerprint } from "./hashing/types";
@@ -118,6 +122,26 @@ export {
   type RetryableReason,
   type ReasonDisposition,
 } from "./reasons";
+
+// Which stage of a verification failed. Hosts should route on `failedAt`
+// rather than on the wording of `error`, and must consult `opaque` before
+// showing anything derived from it. Routing by prose put an on-chain revert on
+// the screen that says validation rejected the attempt, because the matcher
+// for a validator rejection also matched `custom program error`.
+export {
+  isVerificationPhase,
+  phaseChargesAttempt,
+  phaseSpend,
+  type VerificationPhase,
+  type PhaseSpend,
+} from "./phases";
+
+// Error-shape helpers. `isUserRejection` is exported because the SDK uses it to
+// decide whether a failure was `signing` or `submission`, and a host that keeps
+// its own copy can disagree with that decision: the SDK would report
+// `submission`, and the host would then never consult its own matcher. Two
+// copies of this list already existed before it was exported.
+export { isUserRejection } from "./submit/errors";
 
 // Request transport. Exported for hosts that want to talk to
 // `/validate-features` directly and need the same stall-not-duration
