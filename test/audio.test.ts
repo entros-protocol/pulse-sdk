@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { MAX_TRANSMITTED_CAPTURE_MS } from "../src/config";
-import { captureAudio, normalizeCaptureRMS } from "../src/sensor/audio";
+import { captureAudio, describeInputLevel, normalizeCaptureRMS } from "../src/sensor/audio";
 
 // Helper: compute RMS over a Float32Array. Used by the assertions to
 // confirm the helper achieves the documented target without re-deriving
@@ -97,7 +97,7 @@ class MockScriptProcessor {
 
 class MockAudioContext {
   static lastProcessor: MockScriptProcessor | null = null;
-  readonly sampleRate = 16000;
+  readonly sampleRate: number = 16000;
   readonly destination = {};
   constructor(_options?: unknown) {}
   async resume() {}
@@ -511,5 +511,101 @@ describe("captureAudio reports the transmitted window", () => {
     const { result } = await run({ frames: 0 });
     expect(result.samples.length).toBe(0);
     expect(result.windowEndMs - result.windowStartMs).toBe(0);
+  });
+});
+
+/**
+ * What the microphone delivered, as distinct from what was transmitted.
+ *
+ * `normalizeCaptureRMS` rescales the buffer toward `TARGET_CAPTURE_RMS` before
+ * it leaves the device, so the level of the transmitted audio is a property of
+ * that target and says nothing about the capture. A validator can therefore see
+ * healthy audio while the user was barely audible, which is exactly the state
+ * that made the "microphone too quiet" warning impossible to adjudicate from
+ * server logs on 2026-08-01.
+ *
+ * The pair that resolves it is `gainClipped` against `voicedFrameRatio`.
+ * Normalisation recovers input down to 0.05 / 50 = 0.001 RMS, while hosts warn
+ * at 0.008, which is eight times stricter. Input landing between the two
+ * produces a good capture and a warning at once, and only these fields say so.
+ */
+describe("describeInputLevel", () => {
+  const RATE = 16_000;
+
+  /** A tone at a known RMS. Amplitude a gives RMS a/√2. */
+  function tone(rms: number, seconds = 1): Float32Array {
+    const amp = rms * Math.SQRT2;
+    const n = Math.round(RATE * seconds);
+    const out = new Float32Array(n);
+    for (let i = 0; i < n; i++) out[i] = amp * Math.sin((2 * Math.PI * 220 * i) / RATE);
+    return out;
+  }
+
+  it("measures the input, not the normalized output", () => {
+    // The whole contract. A quiet capture stays quiet in this reading even
+    // though the buffer that ships is loud.
+    const quiet = tone(0.004);
+    const level = describeInputLevel(quiet);
+    expect(level.rms).toBeCloseTo(0.004, 4);
+
+    const shipped = normalizeCaptureRMS(quiet);
+    let sumSq = 0;
+    for (let i = 0; i < shipped.length; i++) sumSq += shipped[i]! * shipped[i]!;
+    const shippedRms = Math.sqrt(sumSq / shipped.length);
+    expect(shippedRms, "the transmitted buffer should have been brought up").toBeCloseTo(0.05, 3);
+    expect(
+      level.rms,
+      "measuring the transmitted buffer would have reported the target, not the microphone",
+    ).toBeLessThan(shippedRms / 10);
+  });
+
+  it("reports the gain that was actually applied", () => {
+    // Mirrors `normalizeCaptureRMS` rather than re-deriving, so the two cannot
+    // drift into disagreeing about the same capture.
+    const level = describeInputLevel(tone(0.01));
+    expect(level.gain).toBeCloseTo(0.05 / 0.01, 2);
+    expect(level.gainClipped).toBe(false);
+  });
+
+  it("flags input below what the gain ceiling can recover", () => {
+    // 0.05 / 50 = 0.001 is the floor. Below it the transmitted audio is still
+    // quiet, and the microphone genuinely was the problem.
+    const level = describeInputLevel(tone(0.0005));
+    expect(level.gainClipped).toBe(true);
+    expect(level.gain).toBe(50);
+
+    // Just above the floor is recoverable, so it must not be flagged.
+    expect(describeInputLevel(tone(0.002)).gainClipped).toBe(false);
+  });
+
+  it("separates the recoverable-but-warned case from the genuinely quiet one", () => {
+    // The case that explains the reported UI regression: below the host's 0.008
+    // warning bar, above the 0.001 floor. Capture is fine, warning still fires.
+    const level = describeInputLevel(tone(0.004));
+    expect(level.gainClipped, "this capture is recoverable").toBe(false);
+    expect(level.voicedFrameRatio, "yet nothing clears the host's threshold").toBe(0);
+  });
+
+  it("counts voiced frames against the host's own threshold", () => {
+    // Half the buffer above 0.008, half below.
+    const n = RATE;
+    const buf = new Float32Array(n);
+    const loud = 0.05 * Math.SQRT2;
+    for (let i = 0; i < n / 2; i++) buf[i] = loud * Math.sin((2 * Math.PI * 220 * i) / RATE);
+    const level = describeInputLevel(buf);
+    expect(level.voicedFrameRatio).toBeGreaterThan(0.4);
+    expect(level.voicedFrameRatio).toBeLessThan(0.6);
+    expect(level.peak).toBeCloseTo(loud, 2);
+  });
+
+  it("returns a usable answer for an empty capture", () => {
+    // A failed capture must not divide by zero on the way to reporting itself.
+    expect(describeInputLevel(new Float32Array(0))).toEqual({
+      rms: 0,
+      peak: 0,
+      gain: 1,
+      gainClipped: false,
+      voicedFrameRatio: 0,
+    });
   });
 });

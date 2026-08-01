@@ -142,10 +142,11 @@ async function extractFeatures(data: SensorData): Promise<ExtractedFeatures> {
     // back empty. That case is exactly the one worth being able to read.
     captureTiming:
       data.motion.length > 0
-        ? describeCaptureTiming(data.motion, {
-            startMs: data.audio.windowStartMs,
-            endMs: data.audio.windowEndMs,
-          })
+        ? describeCaptureTiming(
+            data.motion,
+            { startMs: data.audio.windowStartMs, endMs: data.audio.windowEndMs },
+            data.audio.inputLevel,
+          )
         : undefined,
   };
 }

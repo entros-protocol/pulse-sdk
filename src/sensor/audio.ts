@@ -64,6 +64,88 @@ export function normalizeCaptureRMS(samples: Float32Array): Float32Array {
 }
 
 /**
+ * Speech-presence threshold, matched to the value the host UI uses to decide
+ * whether the user has started speaking. Kept here so
+ * {@link describeInputLevel} reports against the same bar the warning fires
+ * on, which is the only way to tell a genuinely quiet microphone from a
+ * warning stricter than the pipeline it warns about.
+ */
+const VOICED_FRAME_RMS = 0.008;
+
+/** 10ms at the canonical rate, matching the F0 extractor's hop. */
+const VOICED_FRAME_SAMPLES = 160;
+
+/**
+ * Measure what the microphone actually delivered, before any gain.
+ *
+ * Must run on the pre-normalisation buffer. {@link normalizeCaptureRMS}
+ * rescales toward {@link TARGET_CAPTURE_RMS}, so the transmitted buffer's
+ * level is a property of that target rather than of the capture, and reading
+ * it tells you nothing about the microphone.
+ *
+ * The pair that matters is `gainClipped` and `voicedFrameRatio`. Gain applied
+ * but not clipped, with a low voiced ratio, means the capture was recoverable
+ * and a warning threshold is simply stricter than this pipeline's tolerance:
+ * normalisation rescues input down to `TARGET_CAPTURE_RMS / MAX_NORMALIZATION_GAIN`,
+ * which is 0.001, while hosts commonly warn at {@link VOICED_FRAME_RMS} of
+ * 0.008. Gain clipped means the input really was below what can be recovered.
+ */
+export function describeInputLevel(samples: Float32Array): {
+  rms: number;
+  peak: number;
+  gain: number;
+  gainClipped: boolean;
+  voicedFrameRatio: number;
+} {
+  if (samples.length === 0) {
+    return { rms: 0, peak: 0, gain: 1, gainClipped: false, voicedFrameRatio: 0 };
+  }
+
+  let sumSq = 0;
+  let peak = 0;
+  let voicedFrames = 0;
+  let totalFrames = 0;
+  let frameSumSq = 0;
+  let frameLen = 0;
+
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i]!;
+    const sq = s * s;
+    sumSq += sq;
+    const abs = s < 0 ? -s : s;
+    if (abs > peak) peak = abs;
+
+    frameSumSq += sq;
+    if (++frameLen === VOICED_FRAME_SAMPLES) {
+      if (Math.sqrt(frameSumSq / frameLen) > VOICED_FRAME_RMS) voicedFrames++;
+      totalFrames++;
+      frameSumSq = 0;
+      frameLen = 0;
+    }
+  }
+  // A trailing partial frame counts, so a capture shorter than one frame
+  // still reports a ratio rather than dividing by zero.
+  if (frameLen > 0) {
+    if (Math.sqrt(frameSumSq / frameLen) > VOICED_FRAME_RMS) voicedFrames++;
+    totalFrames++;
+  }
+
+  const rms = Math.sqrt(sumSq / samples.length);
+  // Mirrors `normalizeCaptureRMS` exactly rather than re-deriving it, so the
+  // reported gain is the gain that was actually applied.
+  const gain =
+    rms < MIN_RMS_FOR_NORMALIZATION ? 1 : Math.min(TARGET_CAPTURE_RMS / rms, MAX_NORMALIZATION_GAIN);
+
+  return {
+    rms,
+    peak,
+    gain,
+    gainClipped: rms >= MIN_RMS_FOR_NORMALIZATION && TARGET_CAPTURE_RMS / rms > MAX_NORMALIZATION_GAIN,
+    voicedFrameRatio: totalFrames > 0 ? voicedFrames / totalFrames : 0,
+  };
+}
+
+/**
  * Capture audio at 16kHz until signaled to stop.
  * Uses ScriptProcessorNode for raw PCM sample access.
  *
@@ -325,6 +407,11 @@ export async function captureAudio(
             ? samples.slice(0, maxSamples)
             : samples.slice(samples.length - maxSamples);
 
+        // Measured on `bounded`, which is the transmitted window before gain.
+        // After `normalizeCaptureRMS` the level describes the target, not the
+        // microphone, and the question this answers is about the microphone.
+        const inputLevel = describeInputLevel(bounded);
+
         const normalized = normalizeCaptureRMS(bounded);
         const duration = normalized.length / sampleRate;
 
@@ -349,6 +436,7 @@ export async function captureAudio(
           duration,
           windowStartMs,
           windowEndMs: windowStartMs + duration * 1000,
+          inputLevel,
           virtualDevice: isVirtual,
         });
       } catch {
@@ -360,6 +448,7 @@ export async function captureAudio(
           // downstream, so no contour gets built against a buffer that failed.
           windowStartMs: audioEpochMs,
           windowEndMs: audioEpochMs,
+          inputLevel: describeInputLevel(new Float32Array(0)),
           virtualDevice: isVirtual,
         });
       }

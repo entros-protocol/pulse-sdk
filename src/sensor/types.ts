@@ -29,6 +29,22 @@ export interface AudioCapture {
   windowStartMs: number;
   /** Wall-clock instant just past the last sample. `windowStartMs + duration * 1000`. */
   windowEndMs: number;
+  /**
+   * What the microphone delivered over this window, measured **before**
+   * {@link samples} was normalised. Reading the level of `samples` instead
+   * reports the normalisation target, not the capture.
+   *
+   * See `describeInputLevel` for how to read `gainClipped` against
+   * `voicedFrameRatio`, which is what separates a genuinely quiet microphone
+   * from a host warning stricter than this pipeline's own tolerance.
+   */
+  inputLevel: {
+    rms: number;
+    peak: number;
+    gain: number;
+    gainClipped: boolean;
+    voicedFrameRatio: number;
+  };
   virtualDevice?: boolean;
 }
 

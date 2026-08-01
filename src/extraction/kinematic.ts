@@ -132,6 +132,16 @@ export interface CaptureTiming {
   window_offset_ms: number;
   /** Fraction of the audio window the motion stream spans, 0 to 1. */
   window_coverage: number;
+  /** Microphone RMS over the transmitted window, before normalisation. */
+  audio_input_rms: number;
+  /** Largest absolute sample. Separates uniformly quiet from quiet-with-peaks. */
+  audio_input_peak: number;
+  /** Gain applied to reach the target RMS. 1.0 means none was needed. */
+  audio_normalization_gain: number;
+  /** True when the input fell below what the gain ceiling can recover. */
+  audio_gain_clipped: boolean;
+  /** Fraction of 10ms frames above the speech-presence threshold. */
+  audio_voiced_frame_ratio: number;
 }
 
 /**
@@ -149,6 +159,13 @@ export interface CaptureTiming {
 export function describeCaptureTiming(
   samples: MotionSample[],
   window: { startMs: number; endMs: number },
+  inputLevel: {
+    rms: number;
+    peak: number;
+    gain: number;
+    gainClipped: boolean;
+    voicedFrameRatio: number;
+  },
 ): CaptureTiming {
   const span = Math.max(0, window.endMs - window.startMs);
   const timestamps = samples.map((s) => s.timestamp);
@@ -186,6 +203,11 @@ export function describeCaptureTiming(
     audio_window_ms: round(span),
     window_offset_ms: samples.length > 0 ? round(timestamps[0]! - window.startMs) : 0,
     window_coverage: span > 0 ? round(overlap / span, 4) : 0,
+    audio_input_rms: round(inputLevel.rms, 6),
+    audio_input_peak: round(inputLevel.peak, 6),
+    audio_normalization_gain: round(inputLevel.gain, 3),
+    audio_gain_clipped: inputLevel.gainClipped,
+    audio_voiced_frame_ratio: round(inputLevel.voicedFrameRatio, 4),
   };
 }
 
