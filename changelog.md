@@ -9,6 +9,18 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+## [4.3.0] - 2026-08-01
+
+### Fixed
+- **The motion contour is aligned to the audio window, not to its own array length.** `accel_magnitude` is correlated against the F0 contour server-side, so the two have to describe the same stretch of wall-clock time. Nothing enforced that. The contour was built by mapping motion's array index proportionally onto audio's frame count, which is correct only while both streams happen to cover the same window. 4.0.0 stopped them covering the same window: it added a capture-window mark that discards the pre-prompt lead-in and wired it into the audio path alone, so motion kept the challenge fetch and the three-second countdown that audio now drops. Index mapping cannot see a span mismatch, so it stretched motion across audio instead of failing, and the validator's 50ms lag search hunted a peak displaced by seconds. Cross-modal coupling fell from r=0.31 to r=0.03 and mobile verification was rejected on every attempt from 2026-07-31 16:07 onward. Desktop was unaffected throughout, because no IMU means the check skips. Both streams already timestamp themselves off `performance.now()`, so the contour is now resampled onto the audio's own window using the clock they share.
+
+### Added
+- **`AudioCapture.windowStartMs` and `windowEndMs`**, the wall-clock bounds of the transmitted buffer. Derived from the exact trim offset rather than from the instant the mark fired, which is only accurate to one 4096-sample buffer. That is 85ms at 48kHz and 256ms at 16kHz, both wider than the validator's whole lag search. Every modality aligned against audio should use these.
+- **`capture_timing` on the validate request**, an observe-only summary of how the motion stream sat against the audio window: sample count, span, achieved rate, delivery jitter, window offset and coverage. Optional and additive, so older validators ignore it. Logged for calibration and never read by a check. This regression was invisible for a day because every number that would have named it was computed on-device and discarded.
+
+### Changed
+- **`extractAccelerationMagnitude` takes a required third argument**, the audio window to resample onto. A silent index fallback is the trap that produced the bug above, so this is deliberately a compile error rather than a default. It now returns an empty array when motion spans less than 90% of the window. The validator treats an absent contour as "skip", which is the fail-safe direction, while a misaligned one reads as weak coupling and rejects a real person.
+
 ## [4.2.0] - 2026-08-01
 
 Includes 4.1.2 and 4.1.3, which were tagged in git but never published.
