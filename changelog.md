@@ -9,6 +9,16 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+## [4.4.0] - 2026-08-01
+
+### Added
+- **`capture_timing` reports what the microphone delivered, measured before the SDK's own gain.** `normalizeCaptureRMS` rescales the buffer toward a target RMS before it is transmitted, so the level of the audio that ships describes that target rather than the capture. A validator can see healthy audio while the user was barely audible, and from the server side the two are indistinguishable. `describeInputLevel` runs on the pre-normalisation buffer and reports RMS, peak, the gain applied, whether that gain hit its ceiling, and the fraction of 10ms frames above the speech-presence threshold. The pair worth reading is `gainClipped` against `voicedFrameRatio`: normalisation recovers input down to 0.001 RMS while hosts commonly warn at 0.008, so a capture can be entirely recoverable and still trip a warning, and only these fields separate that from a microphone that really was too quiet. Observe-only, logged and never judged, same rule as the rest of the object.
+- **`AudioCapture.inputLevel`** carries the same reading for hosts that want it directly.
+
+### Fixed
+- **`npm run typecheck` now covers the test suite.** `tsconfig.json` excludes `test/` because it must stay out of the build, which meant a fixture constructing an SDK type was never checked against it. Adding a required field to `AudioCapture` was therefore a runtime surprise rather than a compile error, and it happened twice in two days: `windowStartMs`/`windowEndMs` in 4.3.0, then `inputLevel` here. **Five fixtures across four files were building the old shape.** The first time, the mismatch degraded silently into an empty cross-modal contour, so the suite stayed green while no longer exercising the path it claimed to. `tsconfig.test.json` typechecks tests with `noUncheckedIndexedAccess` relaxed, which leaves the property that matters: a fixture has to match the type it says it is building.
+- Two fixtures also declared 1250ms of audio against 950ms of motion, which under the 4.3.0 coverage rule produced no contour at all. Both now span one coherent window.
+
 ## [4.3.0] - 2026-08-01
 
 ### Fixed
