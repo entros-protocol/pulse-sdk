@@ -216,6 +216,12 @@ export async function captureAudio(
     }
 
     let firstFrameSeen = false;
+    // Wall-clock instant of `collected[0]`, which is what every other modality
+    // gets aligned to. `onaudioprocess` fires once a buffer is full, so the
+    // audio in the first callback began one buffer before it arrived. Without
+    // this the only timestamps available are the recorder's own start, which
+    // precedes the microphone by a cold start of unknown length.
+    let audioEpochMs = startTime;
     processor.onaudioprocess = (e: AudioProcessingEvent) => {
       const data = e.inputBuffer.getChannelData(0);
       chunks.push(new Float32Array(data));
@@ -227,6 +233,7 @@ export async function captureAudio(
       // miss where the start of the phrase fell into dead air.
       if (!firstFrameSeen) {
         firstFrameSeen = true;
+        audioEpochMs = performance.now() - (data.length / capturedSampleRate) * 1000;
         onReady?.();
       }
 
@@ -319,11 +326,29 @@ export async function captureAudio(
             : samples.slice(samples.length - maxSamples);
 
         const normalized = normalizeCaptureRMS(bounded);
+        const duration = normalized.length / sampleRate;
+
+        // Where the transmitted buffer sits on the wall clock. Derived from
+        // `markedAtSample`, which is exact, rather than from the instant the
+        // mark fired, which is only accurate to one 4096-sample buffer. That
+        // is 85ms at 48kHz, wider than the validator's whole lag search.
+        //
+        // Taking the far edge from `duration` rather than from the raw sample
+        // count makes canonicalisation and the transmitted-length bound fall
+        // out for free, whatever either did to the buffer. Which edge anchors
+        // depends on which end `bounded` kept: with a mark it slices from the
+        // head, without one from the tail.
+        const windowStartMs =
+          markedAtSample !== null
+            ? audioEpochMs + (markedAtSample / capturedSampleRate) * 1000
+            : audioEpochMs + (totalLength / capturedSampleRate) * 1000 - duration * 1000;
 
         resolve({
           samples: normalized,
           sampleRate,
-          duration: normalized.length / sampleRate,
+          duration,
+          windowStartMs,
+          windowEndMs: windowStartMs + duration * 1000,
           virtualDevice: isVirtual,
         });
       } catch {
@@ -331,6 +356,10 @@ export async function captureAudio(
           samples: new Float32Array(0),
           sampleRate: capturedSampleRate,
           duration: 0,
+          // An empty capture covers no window. Equal bounds are rejected
+          // downstream, so no contour gets built against a buffer that failed.
+          windowStartMs: audioEpochMs,
+          windowEndMs: audioEpochMs,
           virtualDevice: isVirtual,
         });
       }

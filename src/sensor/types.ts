@@ -15,6 +15,20 @@ export interface AudioCapture {
    * lead-in is trimmed or the transmitted-length cap bites.
    */
   duration: number;
+  /**
+   * Wall-clock instant, in the `performance.now()` domain, of the first sample
+   * in {@link samples}. This is the recorder's own start plus whatever the
+   * lead-in trim and the transmitted-length cap removed, so it tracks the audio
+   * actually handed over rather than the audio recorded.
+   *
+   * Every other modality has to be aligned to this. {@link MotionSample.timestamp}
+   * uses the same clock, so the two compare directly with no conversion. See
+   * `extractAccelerationMagnitude`, which correlates against the F0 contour
+   * derived from this exact buffer.
+   */
+  windowStartMs: number;
+  /** Wall-clock instant just past the last sample. `windowStartMs + duration * 1000`. */
+  windowEndMs: number;
   virtualDevice?: boolean;
 }
 

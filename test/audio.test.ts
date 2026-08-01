@@ -431,3 +431,85 @@ describe("captureAudio transmitted-length cap", () => {
     expect(result.samples[result.samples.length - 1000]!).toBeLessThan(0);
   });
 });
+
+/**
+ * Where the transmitted buffer sits on the wall clock.
+ *
+ * Every other modality is aligned to this. `accel_magnitude` is resampled onto
+ * it, then correlated against the F0 contour server-side, so if the window is
+ * wrong the coupling check is measuring two different moments. That is exactly
+ * what 4.0.0 shipped: the lead-in trim moved the audio and nothing told motion.
+ *
+ * Derived from `markedAtSample`, which is exact, rather than from the instant
+ * the mark fired, which is only accurate to one 4096-sample buffer. At 16 kHz
+ * that is 256 ms, five times the validator's whole lag search.
+ */
+describe("captureAudio reports the transmitted window", () => {
+  const RATE = 16_000;
+  const FRAME_MS = (4096 / RATE) * 1000; // 256ms per buffer
+
+  async function run(opts: { frames: number; markAfter?: number }) {
+    const g = globalThis as { AudioContext?: unknown };
+    const original = g.AudioContext;
+    g.AudioContext = MockAudioContext as unknown as typeof AudioContext;
+    try {
+      const stream = { getTracks: () => [{ stop() {} }] } as unknown as MediaStream;
+      const controller = new AbortController();
+      const windowController = new AbortController();
+      const pending = captureAudio({
+        stream,
+        signal: controller.signal,
+        captureWindowSignal: windowController.signal,
+        minDurationMs: 0,
+        maxDurationMs: 5000,
+      });
+      await new Promise((r) => setTimeout(r, 0));
+      const proc = MockAudioContext.lastProcessor!;
+
+      const beforeFirstFrame = performance.now();
+      for (let i = 0; i < opts.frames; i++) {
+        if (i === opts.markAfter) windowController.abort();
+        fireFrame(proc, 0.1);
+      }
+      controller.abort();
+      return { result: await pending, beforeFirstFrame };
+    } finally {
+      g.AudioContext = original;
+    }
+  }
+
+  it("anchors the window at the mark, one buffer behind the first frame", async () => {
+    // Mark after 3 buffers, so the trim drops 12,288 samples = 768ms, and the
+    // window opens 768ms after the audio itself began.
+    const { result, beforeFirstFrame } = await run({ frames: 10, markAfter: 3 });
+
+    const epoch = result.windowStartMs - 3 * FRAME_MS;
+    // The epoch is one buffer behind the first `onaudioprocess`, because a
+    // buffer is delivered only once it is full.
+    expect(epoch).toBeGreaterThanOrEqual(beforeFirstFrame - FRAME_MS - 50);
+    expect(epoch).toBeLessThanOrEqual(beforeFirstFrame - FRAME_MS + 50);
+
+    // 7 buffers survive the trim.
+    expect(result.duration).toBeCloseTo((7 * 4096) / RATE, 3);
+    expect(result.windowEndMs - result.windowStartMs).toBeCloseTo(result.duration * 1000, 3);
+  });
+
+  it("anchors on the far edge when the host never marked", async () => {
+    // No mark means nothing is trimmed, so the window covers the whole buffer
+    // and opens at the audio's own start rather than partway through it.
+    const { result, beforeFirstFrame } = await run({ frames: 10 });
+
+    expect(result.duration).toBeCloseTo((10 * 4096) / RATE, 3);
+    expect(result.windowStartMs).toBeGreaterThanOrEqual(beforeFirstFrame - FRAME_MS - 50);
+    expect(result.windowStartMs).toBeLessThanOrEqual(beforeFirstFrame - FRAME_MS + 50);
+  });
+
+  it("reports an empty window for a capture that produced nothing", async () => {
+    // No frames at all. Equal bounds make `extractAccelerationMagnitude`
+    // return no contour, so the coupling check skips rather than correlating
+    // against a buffer that never existed.
+    const { result } = await run({ frames: 0 });
+    expect(result.samples.length).toBe(0);
+    expect(result.windowEndMs - result.windowStartMs).toBe(0);
+  });
+});
