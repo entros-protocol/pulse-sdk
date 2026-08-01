@@ -22,8 +22,10 @@ import {
   extractTouchFeatures,
   extractMouseDynamics,
   extractAccelerationMagnitude,
+  describeCaptureTiming,
   MOTION_FEATURE_COUNT,
   TOUCH_FEATURE_COUNT,
+  type CaptureTiming,
 } from "./extraction/kinematic";
 import { fuseFeatures, fuseRawFeatures } from "./extraction/statistics";
 import { yieldToMainThread } from "./yield";
@@ -77,6 +79,11 @@ interface ExtractedFeatures {
    * Empty array when motion data is absent.
    */
   accelMagnitude: number[];
+  /**
+   * Observe-only summary of how motion sat against the audio window.
+   * `undefined` when there was no motion to describe. Logged, never judged.
+   */
+  captureTiming?: CaptureTiming;
 }
 
 /**
@@ -111,11 +118,19 @@ async function extractFeatures(data: SensorData): Promise<ExtractedFeatures> {
   const touchFeatures = extractTouchFeatures(data.touch);
   await yieldToMainThread();
 
-  // Align acceleration magnitude to the F0 frame count for direct cross-correlation.
-  // Empty if motion absent or F0 extraction produced no frames (e.g. silent capture).
+  // Resample acceleration magnitude onto the exact stretch of wall-clock time
+  // the transmitted audio covers, at the F0 frame count, so the validator's
+  // cross-correlation compares two views of one moment. Aligning by array
+  // index instead is what broke mobile in 4.0.0, when the lead-in trim left
+  // motion covering seconds that audio no longer did.
+  // Empty if motion absent, F0 extraction produced no frames (e.g. a silent
+  // capture), or motion does not span enough of the audio window.
   const accelMagnitude =
     hasMotion && f0Contour.length > 0
-      ? extractAccelerationMagnitude(data.motion, f0Contour.length)
+      ? extractAccelerationMagnitude(data.motion, f0Contour.length, {
+          startMs: data.audio.windowStartMs,
+          endMs: data.audio.windowEndMs,
+        })
       : [];
 
   return {
@@ -123,6 +138,15 @@ async function extractFeatures(data: SensorData): Promise<ExtractedFeatures> {
     normalized: fuseFeatures(audioFeatures, motionFeatures, touchFeatures),
     f0Contour,
     accelMagnitude,
+    // Described whenever motion exists, including when the contour above came
+    // back empty. That case is exactly the one worth being able to read.
+    captureTiming:
+      data.motion.length > 0
+        ? describeCaptureTiming(data.motion, {
+            startMs: data.audio.windowStartMs,
+            endMs: data.audio.windowEndMs,
+          })
+        : undefined,
   };
 }
 
@@ -330,6 +354,7 @@ async function extractFingerprintAndValidate(
     normalized: normalizedFeatures,
     f0Contour,
     accelMagnitude,
+    captureTiming,
   } = extracted;
 
   // Diagnostic: log feature vector composition. Block boundaries follow the
@@ -452,6 +477,12 @@ async function extractFingerprintAndValidate(
           // Optional + additive; older executors ignore it. `undefined` when no
           // outline was captured, and JSON.stringify then omits it entirely.
           curve_trace: curveTrace,
+          // Observe-only capture-timing summary: how the motion stream sat
+          // against the audio window `accel_magnitude` was resampled onto.
+          // Optional and additive. Older validators ignore the unknown field.
+          // Logged for calibration, never read by a check. See
+          // `describeCaptureTiming`.
+          capture_timing: captureTiming,
         },
         {
           headers: validateHeaders,
