@@ -1,0 +1,25 @@
+{
+  // Typecheck the test suite, which `tsconfig.json` excludes because `test/`
+  // must stay out of the emitted build.
+  //
+  // Without this, a test fixture constructing an SDK type is unchecked, and a
+  // required field added to that type is a runtime surprise rather than a
+  // compile error. That happened twice in two days: `AudioCapture` gained
+  // `windowStartMs`/`windowEndMs`, then `inputLevel`, and two fixtures kept
+  // building the old shape. The first time the mismatch degraded silently
+  // into an empty cross-modal contour, so the suite stayed green while no
+  // longer testing what it claimed to.
+  //
+  // Emit is off, so this only ever reports. Run via `npm run typecheck`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    // Relaxed for tests only. Indexing a fixture array of known length is
+    // idiomatic here and the strict form buys nothing. The property worth
+    // enforcing is that fixtures match the types they claim to build.
+    "noUncheckedIndexedAccess": false
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

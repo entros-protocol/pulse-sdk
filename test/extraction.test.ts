@@ -20,7 +20,15 @@ function makeAudio(opts: {
   const length = opts.length ?? 32000;
   const sampleRate = opts.sampleRate ?? 16000;
   const samples = opts.samples ?? randomAudio(length);
-  return { samples, sampleRate, duration: samples.length / sampleRate };
+  const duration = samples.length / sampleRate;
+  return {
+    samples,
+    sampleRate,
+    duration,
+    windowStartMs: 0,
+    windowEndMs: duration * 1000,
+    inputLevel: { rms: 0.07, peak: 0.1, gain: 1, gainClipped: false, voicedFrameRatio: 1 },
+  };
 }
 
 function randomAudio(length: number, amplitude = 0.3): Float32Array {

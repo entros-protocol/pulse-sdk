@@ -30,6 +30,7 @@ function validAudio(): AudioCapture {
     duration,
     windowStartMs: 0,
     windowEndMs: duration * 1000,
+    inputLevel: { rms: 0.07, peak: 0.1, gain: 1, gainClipped: false, voicedFrameRatio: 1 },
   };
 }
 
@@ -60,6 +61,7 @@ function validTouch(count = 20): TouchSample[] {
 
 function newSession() {
   const sdk = new PulseSDK({
+    cluster: "devnet",
     relayerUrl: "http://127.0.0.1:1",
     relayerApiKey: "test",
   });
@@ -137,6 +139,9 @@ describe("PulseSession.__injectSensorData — internal-build behavior", () => {
             samples: new Float32Array(100),
             sampleRate: 16000,
             duration: 0.01,
+            windowStartMs: 0,
+            windowEndMs: 10,
+            inputLevel: { rms: 0.07, peak: 0.1, gain: 1, gainClipped: false, voicedFrameRatio: 1 },
           },
           motion: validMotion(),
           touch: validTouch(),

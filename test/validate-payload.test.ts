@@ -10,9 +10,23 @@ const isInternalTestBuild = process.env.IAM_INTERNAL_TEST === "1";
 function validAudio(): AudioCapture {
   const samples = new Float32Array(20000);
   for (let i = 0; i < samples.length; i++) samples[i] = Math.sin(i * 0.01) * 0.1;
-  return { samples, sampleRate: 16000, duration: 1.25 };
+  const duration = samples.length / 16000;
+  // The window and `validMotion` share a zero-based clock, and the motion span
+  // covers the whole window. A fixture whose two streams disagree yields no
+  // contour, so the cross-modal fields of the payload would go untested by the
+  // suite whose subject is the payload. `tsconfig.json` excludes `test/`, so
+  // no type error says an `AudioCapture` here is incomplete.
+  return {
+    samples,
+    sampleRate: 16000,
+    duration,
+    windowStartMs: 0,
+    windowEndMs: duration * 1000,
+    inputLevel: { rms: 0.07, peak: 0.1, gain: 1, gainClipped: false, voicedFrameRatio: 1 },
+  };
 }
-function validMotion(count = 20): MotionSample[] {
+// 26 samples at 50ms spans 1250ms, exactly `validAudio`'s duration.
+function validMotion(count = 26): MotionSample[] {
   return Array.from({ length: count }, (_, i) => ({
     timestamp: i * 50,
     ax: Math.sin(i * 0.1) * 0.5,
@@ -42,7 +56,11 @@ const fakeWallet = { publicKey: { toBase58: () => "So111111111111111111111111111
 const fakeConnection = { getAccountInfo: async () => null };
 
 function newSession() {
-  const sdk = new PulseSDK({ relayerUrl: "https://executor.test", relayerApiKey: "test" });
+  const sdk = new PulseSDK({
+    cluster: "devnet",
+    relayerUrl: "https://executor.test",
+    relayerApiKey: "test",
+  });
   return sdk.createSession();
 }
 
