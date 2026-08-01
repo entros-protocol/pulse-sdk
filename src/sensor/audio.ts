@@ -1,8 +1,8 @@
 import type { AudioCapture, CaptureOptions } from "./types";
-import { MIN_CAPTURE_MS, MAX_CAPTURE_MS } from "../config";
+import { MIN_CAPTURE_MS, MAX_CAPTURE_MS, MAX_TRANSMITTED_CAPTURE_MS } from "../config";
 import { realFFT } from "../extraction/fft";
-
-const TARGET_SAMPLE_RATE = 16000;
+import { sdkWarn } from "../log";
+import { CANONICAL_SAMPLE_RATE, toCanonicalCapture } from "./resample";
 
 /**
  * Target RMS level the captured audio is normalized to before being
@@ -96,12 +96,13 @@ export async function captureAudio(
     maxDurationMs = MAX_CAPTURE_MS,
     onAudioLevel,
     onReady,
+    captureWindowSignal,
     stream: preAcquiredStream,
   } = options;
 
   const stream = preAcquiredStream ?? await navigator.mediaDevices.getUserMedia({
     audio: {
-      sampleRate: TARGET_SAMPLE_RATE,
+      sampleRate: CANONICAL_SAMPLE_RATE,
       channelCount: 1,
       // Capture without browser-side audio processing — preserves the
       // raw microphone signal for the SDK's downstream feature extraction
@@ -165,7 +166,7 @@ export async function captureAudio(
   let source: MediaStreamAudioSourceNode;
   let capturedSampleRate: number;
   try {
-    ctx = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
+    ctx = new AudioContext({ sampleRate: CANONICAL_SAMPLE_RATE });
     await ctx.resume(); // Required on iOS — AudioContext may be suspended outside user gesture
     capturedSampleRate = ctx.sampleRate;
     source = ctx.createMediaStreamSource(stream);
@@ -187,7 +188,40 @@ export async function captureAudio(
     const bufferSize = 4096;
     const processor = ctx.createScriptProcessor(bufferSize, 1, 1);
 
+    // Sample index at which the capture window opened. Everything before it is
+    // dead air recorded while the prompt was still coming up. Null means the
+    // host never signalled, in which case the whole buffer is kept.
+    //
+    // Same shape as the `signal` handling below, deliberately: check whether it
+    // has already fired, otherwise subscribe once. An AbortSignal cannot fire
+    // twice, so the mark is idempotent by construction rather than by a guard.
+    let markedAtSample: number | null = null;
+    const markWindowOpen = () => {
+      // Keyed on `stopped`, not on the session's stage state: the capture can
+      // close on its own `maxDurationMs` timer, which leaves the session still
+      // reading "capturing" so its guard stays silent. Without this the mark is
+      // recorded, never read, and the entire lead-in ships with no signal that
+      // the trim did not happen.
+      if (stopped) {
+        sdkWarn(
+          "[Entros SDK] Capture window signalled after the capture had already closed. Pre-prompt audio was not trimmed.",
+        );
+        return;
+      }
+      markedAtSample = chunks.reduce((sum, c) => sum + c.length, 0);
+    };
+    if (captureWindowSignal) {
+      if (captureWindowSignal.aborted) markWindowOpen();
+      else captureWindowSignal.addEventListener("abort", markWindowOpen, { once: true });
+    }
+
     let firstFrameSeen = false;
+    // Wall-clock instant of `collected[0]`, which is what every other modality
+    // gets aligned to. `onaudioprocess` fires once a buffer is full, so the
+    // audio in the first callback began one buffer before it arrived. Without
+    // this the only timestamps available are the recorder's own start, which
+    // precedes the microphone by a cold start of unknown length.
+    let audioEpochMs = startTime;
     processor.onaudioprocess = (e: AudioProcessingEvent) => {
       const data = e.inputBuffer.getChannelData(0);
       chunks.push(new Float32Array(data));
@@ -199,6 +233,7 @@ export async function captureAudio(
       // miss where the start of the phrase fell into dead air.
       if (!firstFrameSeen) {
         firstFrameSeen = true;
+        audioEpochMs = performance.now() - (data.length / capturedSampleRate) * 1000;
         onReady?.();
       }
 
@@ -212,7 +247,7 @@ export async function captureAudio(
     source.connect(processor);
     processor.connect(ctx.destination);
 
-    function stopCapture() {
+    async function stopCapture() {
       if (stopped) return;
       stopped = true;
       clearTimeout(maxTimer);
@@ -223,25 +258,111 @@ export async function captureAudio(
       stream.getTracks().forEach((t: MediaStreamTrack) => t.stop());
       ctx.close().catch(() => {});
 
-      const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
-      const samples = new Float32Array(totalLength);
-      let offset = 0;
-      for (const chunk of chunks) {
-        samples.set(chunk, offset);
-        offset += chunk.length;
+      // Everything from here allocates, and this function is only ever reached
+      // from a `setTimeout` callback, so a throw would not reject the promise.
+      // it would leave it unsettled and hang the capture with no error and no
+      // timeout. `maxTimer` is already cleared, so nothing would ever wake it.
+      // Resolving an empty capture instead fails `MIN_AUDIO_SAMPLES` honestly.
+      try {
+        const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
+        const collected = new Float32Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+          collected.set(chunk, offset);
+          offset += chunk.length;
+        }
+        // The chunk list is a second full copy of the audio, and the abort
+        // listener closes over it, so it outlives this function unless dropped.
+        // At 48 kHz for 60 s that is 11.5 MB held for nothing.
+        chunks.length = 0;
+
+        // Drop the lead-in before anything reads the buffer, so extraction and
+        // transmission see the same samples.
+        //
+        // `slice`, not `subarray`. A view would keep the whole pre-trim buffer
+        // alive behind it and hand callers a `Float32Array` whose `.buffer` is
+        // larger than its contents, which is a trap for anything reaching past
+        // `.length`. One copy per capture is not worth that.
+        //
+        // No upper guard on `markedAtSample`: `slice` clamps, and an empty
+        // result is the honest answer to "the window opened at the very end".
+        // Falling back to the untrimmed buffer there would fail open, silently
+        // transmitting the whole lead-in.
+        const raw =
+          markedAtSample !== null ? collected.slice(markedAtSample) : collected;
+
+        // Bring every capture to one canonical rate and bandwidth before
+        // anything reads it. The AudioContext above requests 16 kHz but
+        // browsers treat that as a hint, and feature extraction is rate-aware,
+        // so without this the same voice yields a different fingerprint
+        // depending on the browser. Every capture is filtered, including one
+        // already at 16 kHz: a browser that honoured the request has already
+        // resampled with its own filter, so short-circuiting would leave the
+        // last band-limiting step browser-dependent. See `resample.ts`.
+        //
+        // Strictly before `normalizeCaptureRMS`. Normalization targets an RMS
+        // the validator's VAD is calibrated against, and filtering a
+        // normalized buffer would move the level back off that target.
+        const { samples, sampleRate } = await toCanonicalCapture(
+          raw,
+          capturedSampleRate,
+        );
+
+        // Bound what leaves the device, mirroring the validator's own limit.
+        //
+        // Which end to keep depends on where the phrase is. With a mark,
+        // index 0 is the prompt and the phrase is at the front. Without one,
+        // every integrator who has not adopted `markCaptureStart`, index 0 is
+        // recorder start and the phrase is at the end, so keeping the head
+        // would delete the speech and leave the validator transcribing
+        // silence.
+        const maxSamples = Math.round((MAX_TRANSMITTED_CAPTURE_MS / 1000) * sampleRate);
+        const overruns =
+          Number.isFinite(maxSamples) && maxSamples > 0 && samples.length > maxSamples;
+        const bounded = !overruns
+          ? samples
+          : markedAtSample !== null
+            ? samples.slice(0, maxSamples)
+            : samples.slice(samples.length - maxSamples);
+
+        const normalized = normalizeCaptureRMS(bounded);
+        const duration = normalized.length / sampleRate;
+
+        // Where the transmitted buffer sits on the wall clock. Derived from
+        // `markedAtSample`, which is exact, rather than from the instant the
+        // mark fired, which is only accurate to one 4096-sample buffer. That
+        // is 85ms at 48kHz, wider than the validator's whole lag search.
+        //
+        // Taking the far edge from `duration` rather than from the raw sample
+        // count makes canonicalisation and the transmitted-length bound fall
+        // out for free, whatever either did to the buffer. Which edge anchors
+        // depends on which end `bounded` kept: with a mark it slices from the
+        // head, without one from the tail.
+        const windowStartMs =
+          markedAtSample !== null
+            ? audioEpochMs + (markedAtSample / capturedSampleRate) * 1000
+            : audioEpochMs + (totalLength / capturedSampleRate) * 1000 - duration * 1000;
+
+        resolve({
+          samples: normalized,
+          sampleRate,
+          duration,
+          windowStartMs,
+          windowEndMs: windowStartMs + duration * 1000,
+          virtualDevice: isVirtual,
+        });
+      } catch {
+        resolve({
+          samples: new Float32Array(0),
+          sampleRate: capturedSampleRate,
+          duration: 0,
+          // An empty capture covers no window. Equal bounds are rejected
+          // downstream, so no contour gets built against a buffer that failed.
+          windowStartMs: audioEpochMs,
+          windowEndMs: audioEpochMs,
+          virtualDevice: isVirtual,
+        });
       }
-
-      // Normalize loudness at the SDK source so feature extraction and
-      // the validator's Whisper path both operate on amplitude-stable
-      // input regardless of mic gain / distance / class.
-      const normalized = normalizeCaptureRMS(samples);
-
-      resolve({
-        samples: normalized,
-        sampleRate: capturedSampleRate,
-        duration: totalLength / capturedSampleRate,
-        virtualDevice: isVirtual,
-      });
     }
 
     const maxTimer = setTimeout(stopCapture, maxDurationMs);

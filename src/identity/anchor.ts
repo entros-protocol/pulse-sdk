@@ -93,16 +93,76 @@ function isPlaintextData(obj: unknown): obj is StoredVerificationData {
  * and bump the SDK minor version.
  */
 /**
+ * Byte length of the current `IdentityState` layout.
+ *
+ * 8 discriminator + 32 owner + 8 creation + 8 last_verification + 4 count +
+ * 2 trust_score + 32 commitment + 32 mint + 1 bump + 416 recent_timestamps +
+ * 8 last_reset + 32 new_wallet + 2 projection_version + 8 last_rebaseline.
+ */
+const IDENTITY_STATE_LEN = 593;
+
+/**
+ * Shortest account this module will decode.
+ *
+ * Every growth of `IdentityState` has appended to the end, so 543, 551 and 583
+ * are exact prefixes of the current 593 and zero-filling the tail reproduces
+ * what the program itself writes when it reallocs. Below 543 that stops being
+ * true: `recent_timestamps` held ten slots rather than fifty-two, so every
+ * offset after `bump` moves and padding would read one field's bytes as
+ * another's. Two such accounts exist on devnet and they stay unsupported
+ * rather than silently misread.
+ */
+const OLDEST_PREFIX_COMPATIBLE_LEN = 543;
+
+/**
+ * Grow a legacy account to the current layout by zero-filling the tail.
+ *
+ * Zero is the value the program's own realloc writes, and it is the correct
+ * default for every appended field: `last_reset_timestamp: 0` means never
+ * reset, `new_wallet` becomes the default pubkey, and `projection_version: 0`
+ * is the generation every existing baseline was built in.
+ */
+function padToCurrentLayout(accountData: Uint8Array): Uint8Array | null {
+  if (accountData.length >= IDENTITY_STATE_LEN) return accountData;
+  if (accountData.length < OLDEST_PREFIX_COMPATIBLE_LEN) return null;
+  // Anchor's Borsh layouts call `readUIntLE`, which only a Node `Buffer` has,
+  // so a plain `Uint8Array` decodes to null at any length, full ones included.
+  // Callers pass `accountInfo.data` and web3.js hands that over as a Buffer, so
+  // the padded copy has to be one too.
+  //
+  // Reached through `globalThis` rather than named directly: `Buffer` is not in
+  // this package's type surface and should not be, since the SDK targets the
+  // browser. Anchor itself cannot run without the polyfill, so wherever this
+  // decode can succeed the constructor is already present, and the fallback is
+  // belt and braces.
+  const NodeBuffer = (globalThis as { Buffer?: { alloc(size: number): Uint8Array } })
+    .Buffer;
+  const grown = NodeBuffer
+    ? NodeBuffer.alloc(IDENTITY_STATE_LEN)
+    : new Uint8Array(IDENTITY_STATE_LEN);
+  grown.set(accountData);
+  return grown;
+}
+
+/**
  * Decode raw IdentityState account bytes into the public shape. Split out of
  * `fetchIdentityState` so a caller that already holds the account data (e.g.
  * the verify flow's existence check) can read the chain-head commitment
  * WITHOUT a second RPC round-trip. Returns null on a decode miss (wrong/stale
  * layout) — the same swallow contract as `fetchIdentityState`.
+ *
+ * Accounts written before a field was appended are padded rather than
+ * rejected. Refusing them cost more than a missing field: `recoverBaselineFromChain`
+ * reads the identity before it fetches the encrypted baseline, so a decode
+ * failure made cross-device recovery impossible for every anchor minted before
+ * the layout last grew, including the ones holding a perfectly valid blob.
  */
 export async function decodeIdentityState(
   accountData: Uint8Array
 ): Promise<IdentityState | null> {
   try {
+    const data = padToCurrentLayout(accountData);
+    if (!data) return null;
     const anchor = await import("@coral-xyz/anchor");
     const coder = new anchor.BorshAccountsCoder(entrosAnchorIdl as Idl);
     // Anchor 0.30+ IDL spec: account names are PascalCase and the
@@ -117,7 +177,7 @@ export async function decodeIdentityState(
     // coder's own parameter type rather than naming `Buffer`.
     const decoded = coder.decode(
       "IdentityState",
-      accountData as Parameters<typeof coder.decode>[1],
+      data as Parameters<typeof coder.decode>[1],
     );
     return {
       owner: decoded.owner.toBase58(),

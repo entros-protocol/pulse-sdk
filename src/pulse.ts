@@ -1,11 +1,15 @@
 import type { PulseConfig } from "./config";
-import { DEFAULT_THRESHOLD, DEFAULT_MIN_DISTANCE, DEFAULT_CAPTURE_MS, AUDIO_READY_TIMEOUT_MS, PROGRAM_IDS } from "./config";
+import { DEFAULT_THRESHOLD, DEFAULT_MIN_DISTANCE, DEFAULT_CAPTURE_MS, AUDIO_READY_TIMEOUT_MS, PROGRAM_IDS, VALIDATE_UPLOAD_STALL_MS, VALIDATE_DEADLINE_MS } from "./config";
 import { setDebug, sdkLog, sdkWarn } from "./log";
 import type { SensorData, AudioCapture, MotionSample, TouchSample, StageState, CurveTracePoint } from "./sensor/types";
 import type { TBH } from "./hashing/types";
 import type { SolanaProof } from "./proof/types";
-import type { SignedReceiptDto, VerificationResult } from "./submit/types";
+import type { SignedReceiptDto, VerificationResult, ProgressCallback } from "./submit/types";
+import type { PostJsonResponse } from "./transport/post-json";
+import { postJson, TransportError } from "./transport/post-json";
 import type { StoredVerificationData } from "./identity/types";
+import type { VerificationPhase } from "./phases";
+import type { BaselineRecoveryReason } from "./identity/anchor";
 
 import { captureAudio, analyzeAcousticRealism } from "./sensor/audio";
 import { encodeAudioAsBase64 } from "./sensor/encode";
@@ -18,8 +22,10 @@ import {
   extractTouchFeatures,
   extractMouseDynamics,
   extractAccelerationMagnitude,
+  describeCaptureTiming,
   MOTION_FEATURE_COUNT,
   TOUCH_FEATURE_COUNT,
+  type CaptureTiming,
 } from "./extraction/kinematic";
 import { fuseFeatures, fuseRawFeatures } from "./extraction/statistics";
 import { yieldToMainThread } from "./yield";
@@ -73,6 +79,11 @@ interface ExtractedFeatures {
    * Empty array when motion data is absent.
    */
   accelMagnitude: number[];
+  /**
+   * Observe-only summary of how motion sat against the audio window.
+   * `undefined` when there was no motion to describe. Logged, never judged.
+   */
+  captureTiming?: CaptureTiming;
 }
 
 /**
@@ -107,11 +118,19 @@ async function extractFeatures(data: SensorData): Promise<ExtractedFeatures> {
   const touchFeatures = extractTouchFeatures(data.touch);
   await yieldToMainThread();
 
-  // Align acceleration magnitude to the F0 frame count for direct cross-correlation.
-  // Empty if motion absent or F0 extraction produced no frames (e.g. silent capture).
+  // Resample acceleration magnitude onto the exact stretch of wall-clock time
+  // the transmitted audio covers, at the F0 frame count, so the validator's
+  // cross-correlation compares two views of one moment. Aligning by array
+  // index instead is what broke mobile in 4.0.0, when the lead-in trim left
+  // motion covering seconds that audio no longer did.
+  // Empty if motion absent, F0 extraction produced no frames (e.g. a silent
+  // capture), or motion does not span enough of the audio window.
   const accelMagnitude =
     hasMotion && f0Contour.length > 0
-      ? extractAccelerationMagnitude(data.motion, f0Contour.length)
+      ? extractAccelerationMagnitude(data.motion, f0Contour.length, {
+          startMs: data.audio.windowStartMs,
+          endMs: data.audio.windowEndMs,
+        })
       : [];
 
   return {
@@ -119,6 +138,15 @@ async function extractFeatures(data: SensorData): Promise<ExtractedFeatures> {
     normalized: fuseFeatures(audioFeatures, motionFeatures, touchFeatures),
     f0Contour,
     accelMagnitude,
+    // Described whenever motion exists, including when the contour above came
+    // back empty. That case is exactly the one worth being able to read.
+    captureTiming:
+      data.motion.length > 0
+        ? describeCaptureTiming(data.motion, {
+            startMs: data.audio.windowStartMs,
+            endMs: data.audio.windowEndMs,
+          })
+        : undefined,
   };
 }
 
@@ -154,7 +182,130 @@ type ExtractionResult =
       signedReceipt?: SignedReceiptDto;
       compositeRiskScore?: number;
     }
-  | { ok: false; error: string; reason?: string };
+  | {
+      ok: false;
+      error: string;
+      reason?: string;
+      retryAfterSec?: number;
+      failedAt: VerificationPhase;
+      opaque?: boolean;
+    };
+
+/**
+ * Turn a non-2xx `/validate-features` response into a rejection the host can
+ * act on.
+ *
+ * Every non-2xx used to take one branch here, so a 413, a 429 and a 502 were
+ * indistinguishable by the time they reached a host. The web app recovered
+ * rate-limiting downstream by substring-matching the words "too many" in the
+ * server's English prose, which meant any copy edit on the server silently
+ * regressed the rate-limit UI to a generic failure. Reading the status makes
+ * that unnecessary.
+ *
+ * Unrecognised server reasons pass through untouched. `reasonDisposition`
+ * treats what it does not know as fatal, so a newer server can add a reason
+ * without an old client mistakenly offering a retry for it.
+ */
+function rejectionFromStatus(response: PostJsonResponse): ExtractionResult {
+  const body = response.body as {
+    error?: unknown;
+    reason?: unknown;
+    retry_after?: unknown;
+  };
+  const serverError = typeof body.error === "string" ? body.error : undefined;
+  const serverReason = typeof body.reason === "string" ? body.reason : undefined;
+
+  // Body before header. Cross-origin a browser only sees headers the server
+  // lists in `Access-Control-Expose-Headers`, and the executor does not list
+  // `retry-after`, which is why it puts the value in the body as well.
+  const headerRetry = Number(response.header("retry-after"));
+  const retryAfterSec =
+    typeof body.retry_after === "number" && body.retry_after > 0
+      ? body.retry_after
+      : Number.isFinite(headerRetry) && headerRetry > 0
+        ? headerRetry
+        : undefined;
+
+  // XHR reports 0 for a request that never produced a response. The spec
+  // routes CORS, DNS and TLS failures to `onerror`, so the transport catches
+  // them first and this is unreachable on the browser path. It is here so a
+  // runtime that does surface a 0 cannot land in the final branch and tell
+  // the user their capture failed validation when no server ever judged it.
+  if (response.status === 0) {
+    sdkWarn("[Entros SDK] Validation request produced no response");
+    return {
+      ok: false,
+      error: "Validation service unreachable. Please check your connection and try again.",
+      reason: "validation_unavailable",
+      failedAt: "validation",
+    };
+  }
+
+  // The executor returns 408 when the request body stopped arriving and its
+  // timeout layer reclaimed the connection. Distinct from 413: nothing was
+  // wrong with the capture, so this must not consume a verification attempt.
+  if (response.status === 408) {
+    sdkWarn("[Entros SDK] Validation request body timed out in transit");
+    return {
+      ok: false,
+      error:
+        "The connection stalled while sending your verification. Move somewhere with better signal and try again.",
+      reason: "validation_timeout",
+      failedAt: "validation",
+    };
+  }
+
+  if (response.status === 413) {
+    sdkWarn("[Entros SDK] Verification payload rejected as too large");
+    return {
+      ok: false,
+      error:
+        serverError ?? "Your verification data was too large to send. Please start over.",
+      reason: "payload_too_large",
+      failedAt: "validation",
+    };
+  }
+
+  if (response.status === 429) {
+    sdkWarn("[Entros SDK] Verification rate limited");
+    return {
+      ok: false,
+      error: serverError ?? "Too many requests. Please wait before trying again.",
+      // `rate_limited`, `ip_rate_limited` and `cross_wallet_cooldown` all
+      // arrive as 429 and mean different waits, so keep whichever the server
+      // named rather than flattening them.
+      reason: serverReason ?? "rate_limited",
+      retryAfterSec,
+      failedAt: "validation",
+    };
+  }
+
+  if (response.status >= 500) {
+    // The server is unwell, not the capture. Transient, so retryable.
+    sdkWarn(`[Entros SDK] Validation service returned HTTP ${response.status}`);
+    return {
+      ok: false,
+      error: "Validation service is temporarily unavailable. Please try again.",
+      reason: "validation_unavailable",
+      failedAt: "validation",
+    };
+  }
+
+  sdkWarn("[Entros SDK] Feature validation rejected by server");
+  return {
+    ok: false,
+    error: serverError ?? "Feature validation failed",
+    reason: serverReason,
+    retryAfterSec,
+    failedAt: "validation",
+    // A rejection the validator declined to label is an attack-signal
+    // rejection: Sybil match, synthetic speech, or one of the checks it keeps
+    // deliberately unnamed. The generic body it returns is all a host may
+    // show. A labelled rejection names a capture-quality problem the user can
+    // act on, so its text is safe.
+    opaque: serverReason === undefined,
+  };
+}
 
 /**
  * Shared front half of the verification pipeline, covering feature
@@ -172,7 +323,7 @@ async function extractFingerprintAndValidate(
   sensorData: SensorData,
   config: ResolvedConfig,
   walletAddress: string | undefined,
-  onProgress?: (stage: string) => void,
+  onProgress?: ProgressCallback,
 ): Promise<ExtractionResult> {
   onProgress?.("Extracting features...");
   // Let React render the new stage label before we re-enter the heavy
@@ -181,12 +332,30 @@ async function extractFingerprintAndValidate(
   // the spinner can repaint, and the user sees the previous stage's
   // label until extraction completes.
   await yieldToMainThread();
+  // Extraction throws on malformed or unusable capture data, and that throw
+  // used to escape `complete()` entirely, reaching the host as a bare string
+  // with no phase, no reason and nothing to route on. Turning it into a
+  // result keeps every failure on one typed surface.
+  let extracted: ExtractedFeatures;
+  try {
+    extracted = await extractFeatures(sensorData);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    sdkWarn(`[Entros SDK] Feature extraction failed: ${msg}`);
+    return {
+      ok: false,
+      error:
+        "We couldn't read the capture from your device. Start over and let the recording run to the end.",
+      failedAt: "extraction",
+    };
+  }
   const {
     raw: features,
     normalized: normalizedFeatures,
     f0Contour,
     accelMagnitude,
-  } = await extractFeatures(sensorData);
+    captureTiming,
+  } = extracted;
 
   // Diagnostic: log feature vector composition. Block boundaries follow the
   // v2 layout, derived from the canonical per-modality counts so any future
@@ -238,12 +407,15 @@ async function extractFingerprintAndValidate(
       // nonce). If audio is absent, the validation service skips the
       // phrase check — preserving backward compatibility for older SDKs.
       //
-      // We also transmit the actual `sampleRate` from the capture — browsers
-      // occasionally ignore the 16kHz AudioContext request (Safari with
-      // Bluetooth codec negotiation, some Android devices) and deliver 44.1k
-      // or 48k. The validator resamples to 16kHz internally before feeding
-      // Whisper, so transmitting the true rate avoids silent transcription
-      // quality loss.
+      // We also transmit the `sampleRate` of the buffer. Browsers treat the
+      // 16kHz AudioContext request as a hint and some (Safari with Bluetooth
+      // codec negotiation, some Android devices) deliver 44.1k or 48k
+      // instead, so `sensor/audio.ts` decimates every capture to the
+      // canonical 16kHz before extraction and before this encode. The field
+      // therefore reads 16000 for any device that honoured the request and
+      // any device that did not; it is transmitted rather than assumed so an
+      // older client that predates that decimation still describes itself
+      // accurately to the validator.
       const audioSamplesB64 = sensorData.audio?.samples
         ? encodeAudioAsBase64(sensorData.audio.samples)
         : undefined;
@@ -283,16 +455,9 @@ async function extractFingerprintAndValidate(
         };
       }
 
-      // Server-side transcription adds ~1s to the validation round trip.
-      // Extend timeout from 10s to 15s to tolerate cold-start model load
-      // without aborting on legitimate requests.
-      const validateController = new AbortController();
-      const validateTimer = setTimeout(() => validateController.abort(), 15_000);
-
-      const validateResponse = await fetch(validateUrl, {
-        method: "POST",
-        headers: validateHeaders,
-        body: JSON.stringify({
+      const validateResponse = await postJson(
+        validateUrl,
+        {
           features,
           f0_contour: f0Contour,
           accel_magnitude: accelMagnitude,
@@ -312,20 +477,28 @@ async function extractFingerprintAndValidate(
           // Optional + additive; older executors ignore it. `undefined` when no
           // outline was captured, and JSON.stringify then omits it entirely.
           curve_trace: curveTrace,
-        }),
-        signal: validateController.signal,
-      });
+          // Observe-only capture-timing summary: how the motion stream sat
+          // against the audio window `accel_magnitude` was resampled onto.
+          // Optional and additive. Older validators ignore the unknown field.
+          // Logged for calibration, never read by a check. See
+          // `describeCaptureTiming`.
+          capture_timing: captureTiming,
+        },
+        {
+          headers: validateHeaders,
+          stallMs: VALIDATE_UPLOAD_STALL_MS,
+          deadlineMs: VALIDATE_DEADLINE_MS,
+          onUploadProgress: (loaded, total) => {
+            // Same stage label as before. `popup-content.tsx` matches on
+            // these strings to drive the embed wire protocol's heartbeat, so
+            // the text is API. The progress argument is additive.
+            onProgress?.("Validating...", total > 0 ? { loaded, total } : undefined);
+          },
+        },
+      );
 
-      clearTimeout(validateTimer);
-
-      if (!validateResponse.ok) {
-        const errorBody = await validateResponse.json().catch(() => ({}));
-        sdkWarn("[Entros SDK] Feature validation rejected by server");
-        return {
-          ok: false,
-          error: (errorBody as Record<string, string>).error || "Feature validation failed",
-          reason: (errorBody as Record<string, string>).reason,
-        };
+      if (validateResponse.status < 200 || validateResponse.status >= 300) {
+        return rejectionFromStatus(validateResponse);
       }
 
       // Parse the validator's success body for the signed receipt and the
@@ -335,7 +508,7 @@ async function extractFingerprintAndValidate(
       // `validator_pubkey` is configured, so a pre-receipt validator must be
       // upgraded before that mint path is exercised.
       try {
-        const successBody = (await validateResponse.json()) as {
+        const successBody = validateResponse.body as {
           signed_receipt?: SignedReceiptDto;
           commitment_hex?: string;
           salt_hex?: string;
@@ -390,20 +563,32 @@ async function extractFingerprintAndValidate(
         );
       }
     } catch (err) {
-      // Network failure / timeout / abort. Previously this silently
+      // The request never produced a response. Previously this path silently
       // continued and skipped server-side validation, which let a
-      // network-failure attacker bypass server-side checks entirely.
-      // Return as a recoverable error instead;
-      // the host app can surface a retry CTA. The reason category
-      // `validation_unavailable` is client-side only (distinct from
-      // any server-side `ReasonCode`) and is intended for soft-fail
-      // UX similar to a transient network error.
+      // network-failure attacker bypass server-side checks entirely, so it
+      // returns a recoverable error and the host surfaces a retry CTA.
+      //
+      // The four transport failures used to collapse into one string, which
+      // is how a slow uplink came to be reported as an unreachable service.
+      // A timeout says something different from an unreachable host, and the
+      // user can act on the difference.
       const msg = err instanceof Error ? err.message : String(err);
+      if (err instanceof TransportError && (err.kind === "stalled" || err.kind === "deadline")) {
+        sdkWarn(`[Entros SDK] Feature validation timed out: ${msg}`);
+        return {
+          ok: false,
+          error:
+            "The connection stalled while sending your verification. Move somewhere with better signal and try again.",
+          reason: "validation_timeout",
+          failedAt: "validation",
+        };
+      }
       sdkWarn(`[Entros SDK] Feature validation unavailable: ${msg}`);
       return {
         ok: false,
         error: "Validation service unreachable. Please check your connection and try again.",
         reason: "validation_unavailable",
+        failedAt: "validation",
       };
     }
   }
@@ -471,13 +656,66 @@ async function buildEncryptedBaselineBlobBestEffort(
   }
 }
 
+/**
+ * Explain why a re-verification cannot proceed without a baseline.
+ *
+ * One screen used to cover every one of these, which was wrong for most of the
+ * population it was shown to. Only 13 of 107 anchors on devnet have an
+ * `EncryptedBaseline` PDA at all: the rest were minted before the feature
+ * existed, and telling those users that a fingerprint was "not found on this
+ * device" describes a search that could never have succeeded and points at a
+ * device that was never at fault.
+ *
+ * Each branch names the actual obstacle and the way past it. The substrings
+ * `different wallet signed`, `out of sync with your on-chain identity` and
+ * `baseline is missing` are a routing contract with `entros.io`, which matches
+ * them to pick a surface. They stay until every host reads
+ * `VerificationResult.baselineRecovery` instead.
+ */
+function baselineFailureMessage(
+  reason: BaselineRecoveryReason | undefined,
+  localIsStale: boolean,
+): string {
+  switch (reason) {
+    case "wallet-mismatch":
+      // The on-chain baseline is intact. This one must not offer a reset.
+      return (
+        "A different wallet signed than the one connected. Another wallet extension likely intercepted the signature prompt. " +
+        "Sign with your connected wallet, or disable other wallet extensions (or unset their default), then try again."
+      );
+    case "no-encrypted-baseline":
+      return (
+        "Your Entros Anchor was created before on-chain baseline storage existed, so the local baseline is missing and there is no encrypted copy on chain to restore it from. " +
+        "Reset your baseline once from this device and it becomes recoverable on any device."
+      );
+    case "signing-unavailable":
+      return (
+        "This wallet cannot sign the message that unlocks your on-chain baseline, so the local baseline is missing and cannot be restored here. " +
+        "Connect a wallet that supports message signing, or reset your baseline to re-enrol from this device."
+      );
+    case "stale-baseline":
+      return (
+        "Your on-chain baseline was written under an earlier verification and can no longer be unlocked, so the local baseline is missing. " +
+        "Reset your baseline to re-enrol from this device."
+      );
+    default:
+      // `no-on-chain-identity`, `unknown-error`, and the walletless path where
+      // recovery was never attempted.
+      return localIsStale
+        ? "Your baseline is out of sync with your on-chain identity. It may have advanced on another browser or device. " +
+            "Reset your baseline to re-sync from here, or verify from the device with the up-to-date baseline."
+        : "Previous behavioral fingerprint not found on this device. Your Entros Anchor exists on-chain but the local baseline is missing. " +
+            "Reset your baseline to re-enroll from this device, or verify from the device that has the original baseline.";
+  }
+}
+
 async function processSensorData(
   sensorData: SensorData,
   config: ResolvedConfig,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Solana types are optional peer deps
   wallet?: any,
   connection?: any,
-  onProgress?: (stage: string) => void,
+  onProgress?: ProgressCallback,
 ): Promise<VerificationResult> {
   // Data quality gate: reject if insufficient behavioral data captured
   const audioSamples = sensorData.audio?.samples.length ?? 0;
@@ -495,6 +733,7 @@ async function processSensorData(
       commitment: new Uint8Array(32),
       isFirstVerification: true,
       error: "Insufficient behavioral data. Please speak the phrase and trace the curve during capture.",
+      failedAt: "capture",
     };
   }
 
@@ -504,6 +743,7 @@ async function processSensorData(
       commitment: new Uint8Array(32),
       isFirstVerification: true,
       error: "No voice data detected. Please speak the phrase clearly during capture.",
+      failedAt: "capture",
     };
   }
 
@@ -541,6 +781,7 @@ async function processSensorData(
       commitment: new Uint8Array(32),
       isFirstVerification: false,
       error: "Insufficient sensor data for re-verification. Please trace the curve and allow motion access.",
+      failedAt: "capture",
     };
   }
 
@@ -557,6 +798,9 @@ async function processSensorData(
       isFirstVerification: false,
       error: extraction.error,
       reason: extraction.reason,
+      retryAfterSec: extraction.retryAfterSec,
+      failedAt: extraction.failedAt,
+      opaque: extraction.opaque,
     };
   }
   const { fingerprint, tbh, features, signedReceipt, compositeRiskScore } = extraction;
@@ -637,7 +881,7 @@ async function processSensorData(
   // commitment, so the rebuilt proof's `commitment_prev` equals the chain
   // head. Requires the wallet to sign for AES key derivation; the
   // session-cached key short-circuits a second prompt (master-list #98).
-  let walletMismatch = false;
+  let recoveryReason: BaselineRecoveryReason | undefined;
   if (
     !isFirstVerification &&
     (previousData === null || localBaselineStale) &&
@@ -645,7 +889,20 @@ async function processSensorData(
     connection
   ) {
     const baselineWallet = resolveBaselineWallet(wallet);
-    if (baselineWallet) {
+    if (!baselineWallet) {
+      // The adapter cannot sign a message, so the key that decrypts the
+      // on-chain blob cannot be derived and recovery is never attempted.
+      //
+      // This branch used to fall through in total silence. Its only trace was
+      // an `sdkLog` that never ran, because both `sdkLog` and `sdkWarn` are
+      // gated on `debug` and `entros.io` derives `debug` from
+      // `NODE_ENV === "development"`. In production it was indistinguishable
+      // from every other reason recovery might not have happened, and the user
+      // was told their baseline was missing with no way to learn why. A louder
+      // log would not have fixed that either, since nobody reads a console:
+      // the reason travels in the result instead.
+      recoveryReason = "signing-unavailable";
+    } else {
       onProgress?.(
         localBaselineStale
           ? "Re-syncing baseline with chain..."
@@ -658,14 +915,14 @@ async function processSensorData(
           `[Entros SDK] On-chain encrypted baseline ${localBaselineStale ? "re-synced" : "recovered"}`
         );
       } else {
-        // `wallet-mismatch` is distinct from a missing/stale baseline: the
-        // on-chain baseline is intact, but a different wallet signed the
-        // key-derivation prompt (commonly another extension set as the browser
-        // default), so the AES key couldn't be derived. Surface it so the UI
-        // prompts a wallet switch instead of a destructive reset.
-        walletMismatch = recovery.reason === "wallet-mismatch";
+        // All six reasons are kept, not just `wallet-mismatch`. Collapsing the
+        // other five put three different situations on one screen: an anchor
+        // that predates on-chain baselines entirely, a blob that can no longer
+        // be decrypted, and a wallet that cannot sign. Each has a different
+        // way out, and the user was shown none of them.
+        recoveryReason = recovery.reason ?? "unknown-error";
         sdkLog(
-          `[Entros SDK] On-chain encrypted baseline recovery not available (${recovery.reason ?? "unknown"})`,
+          `[Entros SDK] On-chain encrypted baseline recovery not available (${recoveryReason})`,
         );
       }
     }
@@ -677,36 +934,13 @@ async function processSensorData(
   const baselineStillStale = isBaselineStale(previousData);
 
   if (!isFirstVerification && (previousData === null || baselineStillStale)) {
-    if (walletMismatch) {
-      // Contract: entros.io `categorizeFailure` matches "different wallet
-      // signed" to route this to a no-reset "wrong wallet" surface.
-      return {
-        success: false,
-        commitment: tbh.commitmentBytes,
-        isFirstVerification: false,
-        error:
-          "A different wallet signed than the one connected. Another wallet extension likely intercepted the signature prompt. Sign with your connected wallet, or disable other wallet extensions (or unset their default), then try again.",
-      };
-    }
-    if (baselineStillStale) {
-      // Local baseline is behind the on-chain verification chain and could
-      // not be re-synced from the on-chain EncryptedBaseline (none stored, a
-      // prior reset cycle, or signing unavailable). Contract: entros.io
-      // `categorizeFailure` matches "out of sync with your on-chain identity"
-      // to route this to the no-data-loss "reset to re-sync" surface.
-      return {
-        success: false,
-        commitment: tbh.commitmentBytes,
-        isFirstVerification: false,
-        error:
-          "Your baseline is out of sync with your on-chain identity. It may have advanced on another browser or device. Reset your baseline to re-sync from here, or verify from the device with the up-to-date baseline.",
-      };
-    }
     return {
       success: false,
       commitment: tbh.commitmentBytes,
       isFirstVerification: false,
-      error: "Previous behavioral fingerprint not found on this device. Your Entros Anchor exists on-chain but the local baseline is missing. Reset your baseline to re-enroll from this device, or verify from the device that has the original baseline.",
+      error: baselineFailureMessage(recoveryReason, baselineStillStale),
+      failedAt: "baseline",
+      baselineRecovery: recoveryReason,
     };
   }
 
@@ -742,6 +976,7 @@ async function processSensorData(
         isFirstVerification: false,
         error:
           "This capture didn't closely match your usual pattern. That can happen when the recording is interrupted or your movements are rushed. Please try again with a steady, uninterrupted capture.",
+        failedAt: "proving",
       };
     }
     if (verdict === "below_min_distance") {
@@ -753,6 +988,11 @@ async function processSensorData(
         commitment: tbh.commitmentBytes,
         isFirstVerification: false,
         error: "Verification rejected. Please try again.",
+        failedAt: "proving",
+        // The replay floor is an attack signal, so it must read exactly like a
+        // validator rejection in `validation` and a program revert in
+        // `confirmation`. An honest phase is only safe alongside this flag.
+        opaque: true,
       };
     }
 
@@ -772,6 +1012,7 @@ async function processSensorData(
         commitment: tbh.commitmentBytes,
         isFirstVerification: false,
         error: "Re-verification requires wasmUrl and zkeyUrl in PulseConfig. Host the entros_hamming.wasm and entros_hamming_final.zkey circuit artifacts at public URLs.",
+        failedAt: "proving",
       };
     }
 
@@ -809,6 +1050,7 @@ async function processSensorData(
         isFirstVerification: false,
         error:
           "We couldn't generate the verification proof. Check your connection and try again.",
+        failedAt: "proving",
       };
     }
   }
@@ -816,6 +1058,12 @@ async function processSensorData(
   // Submit
   onProgress?.("Submitting to Solana...");
   let submission;
+  // Whether this verification also wrote the portable on-chain copy of the
+  // baseline. Hoisted out of the wallet branch so the result can report it:
+  // a verification that advances the commitment without rewriting the blob is
+  // how an identity quietly stops being recoverable anywhere else, and the
+  // user found out about it on their next device rather than here.
+  let portableBaseline: boolean | undefined;
 
   if (wallet && connection) {
     // Best-effort: build the encrypted-baseline blob bound to the NEW
@@ -829,6 +1077,7 @@ async function processSensorData(
       tbh.salt,
       tbh.commitmentBytes,
     );
+    portableBaseline = encryptedBaselineBlob !== undefined;
 
     if (isFirstVerification) {
       // Pass the validator-signed receipt (when present) so submitViaWallet
@@ -847,6 +1096,7 @@ async function processSensorData(
           relayerApiKey: config.relayerApiKey,
           signedReceipt,
           encryptedBaselineBlob,
+          onProgress: (stage) => onProgress?.(stage),
         }
       );
     } else {
@@ -857,6 +1107,7 @@ async function processSensorData(
         relayerUrl: config.relayerUrl,
         relayerApiKey: config.relayerApiKey,
         encryptedBaselineBlob,
+        onProgress: (stage) => onProgress?.(stage),
       });
     }
   } else if (config.relayerUrl) {
@@ -871,17 +1122,32 @@ async function processSensorData(
       commitment: tbh.commitmentBytes,
       isFirstVerification,
       error: "No submission path available. Pass wallet+connection to verify() for wallet-connected mode, or set relayerUrl in PulseConfig for walletless mode.",
+      failedAt: "submission",
     };
   }
 
-  // Store verification data locally for next re-verification
+  // Store verification data locally for next re-verification.
+  //
+  // A throw here must not discard a verification the chain already accepted.
+  // Storage fails for reasons that have nothing to do with the capture: a full
+  // quota, a private-browsing mode, a wiped keystore. Unlike the reset path,
+  // which cannot leave the user with a usable identity if this fails, a verify
+  // that loses its local copy is recoverable. The next attempt finds no local
+  // baseline and pulls the encrypted one from chain.
   if (submission.success) {
-    await storeVerificationData({
-      fingerprint: tbh.fingerprint,
-      salt: tbh.salt.toString(),
-      commitment: tbh.commitment.toString(),
-      timestamp: Date.now(),
-    }, walletAddress);
+    try {
+      await storeVerificationData({
+        fingerprint: tbh.fingerprint,
+        salt: tbh.salt.toString(),
+        commitment: tbh.commitment.toString(),
+        timestamp: Date.now(),
+      }, walletAddress);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      sdkWarn(
+        `[Entros SDK] Verification confirmed on chain but the local baseline could not be saved. The next verification will recover it from chain: ${msg}`,
+      );
+    }
   }
 
   return {
@@ -891,6 +1157,20 @@ async function processSensorData(
     attestationTx: submission.attestationTx,
     isFirstVerification,
     error: submission.error,
+    // Only meaningful when the transaction landed. On a failure nothing was
+    // written, so reporting `true` here would describe an instruction that was
+    // built and then thrown away.
+    portableBaseline: submission.success ? portableBaseline : undefined,
+    failedAt: submission.failedAt,
+    // A program revert has to read like a validator rejection, or which layer
+    // caught the attempt becomes calibration information. A host may still
+    // match `Custom 6011` and `Custom 6012` first: those name protocol state
+    // the user has to act on, not the outcome of a detection check.
+    //
+    // Only `confirmation` qualifies, and by construction it is only ever set
+    // when the cluster reported an execution failure. A declined prompt or a
+    // network problem carries a message that is safe to show.
+    opaque: submission.failedAt === "confirmation",
     compositeRiskScore,
   };
 }
@@ -910,7 +1190,7 @@ async function processResetSensorData(
   config: ResolvedConfig,
   wallet: any,
   connection: any,
-  onProgress?: (stage: string) => void,
+  onProgress?: ProgressCallback,
 ): Promise<VerificationResult> {
   const audioSamples = sensorData.audio?.samples.length ?? 0;
   const motionSamples = sensorData.motion.length;
@@ -926,6 +1206,7 @@ async function processResetSensorData(
       commitment: new Uint8Array(32),
       isFirstVerification: true,
       error: "Insufficient behavioral data. Please speak the phrase and trace the curve during capture.",
+      failedAt: "capture",
     };
   }
 
@@ -935,6 +1216,7 @@ async function processResetSensorData(
       commitment: new Uint8Array(32),
       isFirstVerification: true,
       error: "No voice data detected. Please speak the phrase clearly during capture.",
+      failedAt: "capture",
     };
   }
 
@@ -946,6 +1228,7 @@ async function processResetSensorData(
       commitment: new Uint8Array(32),
       isFirstVerification: true,
       error: "Insufficient sensor data for baseline reset. Please trace the curve and allow motion access.",
+      failedAt: "capture",
     };
   }
 
@@ -964,6 +1247,9 @@ async function processResetSensorData(
       isFirstVerification: true,
       error: extraction.error,
       reason: extraction.reason,
+      retryAfterSec: extraction.retryAfterSec,
+      failedAt: extraction.failedAt,
+      opaque: extraction.opaque,
     };
   }
   const { tbh, compositeRiskScore } = extraction;
@@ -979,6 +1265,7 @@ async function processResetSensorData(
     tbh.salt,
     tbh.commitmentBytes,
   );
+  const portableBaseline = encryptedBaselineBlob !== undefined;
 
   onProgress?.("Submitting reset to Solana...");
   const submission = await submitResetViaWallet(tbh.commitmentBytes, {
@@ -987,6 +1274,7 @@ async function processResetSensorData(
     relayerUrl: config.relayerUrl,
     relayerApiKey: config.relayerApiKey,
     encryptedBaselineBlob,
+    onProgress: (stage) => onProgress?.(stage),
   });
 
   // Persist the new local baseline on on-chain success. A throw here would
@@ -1016,6 +1304,9 @@ async function processResetSensorData(
           "Re-verification from this device will not work. Try clearing site data and " +
           "resetting again after the 7-day cooldown, or transfer a baseline from another " +
           "device.",
+        // The chain write landed. What failed is local baseline storage, which
+        // is what `baseline` covers, and the message is safe to show as-is.
+        failedAt: "baseline",
         compositeRiskScore,
       };
     }
@@ -1031,6 +1322,9 @@ async function processResetSensorData(
     // success copy that matches first-time flows.
     isFirstVerification: true,
     error: submission.error,
+    portableBaseline: submission.success ? portableBaseline : undefined,
+    failedAt: submission.failedAt,
+    opaque: submission.failedAt === "confirmation",
     compositeRiskScore,
   };
 }
@@ -1063,6 +1357,8 @@ export class PulseSession {
   private touchStageState: StageState = "idle";
 
   private audioController: AbortController | null = null;
+  /** Fires the capture-window mark; see `markCaptureStart`. */
+  private captureWindowController: AbortController | null = null;
   private motionController: AbortController | null = null;
   private touchController: AbortController | null = null;
 
@@ -1109,6 +1405,7 @@ export class PulseSession {
 
     this.audioStageState = "capturing";
     this.audioController = new AbortController();
+    this.captureWindowController = new AbortController();
 
     // Resolve startAudio() only once audio is actually flowing — i.e. the
     // first real frame has been delivered — so callers don't begin the
@@ -1123,6 +1420,7 @@ export class PulseSession {
       signal: this.audioController.signal,
       onAudioLevel,
       onReady: () => signalReady(),
+      captureWindowSignal: this.captureWindowController.signal,
       stream,
     }).catch(() => {
       stream.getTracks().forEach((t) => t.stop());
@@ -1141,6 +1439,33 @@ export class PulseSession {
     if (readyTimer !== undefined) clearTimeout(readyTimer);
   }
 
+  /**
+   * Tell the SDK that the capture window has opened, i.e. the speak prompt is
+   * on screen and the user is about to talk.
+   *
+   * `startAudio()` deliberately resolves as soon as real audio is flowing, so
+   * the prompt never appears during the microphone's cold start. The cost is
+   * that recording begins before the prompt does, and on a slow connection the
+   * challenge fetch sits inside that gap too. Left unmarked, several seconds
+   * of silence are fingerprinted and uploaded as though they were speech.
+   *
+   * Optional. Without it the whole recording is used, which is the previous
+   * behaviour.
+   */
+  markCaptureStart(): void {
+    if (this.audioStageState !== "capturing") {
+      // Not thrown, because a host that calls this defensively should not lose
+      // a verification over it. Warned, because the failure is otherwise
+      // invisible: the capture still succeeds, it just silently transmits the
+      // dead air this call exists to remove.
+      sdkWarn(
+        "[Entros SDK] markCaptureStart() ignored: no audio capture in progress. Call it between startAudio() and stopAudio().",
+      );
+      return;
+    }
+    this.captureWindowController?.abort();
+  }
+
   async stopAudio(): Promise<AudioCapture | null> {
     if (this.audioStageState !== "capturing")
       throw new Error(
@@ -1148,6 +1473,7 @@ export class PulseSession {
       );
     this.audioController!.abort();
     this.audioData = await this.audioPromise!;
+    this.captureWindowController = null;
     this.audioStageState = "captured";
     return this.audioData;
   }
@@ -1300,7 +1626,7 @@ export class PulseSession {
   // --- Complete ---
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Solana types are optional peer deps
-  async complete(wallet?: any, connection?: any, onProgress?: (stage: string) => void, outline?: CurveTracePoint[]): Promise<VerificationResult> {
+  async complete(wallet?: any, connection?: any, onProgress?: ProgressCallback, outline?: CurveTracePoint[]): Promise<VerificationResult> {
     const active: string[] = [];
     if (this.audioStageState === "capturing") active.push("audio");
     if (this.motionStageState === "capturing") active.push("motion");
@@ -1341,7 +1667,7 @@ export class PulseSession {
   async completeReset(
     wallet: any,
     connection: any,
-    onProgress?: (stage: string) => void
+    onProgress?: ProgressCallback
   ): Promise<VerificationResult> {
     const active: string[] = [];
     if (this.audioStageState === "capturing") active.push("audio");
@@ -1361,6 +1687,7 @@ export class PulseSession {
         error:
           "Baseline reset requires a connected wallet and Solana connection. " +
           "Reset cannot be performed in walletless mode.",
+        failedAt: "submission",
       };
     }
 
@@ -1472,6 +1799,12 @@ export class PulseSDK {
         commitment: new Uint8Array(32),
         isFirstVerification: true,
         error: err.message ?? String(err),
+        // This catch wraps the whole one-shot capture, so what reaches it is
+        // a sensor that would not start or stop: a denied microphone, a denied
+        // motion permission, a stream that never opened. It also nets a throw
+        // out of `complete()`, which is a caller error rather than a capture
+        // one, and rare enough not to justify a phase of its own.
+        failedAt: "capture",
       };
     }
   }
@@ -1492,7 +1825,7 @@ export class PulseSDK {
     touchElement: HTMLElement | undefined,
     wallet: any,
     connection: any,
-    onProgress?: (stage: string) => void
+    onProgress?: ProgressCallback
   ): Promise<VerificationResult> {
     try {
       const session = this.createSession(touchElement);
@@ -1547,6 +1880,12 @@ export class PulseSDK {
         commitment: new Uint8Array(32),
         isFirstVerification: true,
         error: err.message ?? String(err),
+        // This catch wraps the whole one-shot capture, so what reaches it is
+        // a sensor that would not start or stop: a denied microphone, a denied
+        // motion permission, a stream that never opened. It also nets a throw
+        // out of `complete()`, which is a caller error rather than a capture
+        // one, and rare enough not to justify a phase of its own.
+        failedAt: "capture",
       };
     }
   }

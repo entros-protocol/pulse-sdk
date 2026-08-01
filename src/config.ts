@@ -27,7 +27,59 @@ export const SIMHASH_SEED = "IAM-PROTOCOL-SIMHASH-V1";
 // Capture duration bounds (ms)
 export const MIN_CAPTURE_MS = 2000;
 export const MAX_CAPTURE_MS = 60000;
+
+/**
+ * Hard ceiling on the audio that leaves the device, measured from the capture
+ * mark. Independent of `MAX_CAPTURE_MS`, which bounds how long the recorder
+ * runs rather than how much of it is used.
+ *
+ * Mirrors `entros-validation::phrase_binding::MAX_AUDIO_SAMPLES` (320_000,
+ * i.e. 20 s at 16 kHz). The validator truncates anything longer to that bound
+ * before transcribing, so overrunning costs a client the tail of its audio
+ * and, with it, the phrase check.
+ *
+ * The two meet exactly rather than leaving room. Both comparisons are strict
+ * `>`, so a capture of precisely 320,000 samples is untouched on both sides,
+ * and loosening either to `>=` would truncate every maxed capture. That is
+ * the invariant `test/audio.test.ts` pins against the server's constant, not
+ * against this one.
+ *
+ * It also keeps the body inside the executor's 1 MiB limit by construction.
+ * Measured against a real 320,000-sample capture, the full body is 910,172
+ * bytes: 853,338 of base64 audio, 37,140 and 9,941 for the two contours,
+ * 6,751 for the 308 features and 2,529 for the curve trace. That leaves
+ * 138,404 bytes of headroom, and pushing every float to its longest
+ * round-trip representation still leaves about 106 KB.
+ */
+export const MAX_TRANSMITTED_CAPTURE_MS = 20000;
 export const DEFAULT_CAPTURE_MS = 12000;
+
+/**
+ * How long the validate request may go without upload progress before the SDK
+ * gives up on it.
+ *
+ * This bounds silence, not duration. A slow uplink that is still delivering
+ * bytes resets the clock on every progress event and is never cut off, which
+ * is the failure this replaces: a fixed 15-second abort covering both upload
+ * and server work killed a healthy 9.4-second mobile upload and reported the
+ * service as unreachable.
+ *
+ * Mirrors `RequestBodyTimeoutLayer` on both Rust services, which reclaims a
+ * stalled body on the same principle from the other end.
+ */
+export const VALIDATE_UPLOAD_STALL_MS = 20000;
+
+/**
+ * Absolute ceiling on a validate request, used when the caller has no better
+ * information.
+ *
+ * Prefer deriving the ceiling from the challenge's own remaining validity:
+ * `/challenge` returns `expires_in`, and an upload landing after that is
+ * refused regardless, because the executor looks the phrase up under the same
+ * TTL. This constant is the fallback for callers that never fetched a
+ * challenge.
+ */
+export const VALIDATE_DEADLINE_MS = 120000;
 /**
  * Max time startAudio() waits for the first real audio frame before resolving
  * anyway. Normal cold starts deliver the first frame in well under a second;
@@ -35,6 +87,97 @@ export const DEFAULT_CAPTURE_MS = 12000;
  * failure), so the verify flow degrades gracefully instead of hanging.
  */
 export const AUDIO_READY_TIMEOUT_MS = 5000;
+
+/**
+ * How long to wait for the wallet to return a signed transaction.
+ *
+ * There was no clock here at all, which is why a wallet that never prompted
+ * was reported as "Proof generation timed out": the only timer in the stack
+ * was a single 120-second race in `entros.io` covering the whole of
+ * `complete()`, and its message named the slowest step anyone expected rather
+ * than the step that hung.
+ *
+ * Three minutes is long on purpose. A mobile approval leaves the browser,
+ * opens the wallet app, authenticates, returns, and each hop can stall on a
+ * cold app or a slow deep link. It is also unsafe to be brisk: nothing can
+ * cancel a prompt once it is shown, so an approval that arrives after the
+ * clock expires still broadcasts, and the local baseline is not stored for a
+ * transaction the SDK has already given up on. That is the stale-baseline
+ * state this release exists to remove, so the timeout is set where it fires
+ * for a hung wallet and effectively never for a slow user.
+ */
+export const SIGNATURE_TIMEOUT_MS = 180000;
+
+/**
+ * How long to wait for the cluster to confirm a broadcast transaction.
+ *
+ * A blockhash is valid for 150 slots, about 60 seconds, and a transaction that
+ * has not landed by then cannot land at all. Ninety seconds covers slot-time
+ * variance and leaves the timeout meaning what it says: past this point there
+ * is nothing left to wait for.
+ */
+export const CONFIRMATION_TIMEOUT_MS = 90000;
+
+/**
+ * How long to wait for the wallet to sign the SAS attestation message.
+ *
+ * This prompt is raised *after* the verification transaction has confirmed, so
+ * nothing about the identity depends on it: the attestation is best-effort and
+ * a failure returns `undefined`. That made an unbounded wait the worst kind of
+ * bug. On 2026-07-31 a mobile verification landed on chain, the user dismissed
+ * the wallet after seeing "Sent!", the fourth prompt never surfaced, and the
+ * page sat on "Submitting to Solana..." indefinitely for a verification that
+ * had already succeeded. The local baseline was never stored either, because
+ * that only runs once the submission resolves.
+ *
+ * Twenty seconds is enough for a prompt a user can see, and short enough that
+ * one they cannot see costs them very little.
+ */
+export const ATTESTATION_SIGNATURE_TIMEOUT_MS = 20000;
+
+/**
+ * Work inside a verification that no SDK clock bounds.
+ *
+ * Feature extraction, Groth16 proving, the challenge fetch and the
+ * best-effort SAS attestation. Proving dominates it and is the part that
+ * varies most: seconds on a laptop, tens of seconds on a low-end phone.
+ */
+const UNCLOCKED_WORK_MS = 90000;
+
+/**
+ * Longest a single `complete()` can legitimately run.
+ *
+ * Exported for hosts that keep their own backstop timer. Set yours above this
+ * or it pre-empts the SDK's per-step clocks, and the failure is reported
+ * against whichever step the backstop's message happens to name rather than
+ * the one that hung. That is exactly how a pending wallet prompt came to be
+ * reported as a proof-generation timeout: three hosts each raced the whole of
+ * `complete()` against 120 seconds, which is less than the validate deadline
+ * on its own.
+ *
+ * Derived rather than written down, so raising any clock above raises this in
+ * step and no host has to be told.
+ */
+export const MAX_VERIFICATION_MS =
+  VALIDATE_DEADLINE_MS +
+  SIGNATURE_TIMEOUT_MS +
+  CONFIRMATION_TIMEOUT_MS +
+  UNCLOCKED_WORK_MS;
+
+/**
+ * Feature-projection generation this SDK build produces fingerprints in.
+ *
+ * Written to `IdentityState.projection_version` by `reset_identity_state` and
+ * `rebaseline_anchor`. Held at 0 because nothing reads it yet: master-list
+ * #215 is the work that makes a stored baseline declare its projection and
+ * routes a mismatch to re-enrolment instead of to a drift rejection. Bump it
+ * there, in step with the validator, not here alone.
+ *
+ * It exists now because the deployed program has required the argument since
+ * 2026-07-27 and the SDK was not passing it, which made every baseline reset
+ * fail to deserialize on chain.
+ */
+export const PROJECTION_VERSION = 0;
 
 export const PROGRAM_IDS = {
   entrosAnchor: "GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2",

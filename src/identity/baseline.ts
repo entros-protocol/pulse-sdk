@@ -20,7 +20,8 @@
 
 import type { PublicKey } from "@solana/web3.js";
 import { ed25519 } from "@noble/curves/ed25519";
-import { PROGRAM_IDS } from "../config";
+import { PROGRAM_IDS, SIGNATURE_TIMEOUT_MS } from "../config";
+import { withTimeout } from "../submit/errors";
 
 // --- Constants ---
 
@@ -175,7 +176,16 @@ export async function deriveBaselineKey(
   }
   const message = buildDomainMessage(wallet.publicKey);
   const messageBytes = new TextEncoder().encode(message);
-  const signature = await wallet.signMessage(messageBytes);
+  // Bounded for the same reason every wallet round trip is. A mobile wallet
+  // that does not raise the prompt leaves this promise pending forever, and a
+  // pending promise here holds the whole verification on whichever stage the
+  // host last rendered. The bound matches the transaction prompt, because this
+  // one is the same shape: the user has to see it and act on it.
+  const signature = await withTimeout(
+    wallet.signMessage(messageBytes),
+    SIGNATURE_TIMEOUT_MS,
+    "Your wallet did not respond to the signature request. Open your wallet, check whether a request is still pending, then try again.",
+  );
   if (!(signature instanceof Uint8Array) || signature.length !== 64) {
     throw new Error(
       `expected 64-byte Ed25519 signature, got ${signature?.length ?? "non-Uint8Array"}`

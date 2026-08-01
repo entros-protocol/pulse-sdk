@@ -34,35 +34,159 @@ export const TOUCH_FEATURE_COUNT = TOUCH_LEGACY_COUNT + TOUCH_V2_ADDITIONS;
 export const MOUSE_DYNAMICS_FEATURE_COUNT = MOTION_FEATURE_COUNT;
 
 /**
+ * How much of the audio window motion must span before a contour is worth
+ * building. Below this the frames outside the covered stretch would be filled
+ * by edge-clamping, and a flat run reads to the validator's cross-correlation
+ * as weak coupling rather than as missing data.
+ */
+const MIN_WINDOW_COVERAGE = 0.9;
+
+/**
  * Compute per-sample acceleration magnitude |a| = √(ax² + ay² + az²) and
- * linearly resample to a target frame count. Surfaced for server-side
- * analysis paired against the F0 contour; the two time-series must share
- * the same frame count when consumed downstream.
+ * resample it onto `window`, the wall-clock stretch the transmitted audio
+ * covers, at `targetFrameCount` equally spaced instants.
  *
- * Returns an empty array if motion data is absent or too short.
+ * The result is correlated against the F0 contour server-side, so the two have
+ * to describe the same stretch of time. `window` is what makes that true, and
+ * it is required rather than optional on purpose: this used to map motion's
+ * array index proportionally onto audio's frame count, which silently
+ * time-warped one stream against the other whenever their spans diverged.
+ * `pulse-sdk@4.0.0` diverged them by trimming the pre-prompt lead-in out of the
+ * audio alone, and cross-modal coupling fell from r=0.31 to r=0.03. A required
+ * parameter turns the next such divergence into a compile error.
+ *
+ * `window` and {@link MotionSample.timestamp} are both in the
+ * `performance.now()` domain, so they compare directly.
+ *
+ * Returns an empty array when the capture cannot support an honest contour:
+ * too few samples, a degenerate window, or motion spanning less than
+ * {@link MIN_WINDOW_COVERAGE} of it. The validator treats an absent contour as
+ * "skip", which is the fail-safe direction. A misaligned one reads as weak
+ * coupling and rejects a real person.
  */
 export function extractAccelerationMagnitude(
   samples: MotionSample[],
   targetFrameCount: number,
+  window: { startMs: number; endMs: number },
 ): number[] {
   if (samples.length < 2 || targetFrameCount < 2) return [];
 
+  const { startMs, endMs } = window;
+  const span = endMs - startMs;
+  if (!Number.isFinite(span) || span <= 0) return [];
+
+  const firstAt = samples[0]!.timestamp;
+  const lastAt = samples[samples.length - 1]!.timestamp;
+  // Clamped at zero so a stream sitting entirely outside the window reports no
+  // coverage rather than a negative one.
+  const overlap = Math.max(0, Math.min(endMs, lastAt) - Math.max(startMs, firstAt));
+  if (overlap / span < MIN_WINDOW_COVERAGE) return [];
+
   const magnitudes = samples.map((s) => Math.sqrt(s.ax * s.ax + s.ay * s.ay + s.az * s.az));
 
-  if (magnitudes.length === targetFrameCount) return magnitudes;
-
-  // Linear resample: map target index i to source position (i / (target-1)) * (source-1)
   const out = new Array<number>(targetFrameCount);
-  const srcLen = magnitudes.length;
-  const scale = (srcLen - 1) / (targetFrameCount - 1);
+  // `t` increases every iteration and sample timestamps are monotonic, so the
+  // cursor only ever moves forward. One pass over both series, not a search
+  // per frame.
+  let cursor = 0;
   for (let i = 0; i < targetFrameCount; i++) {
-    const pos = i * scale;
-    const lo = Math.floor(pos);
-    const hi = Math.min(lo + 1, srcLen - 1);
-    const t = pos - lo;
-    out[i] = magnitudes[lo]! * (1 - t) + magnitudes[hi]! * t;
+    const t = startMs + (i / (targetFrameCount - 1)) * span;
+    while (cursor + 1 < samples.length && samples[cursor + 1]!.timestamp <= t) cursor++;
+
+    const at = samples[cursor]!.timestamp;
+    if (t <= at || cursor + 1 >= samples.length) {
+      // Before the first sample or past the last. Hold the edge value rather
+      // than extrapolating a trend the sensor never reported.
+      out[i] = magnitudes[cursor]!;
+      continue;
+    }
+    const nextAt = samples[cursor + 1]!.timestamp;
+    const step = nextAt - at;
+    // Two readings sharing a timestamp carry no gradient to interpolate along.
+    const frac = step > 0 ? (t - at) / step : 0;
+    out[i] = magnitudes[cursor]! * (1 - frac) + magnitudes[cursor + 1]! * frac;
   }
   return out;
+}
+
+/**
+ * Observe-only description of how the motion stream sat against the audio
+ * window. Snake_case to match the wire, versioned like `ClientSignals`.
+ *
+ * @see describeCaptureTiming for what each field is for and why it exists.
+ */
+export interface CaptureTiming {
+  /** Envelope schema version. */
+  v: number;
+  /** Motion readings collected across the whole recorder run. */
+  motion_samples: number;
+  /** First to last motion timestamp. */
+  motion_span_ms: number;
+  /** Achieved delivery rate. Nominal is 60-100Hz. Well below means throttling. */
+  motion_rate_hz: number;
+  /** Coefficient of variation of inter-sample gaps. Near 0 is even delivery. */
+  motion_rate_cv: number;
+  /** Duration of the audio actually transmitted. */
+  audio_window_ms: number;
+  /** First motion sample minus the audio window start. Near 0 once aligned. */
+  window_offset_ms: number;
+  /** Fraction of the audio window the motion stream spans, 0 to 1. */
+  window_coverage: number;
+}
+
+/**
+ * Summarise how the motion stream lined up with the audio window.
+ *
+ * Purely observational. It exists because the 4.0.0 misalignment was invisible
+ * for a day: the only symptom was a correlation the validator could not explain,
+ * and every number that would have named the cause was computed on-device and
+ * discarded. `window_offset_ms` is that number.
+ *
+ * **This must never feed a decision.** It is client-supplied, so a forged value
+ * has to be capable of corrupting our own calibration data and nothing else.
+ * Read it from logs, never from a code path that can reject or accept.
+ */
+export function describeCaptureTiming(
+  samples: MotionSample[],
+  window: { startMs: number; endMs: number },
+): CaptureTiming {
+  const span = Math.max(0, window.endMs - window.startMs);
+  const timestamps = samples.map((s) => s.timestamp);
+  const motionSpan =
+    samples.length >= 2 ? Math.max(0, timestamps[timestamps.length - 1]! - timestamps[0]!) : 0;
+
+  // Spread of the inter-sample gaps, normalised by their mean so it compares
+  // across devices with different nominal rates.
+  let rateCv = 0;
+  if (samples.length >= 3) {
+    const gaps: number[] = [];
+    for (let i = 1; i < timestamps.length; i++) gaps.push(timestamps[i]! - timestamps[i - 1]!);
+    const gapMean = mean(gaps);
+    rateCv = gapMean > 0 ? Math.sqrt(variance(gaps, gapMean)) / gapMean : 0;
+  }
+
+  const overlap =
+    samples.length >= 2 && span > 0
+      ? Math.max(
+          0,
+          Math.min(window.endMs, timestamps[timestamps.length - 1]!) -
+            Math.max(window.startMs, timestamps[0]!),
+        )
+      : 0;
+
+  const round = (v: number, dp = 2) =>
+    Number.isFinite(v) ? Number(v.toFixed(dp)) : 0;
+
+  return {
+    v: 1,
+    motion_samples: samples.length,
+    motion_span_ms: round(motionSpan),
+    motion_rate_hz: round(sampleRateFromTimestamps(timestamps)),
+    motion_rate_cv: round(rateCv, 4),
+    audio_window_ms: round(span),
+    window_offset_ms: samples.length > 0 ? round(timestamps[0]! - window.startMs) : 0,
+    window_coverage: span > 0 ? round(overlap / span, 4) : 0,
+  };
 }
 
 /**

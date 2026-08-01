@@ -1,8 +1,34 @@
 /** Raw audio samples captured during the Pulse challenge */
 export interface AudioCapture {
+  /**
+   * Mono PCM at {@link sampleRate}, band-limited and decimated to the canonical
+   * rate, with any pre-prompt lead-in already discarded. This is the exact
+   * buffer feature extraction reads and the exact buffer transmitted, which is
+   * what keeps the client's claimed features and the validator's re-derivation
+   * describing the same signal.
+   */
   samples: Float32Array;
   sampleRate: number;
+  /**
+   * Length of {@link samples} in seconds. This is how much audio is being
+   * handed over, not how long the recorder ran. The two differ once the
+   * lead-in is trimmed or the transmitted-length cap bites.
+   */
   duration: number;
+  /**
+   * Wall-clock instant, in the `performance.now()` domain, of the first sample
+   * in {@link samples}. This is the recorder's own start plus whatever the
+   * lead-in trim and the transmitted-length cap removed, so it tracks the audio
+   * actually handed over rather than the audio recorded.
+   *
+   * Every other modality has to be aligned to this. {@link MotionSample.timestamp}
+   * uses the same clock, so the two compare directly with no conversion. See
+   * `extractAccelerationMagnitude`, which correlates against the F0 contour
+   * derived from this exact buffer.
+   */
+  windowStartMs: number;
+  /** Wall-clock instant just past the last sample. `windowStartMs + duration * 1000`. */
+  windowEndMs: number;
   virtualDevice?: boolean;
 }
 
@@ -70,6 +96,28 @@ export interface CaptureOptions {
    * the AudioContext/mic isn't producing samples yet.
    */
   onReady?: () => void;
+  /**
+   * Fires when the capture window opens, i.e. when the speak prompt appears.
+   * Everything recorded before it is discarded.
+   *
+   * The recorder starts early on purpose, so `onReady` can gate the prompt on
+   * audio genuinely flowing rather than on a fixed delay. The cost is that the
+   * buffer opens with dead air covering the challenge fetch and the countdown,
+   * and without this signal that silence is extracted from, fingerprinted and
+   * transmitted as though it were speech.
+   *
+   * An `AbortSignal` rather than a callback so it matches `signal` above, is
+   * host-to-SDK like `stream`, and can only fire once, so idempotence is a
+   * property of the type instead of a guard someone can delete. Note the two
+   * signals mean opposite things: `signal` closes the capture, this opens the
+   * window inside it.
+   *
+   * The trim happens before feature extraction, so `features`, `f0_contour`
+   * and the transmitted audio all derive from one buffer. Trimming only the
+   * transmitted copy would shift the validator's f0 frames against the
+   * client's by hundreds, against a five-frame correlation search.
+   */
+  captureWindowSignal?: AbortSignal;
   /** Pre-acquired MediaStream. If provided, captureAudio skips getUserMedia. */
   stream?: MediaStream;
   /** If true, captureMotion skips requestMotionPermission (already acquired). */

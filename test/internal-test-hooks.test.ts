@@ -17,10 +17,25 @@ function validAudio(): AudioCapture {
   for (let i = 0; i < samples.length; i++) {
     samples[i] = Math.sin(i * 0.01) * 0.1;
   }
-  return { samples, sampleRate: 16000, duration: 1.25 };
+  // The window has to be real and it has to agree with `validMotion`, which
+  // timestamps from zero. `extractAccelerationMagnitude` resamples motion onto
+  // this window and returns nothing when motion covers less than 90% of it, so
+  // a fixture whose two streams disagree silently yields no contour and the
+  // cross-modal path goes untested by the one hook that exists to inject it.
+  // `tsconfig.json` excludes `test/`, so no type error would have said so.
+  const duration = samples.length / 16000;
+  return {
+    samples,
+    sampleRate: 16000,
+    duration,
+    windowStartMs: 0,
+    windowEndMs: duration * 1000,
+  };
 }
 
-function validMotion(count = 20): MotionSample[] {
+// 26 samples at 50ms spans 1250ms, which is exactly `validAudio`'s duration.
+// Below that the streams stop overlapping enough for a contour to be built.
+function validMotion(count = 26): MotionSample[] {
   return Array.from({ length: count }, (_, i) => ({
     timestamp: i * 50,
     ax: Math.sin(i * 0.1) * 0.5,
