@@ -1065,6 +1065,7 @@ async function processSensorData(
           relayerApiKey: config.relayerApiKey,
           signedReceipt,
           encryptedBaselineBlob,
+          onProgress: (stage) => onProgress?.(stage),
         }
       );
     } else {
@@ -1075,6 +1076,7 @@ async function processSensorData(
         relayerUrl: config.relayerUrl,
         relayerApiKey: config.relayerApiKey,
         encryptedBaselineBlob,
+        onProgress: (stage) => onProgress?.(stage),
       });
     }
   } else if (config.relayerUrl) {
@@ -1241,6 +1243,7 @@ async function processResetSensorData(
     relayerUrl: config.relayerUrl,
     relayerApiKey: config.relayerApiKey,
     encryptedBaselineBlob,
+    onProgress: (stage) => onProgress?.(stage),
   });
 
   // Persist the new local baseline on on-chain success. A throw here would

@@ -309,6 +309,14 @@ export async function submitViaWallet(
      * `signMessage` (the SDK can't derive the AES key without it).
      */
     encryptedBaselineBlob?: Uint8Array;
+    /**
+     * Stage notifications for the tail of the submission. The caller has
+     * already rendered a "submitting" stage, which stops being true the moment
+     * the transaction confirms. Everything after that is optional work, and on
+     * mobile it is where the user waits longest, so it should not be described
+     * as a submission still in flight.
+     */
+    onProgress?: (stage: string) => void;
   }
 ): Promise<SubmissionResult> {
   try {
@@ -646,6 +654,8 @@ export async function submitViaWallet(
       txSig = sent.txSig;
     }
 
+    options.onProgress?.("Finishing up...");
+
     // The transaction has confirmed, so the verification is durable on chain
     // from here. Nothing below may turn it into a failure: the caller stores
     // the local baseline and shows success only on what this returns, and the
@@ -708,6 +718,14 @@ export async function submitResetViaWallet(
      * new commitment in AAD) and recovery would fall back to fresh capture.
      */
     encryptedBaselineBlob?: Uint8Array;
+    /**
+     * Stage notifications for the tail of the submission. The caller has
+     * already rendered a "submitting" stage, which stops being true the moment
+     * the transaction confirms. Everything after that is optional work, and on
+     * mobile it is where the user waits longest, so it should not be described
+     * as a submission still in flight.
+     */
+    onProgress?: (stage: string) => void;
   }
 ): Promise<SubmissionResult> {
   try {
@@ -788,6 +806,8 @@ export async function submitResetViaWallet(
       return { success: false, error: sent.error, failedAt: sent.failedAt };
     }
     const txSig = sent.txSig;
+
+    options.onProgress?.("Finishing up...");
 
     // Request a fresh SAS attestation. The executor's /attest handler closes
     // any prior attestation for this wallet and creates a new one bound to the
