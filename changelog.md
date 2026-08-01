@@ -9,6 +9,13 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+## [4.2.0] - 2026-08-01
+
+Includes 4.1.2 and 4.1.3, which were tagged in git but never published.
+
+### Added
+- **`onProgress` on `submitViaWallet` and `submitResetViaWallet`**, and a `"Finishing up..."` stage emitted the moment the cluster confirms. The caller renders a "submitting" stage before the transaction goes out, and that stops being true on confirmation, while the optional work after it is exactly where a mobile user waits longest. Telling someone their transaction is still going out after it has landed is what turns a short wait into an apparent hang. Hosts that key on the stage strings should add an entry for it. The existing strings are unchanged.
+
 ## [4.1.3] - 2026-08-01
 
 ### Fixed
