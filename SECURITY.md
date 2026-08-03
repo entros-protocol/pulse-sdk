@@ -46,9 +46,12 @@ We would still like to hear about anything you find.
 
 - The on-chain Anchor programs in `protocol-core`
 - The zero-knowledge circuits in `circuits`
+- The mobile proving library in `entros-mopro`
 - The client SDK in `pulse-sdk`
 - The off-chain relay in `executor-node`
 - The verification web application in `entros.io`
+- The mobile application in `entros-mobile`
+- The integration surface in `entros-verify`
 - The Realms voter-weight program in `entros-governance-plugin`
 
 **Out of scope**
@@ -61,6 +64,7 @@ We would still like to hear about anything you find.
 - Reports produced only by an automated scanner, with no analysis
 - Best-practice observations with no demonstrated impact
 - Third-party dependencies, which should be reported to their maintainers
+- `token-contracts`, which contains documentation only and ships no code
 
 ## Disclosure
 
