@@ -77,6 +77,6 @@
     "ws": "^8.21.0",
     "underscore": "^1.13.8",
     "esbuild": "^0.28.1",
-    "brace-expansion": "2.1.2"
+    "brace-expansion": "^2.1.3"
   }
 }
