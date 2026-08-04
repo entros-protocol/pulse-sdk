@@ -85,6 +85,58 @@ async function getMeyda(): Promise<any> {
  *
  * Returns 0 if the spectrum is too small or degenerate.
  */
+/**
+ * The band-limited DCT-II basis used by `cepstralPeakProminence`, built once
+ * per spectrum shape instead of once per frame.
+ *
+ * The basis depends only on `N`, `qMin` and `bandLen`. It contains no audio.
+ * The caller runs this per frame over a 12-second capture, so at 16 kHz
+ * (`N` 1024, `bandLen` 227, 1188 frames) the original evaluated `Math.cos`
+ * about 276 million times to produce 232,448 distinct values. This reduces
+ * that to one build.
+ *
+ * Two details are load-bearing for bit-exactness, because the cepstral peak
+ * feeds the voice-quality features, the 170-feature audio block, the SimHash
+ * and finally the on-chain commitment. Any change to the numbers here is a
+ * projection change and would strand every stored baseline.
+ *
+ * First, the stored expression keeps the original's left-associative grouping,
+ * `(piOverN * (n + 0.5)) * k`, so each entry rounds exactly where it did
+ * before. Reassociating to `piOverN * ((n + 0.5) * k)` changes results.
+ *
+ * Second, storage is `Float64Array`, so a coefficient is recovered with the
+ * bits it was computed with. A `Float32Array` would round before the multiply
+ * and shift the sum.
+ *
+ * The DCT-II symmetry `basis[k][N-1-n] === (-1)^k * basis[k][n]` would halve
+ * the 1.8 MB, and is deliberately not used: it holds in the reals but not in
+ * floating point, so it would perturb the output.
+ *
+ * One entry is cached rather than a growing map, because the payload is large
+ * and the shape is fixed for a whole capture.
+ */
+let cppBasisKey = "";
+let cppBasisTable: Float64Array | null = null;
+
+function cppBasis(N: number, qMin: number, bandLen: number): Float64Array {
+  const key = `${N}:${qMin}:${bandLen}`;
+  if (cppBasisTable !== null && cppBasisKey === key) return cppBasisTable;
+
+  const table = new Float64Array(bandLen * N);
+  const piOverN = Math.PI / N;
+  for (let bIdx = 0; bIdx < bandLen; bIdx++) {
+    const k = qMin + bIdx;
+    const row = bIdx * N;
+    for (let n = 0; n < N; n++) {
+      table[row + n] = Math.cos(piOverN * (n + 0.5) * k);
+    }
+  }
+
+  cppBasisKey = key;
+  cppBasisTable = table;
+  return table;
+}
+
 function cepstralPeakProminence(
   powerSpectrum: Float32Array | number[],
   sampleRate: number,
@@ -114,12 +166,12 @@ function cepstralPeakProminence(
   // so the full-N DCT was wasted work in the original implementation.
   const bandLen = qMax - qMin + 1;
   const cepstrumBand: number[] = new Array(bandLen);
-  const piOverN = Math.PI / N;
+  const basis = cppBasis(N, qMin, bandLen);
   for (let bIdx = 0; bIdx < bandLen; bIdx++) {
-    const k = qMin + bIdx;
+    const row = bIdx * N;
     let sum = 0;
     for (let n = 0; n < N; n++) {
-      sum += logPower[n]! * Math.cos(piOverN * (n + 0.5) * k);
+      sum += logPower[n]! * basis[row + n]!;
     }
     cepstrumBand[bIdx] = sum;
   }
