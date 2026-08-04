@@ -27,9 +27,12 @@ async function main() {
 const PROGRAM_ID = new PublicKey("GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2");
 const RPC_URL = process.env.SMOKE_RPC_URL ?? "http://127.0.0.1:8899";
 
+// Resolved from this file rather than an absolute path, so the script runs from
+// any checkout. It previously named a directory that stopped existing at the
+// April rebrand, which meant it could not run at all.
 const entrosAnchorIdl = JSON.parse(
   fs.readFileSync(
-    "/Users/johnny/IAM/pulse-sdk/src/protocol/idl/entros_anchor.json",
+    new URL("../src/protocol/idl/entros_anchor.json", import.meta.url),
     "utf8",
   ),
 );
