@@ -1,5 +1,55 @@
 import { describe, it, expect } from "vitest";
-import { extractVoiceQualityFeatures } from "../src/extraction/voice-quality";
+import {
+  extractVoiceQualityFeatures,
+  cppBasis,
+} from "../src/extraction/voice-quality";
+
+/**
+ * The portable half of the contract, and the one that actually guards the
+ * optimisation: every cached coefficient must equal the inline expression it
+ * replaced, with the original left-associative grouping intact.
+ *
+ * This is checked against `Math.cos` on the machine running the test rather
+ * than against a hardcoded number, because `Math.cos` is not required by
+ * IEEE-754 to be correctly rounded and V8 returns results differing by an ULP
+ * across architectures. An exact vector pinned on one machine fails on another
+ * for a reason that has nothing to do with the code, which is exactly what
+ * happened here: `310.5943437277091` on macOS arm64, `...092` on Linux x64.
+ *
+ * Recomputing the reference in-process sidesteps that entirely and is a
+ * stronger check than a tolerance. Reassociating the expression to
+ * `piOverN * ((n + 0.5) * k)` shifts results by roughly 7e-15 relative, which
+ * no usable tolerance separates from platform noise at 3e-16, but which fails
+ * this test on the first coefficient that rounds differently.
+ */
+describe("cepstral DCT basis matches the expression it replaced", () => {
+  it("reproduces the inline computation exactly at 16 kHz", () => {
+    const N = 1024;
+    const qMin = 40;
+    const bandLen = 227;
+    const basis = cppBasis(N, qMin, bandLen);
+    const piOverN = Math.PI / N;
+
+    expect(basis).toHaveLength(bandLen * N);
+    let checked = 0;
+    for (let bIdx = 0; bIdx < bandLen; bIdx++) {
+      const k = qMin + bIdx;
+      const row = bIdx * N;
+      for (let n = 0; n < N; n++) {
+        // Grouping is load-bearing: the original was left-associative.
+        if (basis[row + n] !== Math.cos(piOverN * (n + 0.5) * k)) {
+          throw new Error(`basis[${bIdx}][${n}] diverged from the inline form`);
+        }
+        checked++;
+      }
+    }
+    expect(checked).toBe(bandLen * N);
+  });
+
+  it("returns the same table for a repeated shape", () => {
+    expect(cppBasis(512, 20, 64)).toBe(cppBasis(512, 20, 64));
+  });
+});
 
 /**
  * Golden vectors for the voice-quality feature block.
@@ -27,6 +77,22 @@ import { extractVoiceQualityFeatures } from "../src/extraction/voice-quality";
  *
  * Values produced by the implementation at commit `cf2bf5f`, before the DCT
  * basis was hoisted out of the per-frame loop, and verified unchanged after.
+ *
+ * **Compared with a relative tolerance, not exactly, and that is forced rather
+ * than chosen.** The cepstral path runs through `Math.log` and `Math.cos`,
+ * neither of which IEEE-754 requires to be correctly rounded, so V8 returns
+ * results differing by an ULP between architectures. Pinned exactly, these
+ * passed on macOS arm64 and failed on Linux x64 by one digit.
+ *
+ * The tolerance is therefore wide enough to survive platform noise, which
+ * leaves it too wide to catch a reassociation. The exact guard against that
+ * lives in the basis test above. These vectors catch the coarser thing: an
+ * algorithm swapped for a different one, or a formant tracker that stopped
+ * tracking formants.
+ *
+ * Worth knowing beyond this file: if `Math.cos` and `Math.log` differ across
+ * architectures, feature values differ between a user's own devices, and those
+ * feed the SimHash. Whether an ULP can flip a projection bit is untested.
  */
 describe("voice-quality golden vectors", () => {
   const SAMPLE_RATE = 16000;
@@ -77,7 +143,12 @@ describe("voice-quality golden vectors", () => {
 
     expect(features).toHaveLength(EXPECTED.length);
     for (let i = 0; i < EXPECTED.length; i++) {
-      expect(features[i]).toBe(EXPECTED[i]);
+      const want = EXPECTED[i]!;
+      const got = features[i]!;
+      // Relative where the value is large enough for that to mean anything,
+      // absolute near zero, since three of these sit at 1e-11 or below.
+      const tolerance = Math.max(Math.abs(want) * 1e-12, 1e-20);
+      expect(Math.abs(got - want)).toBeLessThanOrEqual(tolerance);
     }
   }, 60_000);
 });

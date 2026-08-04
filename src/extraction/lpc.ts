@@ -30,7 +30,13 @@
  */
 const hammingWindows = new Map<number, Float64Array>();
 
-function hammingWindow(frameSize: number): Float64Array {
+/**
+ * @internal Exported for tests only, and stripped from the published types.
+ * See the note on `cppBasis` in voice-quality.ts: the invariant is that a
+ * cached coefficient equals the inline expression it replaced, which can only
+ * be checked against `Math.cos` on the machine running the test.
+ */
+export function hammingWindow(frameSize: number): Float64Array {
   let coefficients = hammingWindows.get(frameSize);
   if (coefficients === undefined) {
     coefficients = new Float64Array(frameSize);

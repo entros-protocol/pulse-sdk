@@ -118,7 +118,19 @@ async function getMeyda(): Promise<any> {
 let cppBasisKey = "";
 let cppBasisTable: Float64Array | null = null;
 
-function cppBasis(N: number, qMin: number, bandLen: number): Float64Array {
+/**
+ * @internal Exported for tests only, and stripped from the published types.
+ * The invariant worth checking is that a cached coefficient equals the inline
+ * expression it replaced, and that has to be checked against `Math.cos` on the
+ * machine running the test. `Math.cos` is not required by IEEE-754 to be
+ * correctly rounded, so its results differ by an ULP between architectures and
+ * a hardcoded vector cannot express this.
+ */
+export function cppBasis(
+  N: number,
+  qMin: number,
+  bandLen: number
+): Float64Array {
   const key = `${N}:${qMin}:${bandLen}`;
   if (cppBasisTable !== null && cppBasisKey === key) return cppBasisTable;
 
