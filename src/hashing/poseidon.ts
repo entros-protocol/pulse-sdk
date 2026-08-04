@@ -10,11 +10,17 @@
 //
 // Two other costs went with it. `buildPoseidon` compiles a WASM module,
 // measured at **381 ms** on first call, landing between feature extraction and
-// the commitment on the user's critical path. And the whole `@ethersproject`
-// tree shipped to every visitor who reached `/verify`.
+// the commitment on the user's critical path.
 //
-//   circomlibjs      first call 381 ms   warm 0.149 ms/hash   26.9 MB
+//   circomlibjs      first call 381 ms   warm 0.149 ms/hash   26.9 MB installed
 //   poseidon-lite    first call 0.4 ms   warm 0.209 ms/hash   788 KB, 0 deps
+//
+// The 26.9 MB is installed size. What the browser actually downloaded is a
+// smaller and separate question, unmeasured at the time of writing: the old
+// backend was reached through a dynamic `import()`, so bundlers code-split it
+// into a chunk fetched when a commitment was first needed rather than on route
+// load. Measure the `/verify` chunk before and after if the shipped figure is
+// ever quoted anywhere.
 //
 // Per hash it is 0.06 ms slower, across roughly three hashes per verification,
 // against 381 ms of startup removed.
