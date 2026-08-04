@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Typecheck + test + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      # Every other repo in the org consumes this package, so a build that only
+      # ever runs immediately before `npm publish` is a build nobody has checked.
+      - name: Build
+        run: npm run build
+
+      # Guards the published tarball's contents, which `files` alone does not.
+      - name: Verify publish contents
+        run: npm run verify-publish-contents
