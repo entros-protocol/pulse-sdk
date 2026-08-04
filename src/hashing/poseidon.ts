@@ -13,6 +13,33 @@ async function getPoseidon(): Promise<any> {
 }
 
 /**
+ * Build the Poseidon instance ahead of the moment it is needed.
+ *
+ * `buildPoseidon` compiles a WASM module. Measured cold at **503 ms**, against
+ * 0 ms once built. Today that cost lands between feature extraction and the
+ * commitment, squarely on the user's critical path, for no reason: it depends
+ * on nothing the capture produces.
+ *
+ * Calling this at capture start moves it under the twelve seconds the user is
+ * already speaking. It delegates to the same lazy `getPoseidon` the real path
+ * uses, so there is one initialisation route and one cached instance. Calling
+ * it twice, or not at all, changes nothing except when the cost is paid.
+ *
+ * Resolves to `true` when the instance is ready and `false` when the build
+ * failed. It never rejects: a warm-up that throws must not become an unhandled
+ * rejection, and a failure here is not an error — the lazy path simply pays the
+ * cost later, exactly as it does today.
+ */
+export async function warmPoseidon(): Promise<boolean> {
+  try {
+    await getPoseidon();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Pack 256-bit fingerprint into two 128-bit field elements.
  * Little-endian bit ordering within each chunk (matches circuit's Bits2Num).
  */

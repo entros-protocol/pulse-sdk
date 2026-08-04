@@ -156,6 +156,31 @@ async function getMeyda(): Promise<any> {
 }
 
 /**
+ * Load the Meyda bundle ahead of the moment extraction needs it.
+ *
+ * Extraction begins the instant capture ends, so the module load sits on the
+ * critical path with nothing to overlap it. Calling this at capture start hides
+ * it under the capture instead.
+ *
+ * One call warms every consumer. `speaker.ts` keeps its own `getMeyda`, but the
+ * expensive part is the module load, and the second `import("meyda")` resolves
+ * from the module registry that this call populates. So `speaker.ts` needs no
+ * change and must not grow a second warm-up.
+ *
+ * Resolves to `true` when Meyda is available. Never rejects: `getMeyda` already
+ * returns `null` rather than throwing when the bundle is missing, and callers
+ * fall back to a zero feature vector. This reports that state instead of
+ * hiding it.
+ */
+export async function warmMeyda(): Promise<boolean> {
+  try {
+    return (await getMeyda()) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Extract MFCC and delta-MFCC statistical features from an audio capture.
  *
  * Computes MFCCs frame-by-frame using Meyda's built-in extractor, then
