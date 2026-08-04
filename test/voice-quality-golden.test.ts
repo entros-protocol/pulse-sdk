@@ -147,7 +147,14 @@ describe("voice-quality golden vectors", () => {
       const got = features[i]!;
       // Relative where the value is large enough for that to mean anything,
       // absolute near zero, since three of these sit at 1e-11 or below.
-      const tolerance = Math.max(Math.abs(want) * 1e-12, 1e-20);
+      //
+      // The absolute floor is 1e-18 rather than something tighter because the
+      // near-zero entries are variances of nearly-identical per-frame values.
+      // Catastrophic cancellation leaves them with an absolute error far larger
+      // than their own magnitude implies: an ULP disagreement on inputs around
+      // 310 surfaces as roughly 1e-20 on an output of 4e-11, which is 3e-10 in
+      // relative terms. A relative-only bound cannot express that.
+      const tolerance = Math.max(Math.abs(want) * 1e-9, 1e-18);
       expect(Math.abs(got - want)).toBeLessThanOrEqual(tolerance);
     }
   }, 60_000);
