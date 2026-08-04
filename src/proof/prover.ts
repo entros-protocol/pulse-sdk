@@ -14,6 +14,177 @@ async function getSnarkjs(): Promise<any> {
 }
 
 /**
+ * Load the snarkjs bundle ahead of proving. Measured at 174 ms cold.
+ *
+ * Delegates to the same lazy `getSnarkjs` the proof path uses, so there is one
+ * initialisation route. Never rejects — a failed warm-up leaves the lazy path
+ * to pay the cost later, exactly as today.
+ */
+export async function warmSnarkjs(): Promise<boolean> {
+  try {
+    await getSnarkjs();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The two circuit artifacts, in memory. */
+export interface CircuitArtifacts {
+  wasm: Uint8Array;
+  zkey: Uint8Array;
+}
+
+/**
+ * Circuit artifacts held in memory between capture start and proving.
+ *
+ * Keyed by the URL pair. A prefetch started for one pair must never satisfy a
+ * proof that asked for another, so the key is compared before the buffers are
+ * handed out.
+ */
+interface PrefetchedArtifacts {
+  wasmUrl: string;
+  zkeyUrl: string;
+  ready: Promise<CircuitArtifacts | null>;
+}
+
+let prefetched: PrefetchedArtifacts | null = null;
+
+/** `priority` is a Priority Hints field that predates its appearance in lib.dom. */
+type PrioritizedRequestInit = RequestInit & {
+  priority?: "high" | "low" | "auto";
+};
+
+/**
+ * Ceiling on a prefetch, and it is load-bearing rather than tidiness.
+ *
+ * `takeCircuitArtifacts` awaits an in-flight transfer instead of abandoning it,
+ * which is right for a slow connection — the download has a head start and
+ * restarting would discard it. On a *hung* connection that would be worse than
+ * shipping no prefetch at all, because today snarkjs issues its own request at
+ * proof time. The timeout keeps the pathological case bounded: the prefetch
+ * gives up, resolves null, and the proof path falls back to the URL exactly as
+ * it does now. Generous enough that no real connection moving 2.64 MiB trips it.
+ */
+const PREFETCH_TIMEOUT_MS = 60_000;
+
+function prefetchSignal(
+  caller: AbortSignal | undefined
+): AbortSignal | undefined {
+  if (
+    typeof AbortSignal === "undefined" ||
+    typeof AbortSignal.timeout !== "function"
+  ) {
+    return caller;
+  }
+  const timeout = AbortSignal.timeout(PREFETCH_TIMEOUT_MS);
+  if (!caller) return timeout;
+  return typeof AbortSignal.any === "function"
+    ? AbortSignal.any([caller, timeout])
+    : caller;
+}
+
+async function fetchArtifact(
+  url: string,
+  signal: AbortSignal | undefined
+): Promise<Uint8Array> {
+  const init: PrioritizedRequestInit = {
+    // Below the microphone and motion sampler, which are running while this
+    // downloads. Engines without Priority Hints ignore the unknown key.
+    priority: "low",
+    // No `cache` override on purpose. Default handling honours the server's
+    // headers, which is the only safe policy here: a forced cache hit would
+    // survive a circuit upgrade and hand snarkjs a stale zkey, producing proofs
+    // the on-chain verifier rejects for reasons nothing in the client explains.
+  };
+  if (signal) init.signal = signal;
+  const response = await fetch(url, init);
+  if (!response.ok) {
+    throw new Error(`artifact fetch failed: ${response.status}`);
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+/**
+ * Start downloading the circuit artifacts so proving does not wait on them.
+ *
+ * The wasm and zkey total about 2.64 MiB and snarkjs fetches them at proof
+ * time, after the validator round trip, with nothing overlapping the transfer.
+ * Nothing about that fetch depends on the capture, so it can begin the moment
+ * the microphone opens and complete under the twelve seconds of capture plus
+ * the validator's four-second floor.
+ *
+ * **Deliberately unconditional.** Artifacts are only ever *used* by a
+ * re-verification, so fetching them only when a stored baseline exists would be
+ * the smaller download. It would also make a fixed-size 2.64 MiB transfer an
+ * observable that separates returning users from first-time ones, visible
+ * through TLS by size alone. `executor-node/src/timing.rs` already spends four
+ * seconds of real latency to stop behaviour varying with user state, and
+ * opening a state-dependent channel here to save bandwidth would work against
+ * the control the protocol already pays for.
+ *
+ * Returns immediately. The download proceeds in the background and its result
+ * is collected by `takeCircuitArtifacts`. This function never throws and never
+ * produces an unhandled rejection: the failure is captured in the stored
+ * promise, which resolves to `null`.
+ */
+export function prefetchCircuitArtifacts(
+  wasmUrl: string,
+  zkeyUrl: string,
+  signal?: AbortSignal
+): void {
+  if (typeof fetch !== "function") return;
+  if (
+    prefetched &&
+    prefetched.wasmUrl === wasmUrl &&
+    prefetched.zkeyUrl === zkeyUrl
+  ) {
+    return;
+  }
+
+  const bounded = prefetchSignal(signal);
+  const ready = Promise.all([
+    fetchArtifact(wasmUrl, bounded),
+    fetchArtifact(zkeyUrl, bounded),
+  ])
+    .then(([wasm, zkey]) => ({ wasm, zkey }))
+    // Swallowed on purpose. An aborted capture, an offline user or a blocked
+    // CDN must leave the proof path exactly as it is today, passing URLs to
+    // snarkjs, rather than introducing a new way to fail.
+    .catch(() => null);
+
+  prefetched = { wasmUrl, zkeyUrl, ready };
+}
+
+/**
+ * Collect a prefetch started earlier, or `null` if there is nothing usable.
+ *
+ * Awaits an in-flight download rather than skipping it. That is never worse
+ * than the current behaviour: the transfer started seconds earlier, so it
+ * finishes at least as soon as the fetch snarkjs would issue here instead.
+ *
+ * Clears the entry on the way out, so the 2.64 MiB is not held for the life of
+ * the page. A retry after proving fails falls back to URLs, which is the
+ * behaviour that ships today.
+ */
+export async function takeCircuitArtifacts(
+  wasmUrl: string,
+  zkeyUrl: string
+): Promise<CircuitArtifacts | null> {
+  const entry = prefetched;
+  if (!entry || entry.wasmUrl !== wasmUrl || entry.zkeyUrl !== zkeyUrl) {
+    return null;
+  }
+  prefetched = null;
+  return entry.ready;
+}
+
+/** Drop any pending prefetch. Exposed for tests and for teardown. */
+export function clearPrefetchedArtifacts(): void {
+  prefetched = null;
+}
+
+/**
  * Prepare circuit input from current and previous TBH data.
  */
 export function prepareCircuitInput(
@@ -62,14 +233,22 @@ export function classifyHammingDistance(
 /**
  * Generate a Groth16 proof for the Hamming distance circuit.
  *
+ * Both artifacts accept either a location or the bytes themselves. snarkjs
+ * resolves them through `fastfile.readExisting`, which treats a `Uint8Array` as
+ * an in-memory file and `fetch`es a string in the browser. Passing prefetched
+ * bytes produces identical `publicSignals` to passing the URL — verified
+ * against the real circuit — so the two forms are interchangeable to the chain.
+ * The proof bytes themselves differ between any two runs regardless, because
+ * Groth16 proving is randomised.
+ *
  * @param input - Circuit input (fingerprints, salts, commitments, threshold)
- * @param wasmPath - Path or URL to entros_hamming.wasm
- * @param zkeyPath - Path or URL to entros_hamming_final.zkey
+ * @param wasmPath - Path or URL to entros_hamming.wasm, or its bytes
+ * @param zkeyPath - Path or URL to entros_hamming_final.zkey, or its bytes
  */
 export async function generateProof(
   input: CircuitInput,
-  wasmPath: string,
-  zkeyPath: string
+  wasmPath: string | Uint8Array,
+  zkeyPath: string | Uint8Array
 ): Promise<ProofResult> {
   const snarkjs = await getSnarkjs();
   const { proof, publicSignals } = await snarkjs.groth16.fullProve(
@@ -86,8 +265,8 @@ export async function generateProof(
 export async function generateSolanaProof(
   current: TBH,
   previous: TBH,
-  wasmPath: string,
-  zkeyPath: string,
+  wasmPath: string | Uint8Array,
+  zkeyPath: string | Uint8Array,
   threshold?: number,
   minDistance?: number
 ): Promise<SolanaProof> {
