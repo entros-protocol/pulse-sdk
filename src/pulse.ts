@@ -31,8 +31,21 @@ import { fuseFeatures, fuseRawFeatures } from "./extraction/statistics";
 import { yieldToMainThread } from "./yield";
 import { collectClientSignals } from "./client-signals/automation";
 import { simhash, hammingDistance } from "./hashing/simhash";
-import { generateTBH, bigintToBytes32, computeCommitment } from "./hashing/poseidon";
-import { prepareCircuitInput, generateProof, classifyHammingDistance } from "./proof/prover";
+import {
+  generateTBH,
+  bigintToBytes32,
+  computeCommitment,
+  warmPoseidon,
+} from "./hashing/poseidon";
+import {
+  prepareCircuitInput,
+  generateProof,
+  classifyHammingDistance,
+  warmSnarkjs,
+  prefetchCircuitArtifacts,
+  takeCircuitArtifacts,
+} from "./proof/prover";
+import { warmMeyda } from "./extraction/mfcc";
 import { serializeProof } from "./proof/serializer";
 import { submitViaWallet, submitResetViaWallet } from "./submit/wallet";
 import { submitViaRelayer } from "./submit/relayer";
@@ -1018,10 +1031,14 @@ async function processSensorData(
     }
 
     try {
+      // Collected from the prefetch started at capture start. Null when it was
+      // never started, was aborted, or failed, in which case snarkjs fetches
+      // the URLs itself exactly as it always has.
+      const artifacts = await takeCircuitArtifacts(wasmPath, zkeyPath);
       const { proof, publicSignals } = await generateProof(
         circuitInput,
-        wasmPath,
-        zkeyPath
+        artifacts ? artifacts.wasm : wasmPath,
+        artifacts ? artifacts.zkey : zkeyPath
       );
       solanaProof = serializeProof(proof, publicSignals);
     } catch (proofErr: any) {
@@ -1438,6 +1455,43 @@ export class PulseSession {
     // Clear the safety timer if the first frame won the race, so a resolved
     // startAudio() never leaves a dangling timeout pending.
     if (readyTimer !== undefined) clearTimeout(readyTimer);
+
+    // Everything the rest of the flow initialises lazily, started now.
+    //
+    // None of it depends on the capture, and all of it currently lands on the
+    // user's critical path: Poseidon's WASM compile (503 ms cold) sits between
+    // extraction and the commitment, the Meyda bundle is needed the instant
+    // capture ends, and snarkjs plus 2.64 MiB of circuit artifacts are fetched
+    // after the validator returns. Started here they have the rest of the
+    // capture, plus the validator's four-second floor, to finish in.
+    //
+    // Placed after the readiness race on purpose. Two of these parse a sizable
+    // bundle on the main thread, and the AudioContext and microphone cold-start
+    // is the one moment in the flow least able to absorb that — dropping the
+    // start of the phrase is a failure this handshake exists to prevent. The
+    // few hundred milliseconds of runway given up here is bought back many
+    // times over by not contending with mic startup.
+    //
+    // Fire and forget, deliberately. Each helper resolves rather than rejects,
+    // and `void` documents that nothing awaits them. A warm-up that fails
+    // leaves the original lazy path to pay the cost later, so the worst case is
+    // today's behaviour.
+    void warmPoseidon();
+    void warmMeyda();
+    void warmSnarkjs();
+    if (this.config.wasmUrl && this.config.zkeyUrl) {
+      // No abort signal, deliberately. Every controller in scope here
+      // (`audioController`, `captureWindowController`) is aborted on *normal*
+      // completion — `stopAudio` fires the first to release the microphone — so
+      // wiring any of them up would cancel the download at the exact moment the
+      // proof is about to need it. There is no session teardown hook to attach
+      // to instead, and none is worth inventing: the transfer is bounded by its
+      // own timeout, the browser cancels in-flight requests on navigation, and
+      // a first verification that never proves simply leaves the bytes cached
+      // for the re-verification that follows, which is the next thing that user
+      // does.
+      prefetchCircuitArtifacts(this.config.wasmUrl, this.config.zkeyUrl);
+    }
   }
 
   /**
