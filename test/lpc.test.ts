@@ -131,3 +131,79 @@ describe("extractLpcAnalysis", () => {
     expect(dummy.numFramesAnalyzed).toBe(0);
   });
 });
+
+/**
+ * Golden vectors for the LPC analysis path.
+ *
+ * IF ONE OF THESE FAILS, DO NOT UPDATE THE EXPECTED VALUE.
+ *
+ * A failure means the formant, bandwidth and LPC-coefficient series moved for
+ * an input the pipeline has already been asked about in production. Those
+ * series feed `speaker.ts`, which fills part of the 170-feature audio block,
+ * which is z-scored into the fused vector, which becomes the SimHash, which
+ * becomes the commitment written on chain. A changed value here therefore
+ * shifts every fingerprint and strands every stored baseline behind
+ * `drift-too-high`, with a reset as the only exit. That is the failure mode
+ * master-list #215 exists to prevent, and it would arrive here disguised as a
+ * performance optimisation.
+ *
+ * The values were produced by the implementation at commit `cf2bf5f`, before
+ * the Hamming-window table was hoisted out of the per-frame loop, and verified
+ * unchanged after it. Any future rewrite of the windowing, the autocorrelation,
+ * the Levinson-Durbin recursion or the root finder has to reproduce them
+ * exactly, or it is a projection change and must be sequenced behind #215.
+ *
+ * The other tests in this file check shape, alignment and determinism. Every
+ * one of them passes against an implementation that computes different numbers.
+ * Only these vectors catch that.
+ */
+describe("extractLpcAnalysis golden vectors", () => {
+  const samples = multiToneSamples(SESSION_LENGTH, [500, 1500, 2500]);
+  const analysis = extractLpcAnalysis(samples, SAMPLE_RATE, FRAME_SIZE, HOP_SIZE);
+  const MID = 594;
+  const LAST = 1187;
+
+  it("analyses the pinned number of frames", () => {
+    expect(analysis.numFramesAnalyzed).toBe(1188);
+  });
+
+  const series: Array<{ name: keyof typeof analysis; at: [number, number, number] }> = [
+    { name: "f1", at: [500.01530584871745, 500.01530584879595, 500.01530584881914] },
+    { name: "f2", at: [1500.09986324919, 1500.099863249147, 1500.0998632491408] },
+    { name: "f3", at: [2500.072179315838, 2500.072179315844, 2500.072179315838] },
+    { name: "b1", at: [0.2545482005833285, 0.25454820057654265, 0.25454820057710814] },
+    { name: "b2", at: [0.14803473758696717, 0.1480347375844226, 0.14803473758413987] },
+    { name: "b3", at: [0.038246138653724664, 0.03824613865400738, 0.038246138653724664] },
+    { name: "f1f2", at: [0.3333213461973745, 0.3333213461974364, 0.33332134619745324] },
+    { name: "f2f3", at: [0.6000226216107499, 0.6000226216107312, 0.6000226216107302] },
+  ];
+
+  for (const { name, at } of series) {
+    it(`holds the pinned ${String(name)} series`, () => {
+      const track = analysis[name] as number[];
+      expect(track).toHaveLength(1188);
+      expect(track[0]).toBe(at[0]);
+      expect(track[MID]).toBe(at[1]);
+      expect(track[LAST]).toBe(at[2]);
+    });
+  }
+
+  it("holds the pinned LPC coefficient tracks", () => {
+    const first = analysis.lpcCoefficients[0]!;
+    const twelfth = analysis.lpcCoefficients[11]!;
+    expect(first[0]).toBe(-2.211867471627163);
+    expect(first[first.length - 1]).toBe(-2.211867471722756);
+    expect(twelfth[0]).toBe(0.3522504587991376);
+    expect(twelfth[twelfth.length - 1]).toBe(0.35225045877833444);
+  });
+
+  it("recovers the input tones, so the vectors pin a correct analysis", () => {
+    // Guards against pinning a broken implementation. 500/1500/2500 Hz in, the
+    // same frequencies out to within 0.15 Hz, which is under 0.01% error at
+    // every one of the three. Without this the golden vectors above would
+    // happily freeze a formant tracker that had stopped tracking formants.
+    expect(Math.abs(analysis.f1[0]! - 500)).toBeLessThan(0.15);
+    expect(Math.abs(analysis.f2[0]! - 1500)).toBeLessThan(0.15);
+    expect(Math.abs(analysis.f3[0]! - 2500)).toBeLessThan(0.15);
+  });
+});
