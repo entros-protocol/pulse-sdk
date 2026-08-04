@@ -9,6 +9,26 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+## [4.5.0] - 2026-08-05
+
+### Changed
+- **Poseidon now runs on `poseidon-lite` instead of `circomlibjs`.** The commitment is byte-identical: both implement Poseidon over BN254 with the same parameters, and `computeCommitment` returns the same field element for the same inputs. What changes is everything underneath. `circomlibjs` pulls `ethers@5`, `blake-hash`, `ffjavascript` and a WASM build, and that subtree carried the large majority of this package's dependency advisories. `poseidon-lite` is pure JavaScript with no dependencies at all. It also removes a WASM compile from the first call, which is where most of the old cost sat.
+- **The Hamming window is computed once per frame size rather than once per frame.** `hammingWindow` memoises into a `Float64Array` keyed on frame size. The width is load-bearing: a `Float32Array` table changes roughly a quarter of the resulting samples, so the coefficients stay double precision.
+- **The cepstral DCT basis is built once per capture rather than once per frame.** `cepstralPeakProminence` was recomputing the same 227x1024 cosine basis for every frame, which came to 276 million `Math.cos` calls across a capture. It is now 232,448. The measured block fell from 3,727ms to 446ms.
+
+### Added
+- **Warm-up entry points so initialisation leaves the critical path.** `warmPoseidon`, `warmMeyda` and `warmSnarkjs` start their module loads at capture start, where roughly sixteen seconds of runway exist before a proof begins. Measured on the old backend, the first Poseidon call cost 503ms and the snarkjs import 174ms.
+- **`prefetchCircuitArtifacts` and `takeCircuitArtifacts`.** The 2.64 MiB of circuit artifacts download during capture at `priority: "low"` so they do not compete with the microphone. `generateProof` and `generateSolanaProof` accept `string | Uint8Array` for `wasmPath` and `zkeyPath`, so a resolved prefetch is passed straight through. This is additive and existing string callers are unaffected.
+- The fetch is deliberately unconditional. Downloading only when a stored baseline exists would make a fixed-size transfer an observable that separates returning users from first-time ones, visible through TLS by size alone.
+- Every warm-up is fire-and-forget with its rejection swallowed at the call site. A failed or blocked prefetch falls back to the URL exactly as before, so a user behind a blocked CDN sees current behaviour rather than a new failure mode. A prefetch that never resolves is bounded at 60 seconds so proving can never wait longer than it would have.
+- **Continuous integration.** Typecheck, tests and build run on every push, with a publish gate that installs the packed tarball and imports it.
+
+### Fixed
+- **Golden vectors no longer depend on the architecture that generated them.** `Math.cos` and `Math.log` are not required by IEEE-754 to be correctly rounded, and V8 returns different last bits on macOS arm64 and Linux x64. A vector pinned exactly on one machine failed on the other by one unit in the last place. Exact guards now sit on the coefficient tables, which are recomputed in-process and therefore hold anywhere, and the end-to-end vectors compare with a relative tolerance wide enough to survive that noise. The tolerance floor accounts for catastrophic cancellation in the variance of near-identical values.
+- **`npm ci` now installs from the lockfile in a default environment.** A machine-level `legacy-peer-deps=true` had omitted peer entries from `package-lock.json`, producing a lockfile that could not be installed anywhere the same setting was absent. `.npmrc` pins the resolution mode for this package so the lockfile describes the real graph.
+- The bundled IDL is resolved relative to the script rather than through an absolute path.
+- Refreshed the lockfile to clear every advisory that had a non-breaking fix. Three remain, all in the `@solana/spl-token` to `bigint-buffer` chain, where the only offered remedy is a semver-major downgrade rather than a patched release. Tracked rather than applied.
+
 ## [4.4.0] - 2026-08-01
 
 ### Added
