@@ -122,11 +122,6 @@ function findRoots(coefficients: number[], maxIterations: number = 50): [number,
 
       // Compute z^n by repeated multiplication
       const [rr, ri] = roots[i]!;
-      let curReal = 1;
-      let curImag = 0;
-
-      // Evaluate as: z^n + sum(a[k] * z^(n-1-k))
-      // Start with z^n
       let znReal = 1;
       let znImag = 0;
       for (let k = 0; k < n; k++) {
