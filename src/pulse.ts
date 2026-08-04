@@ -35,7 +35,6 @@ import {
   generateTBH,
   bigintToBytes32,
   computeCommitment,
-  warmPoseidon,
 } from "./hashing/poseidon";
 import {
   prepareCircuitInput,
@@ -1459,24 +1458,27 @@ export class PulseSession {
     // Everything the rest of the flow initialises lazily, started now.
     //
     // None of it depends on the capture, and all of it currently lands on the
-    // user's critical path: Poseidon's WASM compile (503 ms cold) sits between
-    // extraction and the commitment, the Meyda bundle is needed the instant
-    // capture ends, and snarkjs plus 2.64 MiB of circuit artifacts are fetched
-    // after the validator returns. Started here they have the rest of the
-    // capture, plus the validator's four-second floor, to finish in.
+    // user's critical path: the Meyda bundle is needed the instant capture
+    // ends, and snarkjs plus 2.64 MiB of circuit artifacts are fetched after
+    // the validator returns. Started here they have the rest of the capture,
+    // plus the validator's four-second floor, to finish in.
     //
-    // Placed after the readiness race on purpose. Two of these parse a sizable
-    // bundle on the main thread, and the AudioContext and microphone cold-start
-    // is the one moment in the flow least able to absorb that — dropping the
-    // start of the phrase is a failure this handshake exists to prevent. The
-    // few hundred milliseconds of runway given up here is bought back many
-    // times over by not contending with mic startup.
+    // Poseidon is absent from this list on purpose. It used to be the largest
+    // entry at 381 ms, and swapping `circomlibjs` for `poseidon-lite` removed
+    // the WASM compile rather than merely rescheduling it, so there is nothing
+    // left to warm.
+    //
+    // Placed after the readiness race on purpose. These parse a sizable bundle
+    // on the main thread, and the AudioContext and microphone cold-start is the
+    // one moment in the flow least able to absorb that — dropping the start of
+    // the phrase is a failure this handshake exists to prevent. The few hundred
+    // milliseconds of runway given up here is bought back many times over by
+    // not contending with mic startup.
     //
     // Fire and forget, deliberately. Each helper resolves rather than rejects,
     // and `void` documents that nothing awaits them. A warm-up that fails
     // leaves the original lazy path to pay the cost later, so the worst case is
     // today's behaviour.
-    void warmPoseidon();
     void warmMeyda();
     void warmSnarkjs();
     if (this.config.wasmUrl && this.config.zkeyUrl) {

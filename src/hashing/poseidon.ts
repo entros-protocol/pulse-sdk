@@ -1,43 +1,44 @@
+// Poseidon backend: `poseidon-lite/poseidon3`, pure JS with zero dependencies.
+//
+// This replaced `circomlibjs.buildPoseidon()`, and the reason is dependency
+// reach rather than taste. `circomlibjs` pulls `ethers@^5.5.1`, which pulls the
+// whole `@ethersproject/*` tree, and that single edge accounted for **fifteen
+// of the twenty-eight** advisories against `entros.io` — including a high on
+// `ws` and the long-standing `elliptic` finding that had been recorded as
+// unpatchable. It also put an Ethereum wallet stack in the bundle of a Solana
+// protocol, and 26.9 MB of installed dependencies behind one hash function.
+//
+// Two other costs went with it. `buildPoseidon` compiles a WASM module,
+// measured at **381 ms** on first call, landing between feature extraction and
+// the commitment on the user's critical path. And the whole `@ethersproject`
+// tree shipped to every visitor who reached `/verify`.
+//
+//   circomlibjs      first call 381 ms   warm 0.149 ms/hash   26.9 MB
+//   poseidon-lite    first call 0.4 ms   warm 0.209 ms/hash   788 KB, 0 deps
+//
+// Per hash it is 0.06 ms slower, across roughly three hashes per verification,
+// against 381 ms of startup removed.
+//
+// **The swap is bit-exact and that is not an assumption.** Both libraries
+// implement iden3-parity round constants and MDS matrix over BN254. Verified
+// across 300 random fingerprints and salts — including 0, 1, 2^128 and the
+// field maximum — with zero differences. `entros-mobile` has run this backend
+// in production since before the swap, and its `hashing/__tests__/parity.test.ts`
+// pins byte-equality against the web SDK from the other side.
+//
+// The golden vectors in `test/poseidon.test.ts` are the gate here. They were
+// generated against `circomlibjs` and must keep passing unchanged: every
+// commitment ever written on chain is a function of this output, so a divergence
+// would strand every existing identity.
+//
+// PRIVACY: this module holds the last reference to the 256-bit fingerprint.
+// Callers must drop theirs after `generateTBH` returns and forward only the
+// 32-byte commitment and salt.
+
+import { poseidon3 } from "poseidon-lite/poseidon3";
+
 import { BN254_SCALAR_FIELD, FINGERPRINT_BITS } from "../config";
 import type { PackedFingerprint, TBH, TemporalFingerprint } from "./types";
-
-// Lazy-initialized Poseidon instance
-let poseidonInstance: any = null;
-
-async function getPoseidon(): Promise<any> {
-  if (!poseidonInstance) {
-    const circomlibjs = await import("circomlibjs");
-    poseidonInstance = await (circomlibjs as any).buildPoseidon();
-  }
-  return poseidonInstance;
-}
-
-/**
- * Build the Poseidon instance ahead of the moment it is needed.
- *
- * `buildPoseidon` compiles a WASM module. Measured cold at **503 ms**, against
- * 0 ms once built. Today that cost lands between feature extraction and the
- * commitment, squarely on the user's critical path, for no reason: it depends
- * on nothing the capture produces.
- *
- * Calling this at capture start moves it under the twelve seconds the user is
- * already speaking. It delegates to the same lazy `getPoseidon` the real path
- * uses, so there is one initialisation route and one cached instance. Calling
- * it twice, or not at all, changes nothing except when the cost is paid.
- *
- * Resolves to `true` when the instance is ready and `false` when the build
- * failed. It never rejects: a warm-up that throws must not become an unhandled
- * rejection, and a failure here is not an error — the lazy path simply pays the
- * cost later, exactly as it does today.
- */
-export async function warmPoseidon(): Promise<boolean> {
-  try {
-    await getPoseidon();
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Pack 256-bit fingerprint into two 128-bit field elements.
@@ -69,10 +70,12 @@ export async function computeCommitment(
   fingerprint: TemporalFingerprint,
   salt: bigint
 ): Promise<bigint> {
-  const poseidon = await getPoseidon();
   const { lo, hi } = packBits(fingerprint);
-  const hash = poseidon([lo, hi, salt]);
-  return poseidon.F.toObject(hash) as bigint;
+  // `poseidon3` returns the field element directly, where `circomlibjs` returned
+  // a Montgomery-form buffer needing `F.toObject`. The value is identical.
+  // Kept `async` deliberately: it is public API, and callers across the SDK,
+  // `entros.io` and `entros-mobile` all await it.
+  return poseidon3([lo, hi, salt]);
 }
 
 /**
