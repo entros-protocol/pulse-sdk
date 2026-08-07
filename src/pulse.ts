@@ -515,11 +515,10 @@ async function extractFingerprintAndValidate(
       }
 
       // Parse the validator's success body for the signed receipt and the
-      // server-derived commitment + salt. Older validator deploys omit these
-      // fields — the SDK then keeps its local TBH and proceeds; note that
-      // `mint_anchor` rejects a missing receipt whenever the protocol's
-      // `validator_pubkey` is configured, so a pre-receipt validator must be
-      // upgraded before that mint path is exercised.
+      // server-derived commitment + salt. A returning verification can use a
+      // successful response without a mint receipt. The first-verification
+      // wallet path fails closed before requesting a wallet transaction when
+      // the receipt is absent.
       try {
         const successBody = validateResponse.body as {
           signed_receipt?: SignedReceiptDto;
@@ -566,13 +565,12 @@ async function extractFingerprintAndValidate(
           }
         }
       } catch (err) {
-        // Body wasn't JSON — typically an older validator returning an
-        // empty 200, or a proxy mangling the response. Surface a warn
-        // so operators can distinguish "validator-too-old" from a real
-        // validator misconfiguration. Treat as no-receipt and proceed.
+        // Body was not JSON. Keep the validated feature result for returning
+        // verification. A first-verification wallet submission will reject
+        // the missing receipt before requesting a signature.
         const msg = err instanceof Error ? err.message : String(err);
         sdkWarn(
-          `[Entros SDK] /validate-features returned 200 but body was not parseable JSON; proceeding without receipt: ${msg}`
+          `[Entros SDK] /validate-features returned 200 but body was not parseable JSON; no mint receipt is available: ${msg}`
         );
       }
     } catch (err) {

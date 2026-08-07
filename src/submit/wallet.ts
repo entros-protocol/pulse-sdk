@@ -301,7 +301,7 @@ export async function submitViaWallet(
      */
     signedReceipt?: SignedReceiptDto;
     /**
-     * Encrypted baseline blob (master-list #98). When present, the SDK
+     * Encrypted baseline blob. When present, the SDK
      * appends a `set_encrypted_baseline` instruction at the end of the
      * atomic transaction so the wallet's on-chain baseline is rewritten
      * to reflect the new fingerprint in the same wallet prompt as the
@@ -319,6 +319,15 @@ export async function submitViaWallet(
     onProgress?: (stage: string) => void;
   }
 ): Promise<SubmissionResult> {
+  if (options.isFirstVerification && !options.signedReceipt) {
+    return {
+      success: false,
+      error:
+        "First verification requires a validator-signed mint receipt. The validator did not return one, so the SDK did not request a wallet transaction.",
+      failedAt: "submission",
+    };
+  }
+
   try {
     const anchor = await import("@coral-xyz/anchor");
     const {
@@ -594,20 +603,11 @@ export async function submitViaWallet(
         sdkLog(
           "[Entros SDK] Bundling validator-signed mint receipt before mint_anchor"
         );
-      } else {
-        // No receipt is the legitimate "older validator" path. The on-chain
-        // check is currently log-only so the mint still succeeds; once
-        // enforcement is enabled, this will turn into a hard reject and
-        // operators must ensure the validator is configured for receipt
-        // signing.
-        sdkLog(
-          "[Entros SDK] No validator receipt available; minting without binding (on-chain check is log-only today)"
-        );
       }
 
       // Transaction shape:
       //   [0] ComputeBudgetProgram.setComputeUnitLimit
-      //   [1] (optional) Ed25519Program::verify(receipt)
+      //   [1] Ed25519Program::verify(receipt)
       //   [2] mint_anchor(initial_commitment)
       //   [3] (optional) set_encrypted_baseline(blob)
       //
@@ -615,9 +615,7 @@ export async function submitViaWallet(
       // adapters that lazily inject one from inserting it between the
       // Ed25519 ix and `mint_anchor`. The on-chain receipt parser locates
       // the receipt at `current_instruction_index - 1`, so any ix between
-      // the Ed25519 prefix and `mint_anchor` would silently break the
-      // binding while the check is log-only or hard-fail the mint once
-      // enforcement is enabled.
+      // the Ed25519 prefix and `mint_anchor` would fail the enforced binding.
       //
       // `set_encrypted_baseline` is appended LAST because it depends on the
       // IdentityState PDA created by `mint_anchor`; intra-tx instructions
@@ -710,7 +708,7 @@ export async function submitResetViaWallet(
     relayerUrl?: string;
     relayerApiKey?: string;
     /**
-     * Encrypted baseline blob (master-list #98). When present, the SDK
+     * Encrypted baseline blob. When present, the SDK
      * appends a `set_encrypted_baseline` instruction so the wallet's
      * on-chain baseline is rewritten under the NEW post-reset commitment
      * in the same atomic transaction. Without this, the prior blob would
