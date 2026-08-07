@@ -8,7 +8,7 @@ function getRegistryProgramId(cluster?: PulseConfig["cluster"]): string {
     : AGENT_REGISTRY_CONFIG.programIdDevnet;
 }
 
-/** Metadata written to an AI agent linking it to a verified human operator */
+/** Metadata linking an AI agent to an Entros identity record. */
 export interface AgentHumanOperator {
   anchorPda: string;
   trustScore: number;
@@ -26,11 +26,11 @@ async function sha256(data: Uint8Array): Promise<Uint8Array> {
 }
 
 /**
- * Attest that a verified Entros human operates an AI agent on the Solana Agent Registry.
+ * Link an AI agent to its operator's Entros identity on Solana Agent Registry.
  *
  * Reads the user's on-chain IdentityState PDA, builds metadata JSON, and writes
  * it to the agent's metadata via a manually constructed set_metadata_pda instruction.
- * The metadata is immutable once set, permanently linking the agent to its human operator.
+ * The metadata is immutable once set.
  *
  * The wallet must own both the Entros Anchor and the agent's Metaplex Core NFT.
  *
@@ -46,6 +46,13 @@ export async function attestAgentOperator(
     cluster?: PulseConfig["cluster"];
   }
 ): Promise<{ success: boolean; signature?: string; error?: string }> {
+  if (options.cluster && options.cluster !== "devnet") {
+    return {
+      success: false,
+      error: "Agent Anchor attestation is currently available on devnet only.",
+    };
+  }
+
   try {
     const { PublicKey, Transaction, TransactionInstruction, SystemProgram } =
       await import("@solana/web3.js");
@@ -206,13 +213,16 @@ export async function attestAgentOperator(
     await options.connection.confirmTransaction(sig, "confirmed");
 
     return { success: true, signature: sig };
-  } catch (err: any) {
-    return { success: false, error: err.message ?? String(err) };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
 /**
- * Query whether an AI agent has a verified human operator via Entros.
+ * Query whether an AI agent has Entros operator metadata.
  *
  * Reads the "entros:human-operator" metadata from the agent's on-chain record
  * and returns the operator's Entros Anchor details.
