@@ -1,7 +1,7 @@
 {
   "name": "@entros/pulse-sdk",
   "version": "4.5.0",
-  "description": "Client-side SDK for Entros Protocol: sensor capture, TBH generation, ZK proof construction",
+  "description": "Entros client SDK for behavioral capture, commitments, re-verification proofs, and devnet submission",
   "license": "MIT",
   "homepage": "https://entros.io",
   "repository": {

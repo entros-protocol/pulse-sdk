@@ -3,7 +3,17 @@
 [![npm version](https://img.shields.io/npm/v/@entros/pulse-sdk.svg)](https://www.npmjs.com/package/@entros/pulse-sdk)
 [![npm downloads](https://img.shields.io/npm/dm/@entros/pulse-sdk.svg)](https://www.npmjs.com/package/@entros/pulse-sdk)
 
-Client-side SDK for the Entros Protocol. Captures behavioral biometrics (voice, motion, touch), extracts a 308-dimensional statistical feature vector (v3 expansion: MFCCs with pre-emphasis (C1-C12, MFCC[0] dropped), LPC coefficients, formant trajectories, voice quality, pitch contour shape, IMU FFT-band tremor, cross-axis covariance, mouse-derived FFT / autocorrelation analogues for desktop, touch curvature, gap distribution, path efficiency — see `docs/master/BLUEPRINT-feature-pipeline-v2.md`), generates a Groth16 zero-knowledge proof, and submits for on-chain verification on Solana. Raw biometric data never persists — only derived features and the proof are retained.
+Client SDK for Entros capture, feature extraction, fingerprinting, proof generation, and Solana submission.
+
+The SDK derives 308 features from phrase audio, motion, and touch. It generates a 256-bit SimHash fingerprint and Poseidon commitment. Re-verification also generates a Groth16 proof.
+
+Raw motion and full-resolution touch streams stay in client memory. Phrase audio leaves transiently for private validation.
+
+Validation also receives the feature summary, F0 contour, acceleration magnitude, wallet, client signals, curve outline, timing, and commitment fields.
+
+The SDK stores the fingerprint, salt, commitment, and timestamp as a baseline. Wallet flows can store an encrypted baseline blob on-chain.
+
+A host-approved fallback can store the local baseline without encryption. Integrators must treat that option as a lower-assurance recovery mode.
 
 > **Looking for a drop-in?** Most integrators want [`@entros/verify`](https://github.com/entros-protocol/entros-verify) — a popup-pattern React component that wraps this SDK and ships verification in five lines of JSX. Use this package directly when you need to own the verification UX (custom capture canvas, branded loading states, mobile-native).
 
@@ -17,7 +27,11 @@ npm install @entros/pulse-sdk
 
 ### Wallet-connected (primary)
 
-The user pays a small protocol fee (~0.005 SOL) and signs the verification transaction. Re-verification is batched into a single transaction (1 wallet prompt).
+The user pays the configured SOL fee and signs the verification transaction. Re-verification uses one transaction.
+
+Baseline-key derivation and best-effort SAS issuance can require separate message signatures.
+
+First verification requires a validator-signed receipt bound to the new commitment. Re-verification requires the continuity proof.
 
 ```typescript
 import { PulseSDK } from '@entros/pulse-sdk';
@@ -32,7 +46,7 @@ if (result.success) {
 
 ### Walletless (liveness-check tier)
 
-For liveness checking without wallet onboarding. The integrator optionally funds verifications via the relayer API. Submits proofs to chain through the relayer; **does not issue SAS attestations** — for SAS attestations bound to a verified wallet, use the wallet-connected path above.
+For liveness checking without wallet onboarding. The integrator can fund verification through the relayer API. This path submits protocol transactions through the relayer. It does not issue SAS attestations.
 
 ```typescript
 import { PulseSDK } from '@entros/pulse-sdk';
@@ -50,17 +64,17 @@ const result = await pulse.verify(touchElement);
 ## Pipeline
 
 1. **Capture**: Audio (16kHz), IMU (accelerometer + gyroscope), touch (pressure + area) — event-driven, caller controls duration
-2. **Extract**: 308 features — speaker block (170): legacy F0 / jitter / shimmer / HNR / formant ratios / LTAS / amplitude (44) plus v3 additions: MFCCs + delta-MFCCs (72 — 12 used coefficients × 4 stats + 12 × 2 deltas, MFCC[0] dropped, pre-emphasis applied), LPC coefficient stats (24), formant absolute trajectories + bandwidths (16), voice quality CPP/tilt/H1-H2/sub-bands (9), pitch contour DCT (5). Motion block (81): legacy jerk + jounce per IMU axis (54) plus v2 additions: cross-axis covariance (6), FFT band energy on accel axes (12), physiological tremor peak (2), direction-reversal stats (3), motion-magnitude autocorrelation (4); desktop captures use mouse-derived analogues for these v2 additions. Touch block (57): legacy velocity + pressure dynamics (36) plus v2 additions: pressure derivative (4), contact aspect ratio + area derivative (4), trajectory curvature (3), velocity autocorrelation (3), inter-touch gap distribution (4), path efficiency + per-stroke length (3).
+2. **Extract**: 170 audio, 81 motion, and 57 touch features
 3. **Validate**: Feature summaries sent to Entros validation server for server-side analysis
-4. **Hash**: SimHash → 256-bit Temporal Fingerprint → Poseidon commitment
-5. **Prove**: Groth16 proof that new fingerprint is within Hamming distance of previous
-6. **Submit**: Single batched transaction via wallet (1 prompt) or relayer
+4. **Hash**: SimHash → 256-bit behavioral fingerprint → Poseidon commitment
+5. **Prove**: Re-verification proves Poseidon openings and `min_distance <= distance < threshold`
+6. **Submit**: One wallet transaction or one relayer request
 
 ## Development
 
 ```bash
 npm install
-npm test          # full vitest suite, including an 8-phase adversarial pen test
+npm test          # Vitest suite with a public procedural-attack baseline
 npm run build     # ESM + CJS output
 npm run typecheck # TypeScript strict mode
 ```
