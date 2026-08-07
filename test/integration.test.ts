@@ -6,6 +6,11 @@ import { generateTBH, computeCommitment } from "../src/hashing/poseidon";
 import { prepareCircuitInput, generateProof } from "../src/proof/prover";
 import { serializeProof } from "../src/proof/serializer";
 import { TOTAL_PROOF_SIZE, NUM_PUBLIC_INPUTS } from "../src/config";
+import { SPEAKER_FEATURE_COUNT } from "../src/extraction/speaker";
+import {
+  MOTION_FEATURE_COUNT,
+  TOUCH_FEATURE_COUNT,
+} from "../src/extraction/kinematic";
 
 // Circuit artifacts from adjacent circuits repo
 const WASM_PATH = path.resolve(
@@ -29,10 +34,12 @@ describe.skipIf(!circuitArtifactsExist)(
   "integration: full crypto pipeline",
   () => {
     it("generates a valid proof from mock features end-to-end", async () => {
-      // 1. Create mock feature vector matching the v2 layout (314 = 176
-      //    audio + 81 motion + 57 touch). Exact dimension keeps the
+      // 1. Create a mock vector matching the current feature layout.
+      //    Exact dimension keeps the
       //    SimHash warning log silent so test output stays clean.
-      const features = Array.from({ length: 314 }, (_, i) =>
+      const featureCount =
+        SPEAKER_FEATURE_COUNT + MOTION_FEATURE_COUNT + TOUCH_FEATURE_COUNT;
+      const features = Array.from({ length: featureCount }, (_, i) =>
         Math.sin(i * 0.3) * Math.cos(i * 0.7)
       );
 

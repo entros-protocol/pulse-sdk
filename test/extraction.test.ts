@@ -71,8 +71,8 @@ function makeTouchSamples(count: number): TouchSample[] {
 // --- Speaker Feature Tests ---
 
 describe("speaker feature extraction", () => {
-  // v2 audio block: 44 legacy + 78 MFCC + 24 LPC + 16 formant trajectories +
-  // 9 voice quality + 5 pitch DCT = 176. The constant is asserted via
+  // Current audio block: 44 legacy + 72 MFCC + 24 LPC + 16 formant trajectories +
+  // 9 voice quality + 5 pitch DCT = 170. The constant is asserted via
   // SPEAKER_FEATURE_COUNT to catch any drift from the documented total.
   it("produces v2 speaker feature count from normal speech audio", async () => {
     const audio = makeAudio({ length: 32000, sampleRate: 16000 });
@@ -290,7 +290,7 @@ describe("feature fusion (normalizeGroup + fuseFeatures)", () => {
   // These tests exercise the fusion ALGORITHM (concatenate three groups,
   // z-score normalize each independently). fuseFeatures is size-agnostic
   // — it concatenates whatever the caller passes. The protocol-level
-  // count (176 audio + 81 motion + 57 touch = 314 under v2) is asserted
+  // count (170 audio + 81 motion + 57 touch = 308) is asserted
   // separately in the speaker / motion / touch suites above.
 
   it("concatenates three modality groups", () => {

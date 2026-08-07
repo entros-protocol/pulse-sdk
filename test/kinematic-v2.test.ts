@@ -379,9 +379,9 @@ describe("touch v2 — path efficiency + per-stroke length (indices 54..57)", ()
   });
 });
 
-describe("end-to-end fingerprint width parity (Sprint 2 invariant)", () => {
+describe("end-to-end fingerprint width parity", () => {
   // The whole point of mouse-dynamics zero-padding is that desktop and
-  // mobile produce SimHash inputs of identical width (314), so the same
+  // mobile produce SimHash inputs of identical width (308), so the same
   // hyperplane set projects both into comparable 256-bit fingerprints.
   // This test locks that invariant against accidental width drift.
   it("fused vector is exactly 308 elements with mobile motion", () => {
