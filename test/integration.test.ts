@@ -21,14 +21,9 @@ const ZKEY_PATH = path.resolve(
   __dirname,
   "../../circuits/build/entros_hamming_final.zkey"
 );
-const VK_PATH = path.resolve(
-  __dirname,
-  "../../circuits/keys/verification_key.json"
-);
-
 // Skip tests if circuit artifacts aren't built
 const circuitArtifactsExist =
-  fs.existsSync(WASM_PATH) && fs.existsSync(ZKEY_PATH) && fs.existsSync(VK_PATH);
+  fs.existsSync(WASM_PATH) && fs.existsSync(ZKEY_PATH);
 
 describe.skipIf(!circuitArtifactsExist)(
   "integration: full crypto pipeline",
@@ -88,7 +83,9 @@ describe.skipIf(!circuitArtifactsExist)(
 
       // 8. Verify locally
       const snarkjs = await import("snarkjs");
-      const vk = JSON.parse(fs.readFileSync(VK_PATH, "utf-8"));
+      // The local setup creates a disposable proving key. Verify with the
+      // matching key instead of the separate committed ceremony artifact.
+      const vk = await snarkjs.zKey.exportVerificationKey(ZKEY_PATH);
       const valid = await snarkjs.groth16.verify(vk, publicSignals, proof);
       expect(valid).toBe(true);
     });

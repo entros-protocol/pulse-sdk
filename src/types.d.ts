@@ -7,5 +7,8 @@ declare module "snarkjs" {
     ): Promise<{ proof: any; publicSignals: string[] }>;
     verify(vk: any, publicSignals: string[], proof: any): Promise<boolean>;
   };
-}
 
+  export const zKey: {
+    exportVerificationKey(zkeyPath: string): Promise<unknown>;
+  };
+}
