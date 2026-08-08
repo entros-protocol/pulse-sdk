@@ -10,6 +10,7 @@ import { postJson, TransportError } from "./transport/post-json";
 import type { StoredVerificationData } from "./identity/types";
 import type { VerificationPhase } from "./phases";
 import type { BaselineRecoveryReason } from "./identity/anchor";
+import type { StudyContext, StudyRecordStatus } from "./study";
 
 import { captureAudio, analyzeAcousticRealism } from "./sensor/audio";
 import { encodeAudioAsBase64 } from "./sensor/encode";
@@ -194,6 +195,7 @@ type ExtractionResult =
        */
       signedReceipt?: SignedReceiptDto;
       compositeRiskScore?: number;
+      studyRecordStatus?: StudyRecordStatus;
     }
   | {
       ok: false;
@@ -202,6 +204,7 @@ type ExtractionResult =
       retryAfterSec?: number;
       failedAt: VerificationPhase;
       opaque?: boolean;
+      studyRecordStatus?: StudyRecordStatus;
     };
 
 /**
@@ -224,9 +227,11 @@ function rejectionFromStatus(response: PostJsonResponse): ExtractionResult {
     error?: unknown;
     reason?: unknown;
     retry_after?: unknown;
+    study_record_status?: unknown;
   };
   const serverError = typeof body.error === "string" ? body.error : undefined;
   const serverReason = typeof body.reason === "string" ? body.reason : undefined;
+  const studyRecordStatus = parseStudyRecordStatus(body.study_record_status);
 
   // Body before header. Cross-origin a browser only sees headers the server
   // lists in `Access-Control-Expose-Headers`, and the executor does not list
@@ -251,6 +256,7 @@ function rejectionFromStatus(response: PostJsonResponse): ExtractionResult {
       error: "Validation service unreachable. Please check your connection and try again.",
       reason: "validation_unavailable",
       failedAt: "validation",
+      studyRecordStatus,
     };
   }
 
@@ -265,6 +271,7 @@ function rejectionFromStatus(response: PostJsonResponse): ExtractionResult {
         "The connection stalled while sending your verification. Move somewhere with better signal and try again.",
       reason: "validation_timeout",
       failedAt: "validation",
+      studyRecordStatus,
     };
   }
 
@@ -276,6 +283,7 @@ function rejectionFromStatus(response: PostJsonResponse): ExtractionResult {
         serverError ?? "Your verification data was too large to send. Please start over.",
       reason: "payload_too_large",
       failedAt: "validation",
+      studyRecordStatus,
     };
   }
 
@@ -290,6 +298,7 @@ function rejectionFromStatus(response: PostJsonResponse): ExtractionResult {
       reason: serverReason ?? "rate_limited",
       retryAfterSec,
       failedAt: "validation",
+      studyRecordStatus,
     };
   }
 
@@ -301,6 +310,7 @@ function rejectionFromStatus(response: PostJsonResponse): ExtractionResult {
       error: "Validation service is temporarily unavailable. Please try again.",
       reason: "validation_unavailable",
       failedAt: "validation",
+      studyRecordStatus,
     };
   }
 
@@ -317,7 +327,18 @@ function rejectionFromStatus(response: PostJsonResponse): ExtractionResult {
     // show. A labelled rejection names a capture-quality problem the user can
     // act on, so its text is safe.
     opaque: serverReason === undefined,
+    studyRecordStatus,
   };
+}
+
+function parseStudyRecordStatus(value: unknown): StudyRecordStatus | undefined {
+  return value === "recorded" ||
+    value === "replayed" ||
+    value === "technical_failure" ||
+    value === "invalid_token" ||
+    value === "disabled"
+    ? value
+    : undefined;
 }
 
 /**
@@ -337,6 +358,7 @@ async function extractFingerprintAndValidate(
   config: ResolvedConfig,
   walletAddress: string | undefined,
   onProgress?: ProgressCallback,
+  studyContext?: StudyContext,
 ): Promise<ExtractionResult> {
   onProgress?.("Extracting features...");
   // Let React render the new stage label before we re-enter the heavy
@@ -399,6 +421,7 @@ async function extractFingerprintAndValidate(
 
   let signedReceipt: SignedReceiptDto | undefined;
   let compositeRiskScore: number | undefined;
+  let studyRecordStatus: StudyRecordStatus | undefined;
 
   onProgress?.("Validating...");
   // Same rationale as the "Extracting features..." yield above — give
@@ -496,6 +519,7 @@ async function extractFingerprintAndValidate(
           // Logged for calibration, never read by a check. See
           // `describeCaptureTiming`.
           capture_timing: captureTiming,
+          study: studyContext,
         },
         {
           headers: validateHeaders,
@@ -525,6 +549,7 @@ async function extractFingerprintAndValidate(
           commitment_hex?: string;
           salt_hex?: string;
           composite_risk_score?: number;
+          study_record_status?: unknown;
         };
         if (successBody.signed_receipt) {
           signedReceipt = successBody.signed_receipt;
@@ -533,6 +558,7 @@ async function extractFingerprintAndValidate(
           compositeRiskScore = successBody.composite_risk_score;
           sdkLog(`[Entros SDK] Validation composite risk score: ${compositeRiskScore.toFixed(4)}`);
         }
+        studyRecordStatus = parseStudyRecordStatus(successBody.study_record_status);
         // C2: adopt the validator-derived commitment + salt. The validator
         // signs — and the chain enforces — a commitment it computed from the
         // features we sent, not one we chose, so we must mint exactly that.
@@ -604,7 +630,7 @@ async function extractFingerprintAndValidate(
     }
   }
 
-  return { ok: true, features, f0Contour, accelMagnitude, fingerprint, tbh, signedReceipt, compositeRiskScore };
+  return { ok: true, features, f0Contour, accelMagnitude, fingerprint, tbh, signedReceipt, compositeRiskScore, studyRecordStatus };
 }
 
 /**
@@ -727,6 +753,7 @@ async function processSensorData(
   wallet?: any,
   connection?: any,
   onProgress?: ProgressCallback,
+  studyContext?: StudyContext,
 ): Promise<VerificationResult> {
   // Data quality gate: reject if insufficient behavioral data captured
   const audioSamples = sensorData.audio?.samples.length ?? 0;
@@ -801,6 +828,7 @@ async function processSensorData(
     config,
     walletAddress,
     onProgress,
+    studyContext,
   );
   if (!extraction.ok) {
     return {
@@ -812,9 +840,10 @@ async function processSensorData(
       retryAfterSec: extraction.retryAfterSec,
       failedAt: extraction.failedAt,
       opaque: extraction.opaque,
+      studyRecordStatus: extraction.studyRecordStatus,
     };
   }
-  const { fingerprint, tbh, features, signedReceipt, compositeRiskScore } = extraction;
+  const { fingerprint, tbh, features, signedReceipt, compositeRiskScore, studyRecordStatus } = extraction;
 
   // Determine if this is a first verification.
   // Wallet-connected: read the on-chain IdentityState PDA (source of truth).
@@ -1187,6 +1216,7 @@ async function processSensorData(
     // network problem carries a message that is safe to show.
     opaque: submission.failedAt === "confirmation",
     compositeRiskScore,
+    studyRecordStatus,
   };
 }
 
@@ -1366,6 +1396,7 @@ async function processResetSensorData(
 export class PulseSession {
   private config: ResolvedConfig;
   private touchElement: HTMLElement | undefined;
+  private studyContext: StudyContext | undefined;
 
   private audioStageState: StageState = "idle";
   private motionStageState: StageState = "idle";
@@ -1385,9 +1416,10 @@ export class PulseSession {
   private motionData: MotionSample[] = [];
   private touchData: TouchSample[] = [];
 
-  constructor(config: ResolvedConfig, touchElement?: HTMLElement) {
+  constructor(config: ResolvedConfig, touchElement?: HTMLElement, studyContext?: StudyContext) {
     this.config = config;
     this.touchElement = touchElement;
+    this.studyContext = studyContext;
   }
 
   // --- Audio ---
@@ -1704,7 +1736,14 @@ export class PulseSession {
       },
     };
 
-    return processSensorData(sensorData, this.config, wallet, connection, onProgress);
+    return processSensorData(
+      sensorData,
+      this.config,
+      wallet,
+      connection,
+      onProgress,
+      this.studyContext,
+    );
   }
 
   /**
@@ -1785,8 +1824,8 @@ export class PulseSDK {
   /**
    * Create a staged capture session for event-driven control.
    */
-  createSession(touchElement?: HTMLElement): PulseSession {
-    return new PulseSession(this.config, touchElement);
+  createSession(touchElement?: HTMLElement, studyContext?: StudyContext): PulseSession {
+    return new PulseSession(this.config, touchElement, studyContext);
   }
 
   /**

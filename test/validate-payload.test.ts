@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { PulseSDK } from "../src/pulse";
 import { resampleCurveTrace } from "../src/sensor/curve";
 import type { AudioCapture, MotionSample, TouchSample, CurveTracePoint } from "../src/sensor/types";
+import type { StudyContext } from "../src/study";
 
 // Body-shape assertions need the internal injection hook (see
 // internal-test-hooks.test.ts). Under default `npm test` these are skipped.
@@ -55,13 +56,13 @@ function rawOutline(): CurveTracePoint[] {
 const fakeWallet = { publicKey: { toBase58: () => "So11111111111111111111111111111111111111112" } };
 const fakeConnection = { getAccountInfo: async () => null };
 
-function newSession() {
+function newSession(studyContext?: StudyContext) {
   const sdk = new PulseSDK({
     cluster: "devnet",
     relayerUrl: "https://executor.test",
     relayerApiKey: "test",
   });
-  return sdk.createSession();
+  return sdk.createSession(undefined, studyContext);
 }
 
 /**
@@ -123,5 +124,36 @@ describe("/validate-features body — curve_trace", () => {
     const body = getBody();
     expect(body).toBeDefined();
     expect("curve_trace" in body!).toBe(false);
+  });
+});
+
+describe("/validate-features body - study context", () => {
+  it.skipIf(!isInternalTestBuild)("omits study for every normal request", async () => {
+    const session = newSession();
+    session.__injectSensorData({ audio: validAudio(), motion: validMotion(), touch: validTouch() });
+    const getBody = stubFetchCapturing();
+
+    await session.complete(fakeWallet);
+
+    const body = getBody();
+    expect(body).toBeDefined();
+    expect("study" in body!).toBe(false);
+  });
+
+  it.skipIf(!isInternalTestBuild)("forwards only the typed active study context", async () => {
+    const context: StudyContext = {
+      token: "opaque-study-token",
+      record_id: "00112233445566778899aabbccddeeff",
+      capture_class: "web-mobile",
+      feature_schema_version: 3,
+      projection_version: 0,
+    };
+    const session = newSession(context);
+    session.__injectSensorData({ audio: validAudio(), motion: validMotion(), touch: validTouch() });
+    const getBody = stubFetchCapturing();
+
+    await session.complete(fakeWallet);
+
+    expect(getBody()?.study).toEqual(context);
   });
 });

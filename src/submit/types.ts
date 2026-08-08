@@ -1,5 +1,6 @@
 import type { VerificationPhase } from "../phases";
 import type { BaselineRecoveryReason } from "../identity/anchor";
+import type { StudyRecordStatus } from "../study";
 
 /** Result of a verification submission */
 export interface SubmissionResult {
@@ -146,6 +147,8 @@ export interface VerificationResult {
    * the device where it is already too late to act.
    */
   portableBaseline?: boolean;
+  /** Storage outcome for an explicitly consented population-study capture. */
+  studyRecordStatus?: StudyRecordStatus;
 }
 
 /** Bytes sent so far, and the total, for the one request big enough to matter. */

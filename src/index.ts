@@ -34,6 +34,8 @@ export { generateProof, generateSolanaProof, prepareCircuitInput } from "./proof
 
 // Submission
 export type { SubmissionResult, VerificationResult } from "./submit/types";
+export type { StudyCaptureClass, StudyContext, StudyRecordStatus } from "./study";
+export { createStudyContext } from "./study";
 // `submitResetViaWallet` is exported for advanced integrators building
 // their own reset UX. Most consumers should use `PulseSDK.resetBaseline()`
 // or `PulseSession.completeReset()` which handle capture + validation.
