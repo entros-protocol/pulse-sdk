@@ -9,6 +9,15 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+## [4.6.0] - 2026-08-08
+
+### Added
+- **Optional population study context.** Hosts can attach a bounded invitation token, random record ID, capture class, and schema versions to validation requests.
+- `createStudyContext` validates grant fields and requires Web Crypto randomness before it creates a request context.
+
+### Fixed
+- Integration tests now derive their verification key from the proving key that produced each proof, preventing false failures against an unrelated ceremony artifact.
+
 ## [4.5.0] - 2026-08-05
 
 ### Changed

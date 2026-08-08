@@ -1,6 +1,6 @@
 {
   "name": "@entros/pulse-sdk",
-  "version": "4.5.0",
+  "version": "4.6.0",
   "description": "Entros client SDK for behavioral capture, commitments, re-verification proofs, and devnet submission",
   "license": "MIT",
   "homepage": "https://entros.io",
