@@ -69,6 +69,7 @@ export interface ClientSignals {
   /** Capture environment signals (e.g. virtual devices) */
   capture?: {
     virtual_device: boolean;
+    voice_isolation_applied: boolean | null;
     flatness?: number;
     centroid?: number;
   };

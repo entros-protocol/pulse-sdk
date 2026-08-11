@@ -12,7 +12,7 @@ import type { VerificationPhase } from "./phases";
 import type { BaselineRecoveryReason } from "./identity/anchor";
 import type { StudyContext, StudyRecordStatus } from "./study";
 
-import { captureAudio, analyzeAcousticRealism } from "./sensor/audio";
+import { audioCaptureConstraints, captureAudio, analyzeAcousticRealism } from "./sensor/audio";
 import { encodeAudioAsBase64 } from "./sensor/encode";
 import { resampleCurveTrace } from "./sensor/curve";
 import { captureMotion, requestMotionPermission } from "./sensor/motion";
@@ -47,7 +47,11 @@ import {
 } from "./proof/prover";
 import { warmMeyda } from "./extraction/mfcc";
 import { serializeProof } from "./proof/serializer";
-import { submitViaWallet, submitResetViaWallet } from "./submit/wallet";
+import {
+  submitRebaselineViaWallet,
+  submitResetViaWallet,
+  submitViaWallet,
+} from "./submit/wallet";
 import { submitViaRelayer } from "./submit/relayer";
 import { bytesToHex } from "./submit/receipt";
 import {
@@ -56,8 +60,11 @@ import {
   setPrivacyFallback,
   recoverBaselineFromChain,
   decodeIdentityState,
+  fetchProjectionPolicy,
   localCommitmentMatchesChain,
 } from "./identity/anchor";
+import type { ProjectionPolicy } from "./identity/anchor";
+import type { ProjectionPolicyConnection } from "./identity/anchor";
 import {
   BaselineWallet,
   deriveEncryptedBaselinePda,
@@ -103,7 +110,10 @@ interface ExtractedFeatures {
  * Extract features from sensor data. Returns both raw (physical units)
  * and normalized (z-scored) feature vectors.
  */
-async function extractFeatures(data: SensorData): Promise<ExtractedFeatures> {
+async function extractFeatures(
+  data: SensorData,
+  projectionVersion: number,
+): Promise<ExtractedFeatures> {
   if (!data.audio) {
     throw new Error(
       "Audio data missing. Capture audio via session.startAudio() before extracting features.",
@@ -111,6 +121,7 @@ async function extractFeatures(data: SensorData): Promise<ExtractedFeatures> {
   }
   const { features: audioFeatures, f0Contour } = await extractSpeakerFeaturesDetailed(
     data.audio,
+    projectionVersion,
   );
   // The audio path is the dominant cost. Yield once it's done so the
   // verify-flow spinner gets a paint frame before motion/touch extraction
@@ -121,14 +132,18 @@ async function extractFeatures(data: SensorData): Promise<ExtractedFeatures> {
   const hasTouch = data.touch.length >= MIN_TOUCH_SAMPLES;
 
   const motionFeatures =
-    hasMotion && hasTouch
-      ? extractMouseDynamics(data.touch)
-      : hasMotion
-        ? extractMotionFeatures(data.motion)
-        : extractMouseDynamics(data.touch);
+    projectionVersion >= 1
+      ? hasMotion
+        ? extractMotionFeatures(data.motion, projectionVersion)
+        : extractMouseDynamics(data.touch, projectionVersion)
+      : hasMotion && hasTouch
+        ? extractMouseDynamics(data.touch, projectionVersion)
+        : hasMotion
+          ? extractMotionFeatures(data.motion, projectionVersion)
+          : extractMouseDynamics(data.touch, projectionVersion);
   await yieldToMainThread();
 
-  const touchFeatures = extractTouchFeatures(data.touch);
+  const touchFeatures = extractTouchFeatures(data.touch, projectionVersion);
   await yieldToMainThread();
 
   // Resample acceleration magnitude onto the exact stretch of wall-clock time
@@ -359,6 +374,8 @@ async function extractFingerprintAndValidate(
   walletAddress: string | undefined,
   onProgress?: ProgressCallback,
   studyContext?: StudyContext,
+  projectionVersion = 0,
+  receiptPurpose?: "mint" | "rebaseline" | "reset",
 ): Promise<ExtractionResult> {
   onProgress?.("Extracting features...");
   // Let React render the new stage label before we re-enter the heavy
@@ -373,7 +390,7 @@ async function extractFingerprintAndValidate(
   // result keeps every failure on one typed surface.
   let extracted: ExtractedFeatures;
   try {
-    extracted = await extractFeatures(sensorData);
+    extracted = await extractFeatures(sensorData, projectionVersion);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     sdkWarn(`[Entros SDK] Feature extraction failed: ${msg}`);
@@ -412,7 +429,7 @@ async function extractFingerprintAndValidate(
   // transaction; for the validator to sign the right commitment, we must
   // transmit it in the request. SimHash + Poseidon together cost ~20ms —
   // trivial overhead even on rejection paths.
-  const fingerprint = simhash(normalizedFeatures);
+  const fingerprint = simhash(normalizedFeatures, projectionVersion);
   // Local TBH with a client-random salt. This is the fallback used when the
   // validator doesn't return a server-derived commitment (older deploys); when
   // it does, we swap in the server's salt + commitment below (C2). The
@@ -474,7 +491,7 @@ async function extractFingerprintAndValidate(
       // the field for `update_anchor`).
       const commitmentNewHex = bytesToHex(tbh.commitmentBytes);
 
-      // Layer A1 (observe-only): collect the client-signals envelope so the
+      // Collect the observe-only client-signals envelope so the
       // executor can measure the bot-vs-human automation signal on real
       // traffic. Privacy-first — detects the automation harness driving the
       // page (Selenium/Puppeteer/Playwright/CDP), never the user; no
@@ -486,6 +503,7 @@ async function extractFingerprintAndValidate(
         const acoustic = analyzeAcousticRealism(sensorData.audio.samples, sensorData.audio.sampleRate);
         clientSignals.capture = {
           virtual_device: !!sensorData.audio.virtualDevice,
+          voice_isolation_applied: sensorData.audio.voiceIsolationApplied,
           flatness: parseFloat(acoustic.flatness.toFixed(4)),
           centroid: parseFloat(acoustic.centroid.toFixed(2)),
         };
@@ -495,6 +513,7 @@ async function extractFingerprintAndValidate(
         validateUrl,
         {
           features,
+          projection_version: projectionVersion,
           f0_contour: f0Contour,
           accel_magnitude: accelMagnitude,
           wallet_id: walletAddress,
@@ -504,8 +523,9 @@ async function extractFingerprintAndValidate(
           // Explicit mint-intent signal. New validators sign a receipt over a
           // commitment THEY derive from `features`; `commitment_new_hex` is
           // still sent so older validators (which trust it) keep working.
-          request_receipt: true,
-          // Observe-only automation-detection signal (Layer A1). Optional and
+          request_receipt: receiptPurpose !== undefined,
+          receipt_purpose: receiptPurpose,
+          // Observe-only automation-detection signal. Optional and
           // additive — the executor logs it; older executors ignore the
           // unknown field. Never affects the verification decision.
           client_signals: clientSignals,
@@ -754,6 +774,7 @@ async function processSensorData(
   connection?: any,
   onProgress?: ProgressCallback,
   studyContext?: StudyContext,
+  projectionPolicy: ProjectionPolicy = { current: 0, minimum: 0 },
 ): Promise<VerificationResult> {
   // Data quality gate: reject if insufficient behavioral data captured
   const audioSamples = sensorData.audio?.samples.length ?? 0;
@@ -788,10 +809,11 @@ async function processSensorData(
   const walletAddress = wallet?.adapter?.publicKey?.toBase58?.()
     ?? wallet?.publicKey?.toBase58?.();
 
-  // Re-verification requires audio + at least one other modality.
-  // Audio-only fingerprints lack inter-session variance from motion/touch,
-  // producing identical SimHash results that fail the min_distance constraint.
-  let hasPreviousData: boolean;
+  let previousData = await loadVerificationData(walletAddress);
+  let isFirstVerification = previousData === null;
+  let onChainCommitment: Uint8Array | null = null;
+  let onChainProjectionVersion: number | null = null;
+
   if (wallet && connection) {
     const walletPubkey = wallet.adapter?.publicKey ?? wallet.publicKey;
     if (walletPubkey) {
@@ -803,17 +825,63 @@ async function processSensorData(
           programId
         );
         const accountInfo = await connection.getAccountInfo(identityPda);
-        hasPreviousData = !!accountInfo;
+        isFirstVerification = !accountInfo;
+        const identity = accountInfo
+          ? await decodeIdentityState(accountInfo.data)
+          : null;
+        if (accountInfo && !identity) {
+          return {
+            success: false,
+            commitment: new Uint8Array(32),
+            isFirstVerification: false,
+            error: "The on-chain identity could not be decoded. Update the app and try again.",
+            failedAt: "submission",
+          };
+        }
+        onChainCommitment = identity?.currentCommitment ?? null;
+        onChainProjectionVersion = identity?.projectionVersion ?? null;
       } catch {
-        hasPreviousData = (await loadVerificationData(walletAddress)) !== null;
+        return {
+          success: false,
+          commitment: new Uint8Array(32),
+          isFirstVerification: false,
+          error: "The on-chain identity could not be read. Check your connection and try again.",
+          failedAt: "submission",
+        };
       }
-    } else {
-      hasPreviousData = (await loadVerificationData(walletAddress)) !== null;
     }
-  } else {
-    hasPreviousData = (await loadVerificationData(walletAddress)) !== null;
   }
-  if (hasPreviousData && !hasMotion && !hasTouch) {
+
+  if (!isFirstVerification && onChainProjectionVersion === null && wallet && connection) {
+    return {
+      success: false,
+      commitment: new Uint8Array(32),
+      isFirstVerification: false,
+      error: "The on-chain identity projection version could not be read. Please try again.",
+      failedAt: "submission",
+    };
+  }
+  if (
+    onChainProjectionVersion !== null &&
+    onChainProjectionVersion > projectionPolicy.current
+  ) {
+    return {
+      success: false,
+      commitment: new Uint8Array(32),
+      isFirstVerification: false,
+      error: "This identity uses a newer projection version. Update the app and try again.",
+      failedAt: "submission",
+    };
+  }
+
+  const needsProjectionMigration =
+    !isFirstVerification &&
+    onChainProjectionVersion !== null &&
+    onChainProjectionVersion < projectionPolicy.current;
+
+  // Re-verification requires audio + at least one other modality.
+  // Audio-only fingerprints lack inter-session variance from motion/touch.
+  if (!isFirstVerification && !hasMotion && !hasTouch) {
     return {
       success: false,
       commitment: new Uint8Array(32),
@@ -829,6 +897,8 @@ async function processSensorData(
     walletAddress,
     onProgress,
     studyContext,
+    projectionPolicy.current,
+    needsProjectionMigration ? "rebaseline" : isFirstVerification ? "mint" : undefined,
   );
   if (!extraction.ok) {
     return {
@@ -845,55 +915,6 @@ async function processSensorData(
   }
   const { fingerprint, tbh, features, signedReceipt, compositeRiskScore, studyRecordStatus } = extraction;
 
-  // Determine if this is a first verification.
-  // Wallet-connected: read the on-chain IdentityState PDA (source of truth).
-  // Walletless: check localStorage for a stored fingerprint.
-  let isFirstVerification: boolean;
-  let previousData = await loadVerificationData(walletAddress);
-  // The on-chain `current_commitment` is the authoritative head of the
-  // verification chain — each successful verify advances it. We read it from
-  // the SAME account as the existence check (no extra round-trip) so we can
-  // detect a local baseline that has fallen BEHIND the chain (a verify landed
-  // from another origin/device, or a success store-back was dropped). A stale
-  // local `commitment_prev` is exactly what makes `update_anchor` revert with
-  // PrevCommitmentMismatch (6011) AFTER the user has signed and paid; reading
-  // it here lets us re-sync (or fail cleanly) BEFORE building the proof.
-  let onChainCommitment: Uint8Array | null = null;
-
-  if (wallet && connection) {
-    const walletPubkey = wallet.adapter?.publicKey ?? wallet.publicKey;
-    if (walletPubkey) {
-      try {
-        const { PublicKey } = await import("@solana/web3.js");
-        const programId = new PublicKey(PROGRAM_IDS.entrosAnchor);
-        const [identityPda] = PublicKey.findProgramAddressSync(
-          [new TextEncoder().encode("identity"), walletPubkey.toBuffer()],
-          programId
-        );
-        // `getAccountInfo` THROWS on an RPC failure (caught below), so an RPC
-        // blip can never be misread as "no identity" — which would wrongly
-        // route a returning user to the mint path. A null result is a genuine
-        // "account does not exist" → first verification.
-        const accountInfo = await connection.getAccountInfo(identityPda);
-        isFirstVerification = !accountInfo;
-        // Decode the chain head from the SAME account read; a decode miss
-        // leaves it null and staleness simply isn't asserted below.
-        onChainCommitment = accountInfo
-          ? ((await decodeIdentityState(accountInfo.data))?.currentCommitment ??
-            null)
-          : null;
-      } catch {
-        // RPC failure: defer to local presence (prior behavior). Leave
-        // onChainCommitment null so staleness is not (falsely) asserted.
-        isFirstVerification = !previousData;
-      }
-    } else {
-      isFirstVerification = !previousData;
-    }
-  } else {
-    isFirstVerification = !previousData;
-  }
-
   // A local baseline is STALE when it exists but its commitment no longer
   // equals the on-chain head — proving from it would revert with 6011. We
   // evaluate it both before and after recovery (which may rewrite
@@ -902,13 +923,21 @@ async function processSensorData(
     !isFirstVerification &&
     data !== null &&
     onChainCommitment !== null &&
-    !localCommitmentMatchesChain(data.commitment, onChainCommitment);
+    (!localCommitmentMatchesChain(data.commitment, onChainCommitment) ||
+      data.projectionVersion !== onChainProjectionVersion);
 
   const localBaselineStale = isBaselineStale(previousData);
 
   // If the legacy baseline matched, migrate it to the keyed location and remove the legacy storage entry.
   const STORAGE_KEY = "entros-protocol-verification-data";
-  if (previousData && !localBaselineStale && walletAddress && typeof localStorage !== "undefined" && !localStorage.getItem(`${STORAGE_KEY}_${walletAddress}`)) {
+  if (
+    !needsProjectionMigration &&
+    previousData &&
+    !localBaselineStale &&
+    walletAddress &&
+    typeof localStorage !== "undefined" &&
+    !localStorage.getItem(`${STORAGE_KEY}_${walletAddress}`)
+  ) {
     await storeVerificationData(previousData, walletAddress);
     localStorage.removeItem(STORAGE_KEY);
   }
@@ -924,6 +953,7 @@ async function processSensorData(
   let recoveryReason: BaselineRecoveryReason | undefined;
   if (
     !isFirstVerification &&
+    !needsProjectionMigration &&
     (previousData === null || localBaselineStale) &&
     wallet &&
     connection
@@ -973,7 +1003,11 @@ async function processSensorData(
   // before a signature/fee is spent, and route the user to the right surface.
   const baselineStillStale = isBaselineStale(previousData);
 
-  if (!isFirstVerification && (previousData === null || baselineStillStale)) {
+  if (
+    !isFirstVerification &&
+    !needsProjectionMigration &&
+    (previousData === null || baselineStillStale)
+  ) {
     return {
       success: false,
       commitment: tbh.commitmentBytes,
@@ -986,7 +1020,7 @@ async function processSensorData(
 
   let solanaProof: SolanaProof | null = null;
 
-  if (!isFirstVerification && previousData) {
+  if (!isFirstVerification && !needsProjectionMigration && previousData) {
     onProgress?.("Computing proof...");
     const previousTBH: TBH = {
       fingerprint: previousData.fingerprint,
@@ -1123,7 +1157,36 @@ async function processSensorData(
     );
     portableBaseline = encryptedBaselineBlob !== undefined;
 
-    if (isFirstVerification) {
+    if (needsProjectionMigration) {
+      if (!signedReceipt) {
+        return {
+          success: false,
+          commitment: tbh.commitmentBytes,
+          isFirstVerification: false,
+          error: "Projection migration requires a validator-signed receipt.",
+          failedAt: "submission",
+        };
+      }
+      if (!encryptedBaselineBlob) {
+        return {
+          success: false,
+          commitment: tbh.commitmentBytes,
+          isFirstVerification: false,
+          error: "Projection migration requires a wallet that supports message signing.",
+          failedAt: "submission",
+        };
+      }
+      submission = await submitRebaselineViaWallet(
+        tbh.commitmentBytes,
+        projectionPolicy.current,
+        {
+          wallet,
+          connection,
+          signedReceipt,
+          encryptedBaselineBlob,
+        },
+      );
+    } else if (isFirstVerification) {
       // Pass the validator-signed receipt (when present) so submitViaWallet
       // can bundle an `Ed25519Program::verify` instruction before
       // `mint_anchor` in the same atomic transaction. Re-verification
@@ -1185,6 +1248,7 @@ async function processSensorData(
         salt: tbh.salt.toString(),
         commitment: tbh.commitment.toString(),
         timestamp: Date.now(),
+        projectionVersion: projectionPolicy.current,
       }, walletAddress);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1236,6 +1300,7 @@ async function processResetSensorData(
   wallet: any,
   connection: any,
   onProgress?: ProgressCallback,
+  projectionPolicy: ProjectionPolicy = { current: 0, minimum: 0 },
 ): Promise<VerificationResult> {
   const audioSamples = sensorData.audio?.samples.length ?? 0;
   const motionSamples = sensorData.motion.length;
@@ -1284,6 +1349,9 @@ async function processResetSensorData(
     config,
     walletAddress,
     onProgress,
+    undefined,
+    projectionPolicy.current,
+    projectionPolicy.current >= 1 ? "reset" : undefined,
   );
   if (!extraction.ok) {
     return {
@@ -1297,7 +1365,7 @@ async function processResetSensorData(
       opaque: extraction.opaque,
     };
   }
-  const { tbh, compositeRiskScore } = extraction;
+  const { tbh, compositeRiskScore, signedReceipt } = extraction;
 
   // Best-effort: build the encrypted-baseline blob bound to the NEW
   // post-reset commitment so `submitResetViaWallet` can overwrite the
@@ -1318,6 +1386,8 @@ async function processResetSensorData(
     connection,
     relayerUrl: config.relayerUrl,
     relayerApiKey: config.relayerApiKey,
+    projectionVersion: projectionPolicy.current,
+    signedReceipt,
     encryptedBaselineBlob,
     onProgress: (stage) => onProgress?.(stage),
   });
@@ -1334,6 +1404,7 @@ async function processResetSensorData(
         salt: tbh.salt.toString(),
         commitment: tbh.commitment.toString(),
         timestamp: Date.now(),
+        projectionVersion: projectionPolicy.current,
       }, walletAddress);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1415,11 +1486,35 @@ export class PulseSession {
   private audioData: AudioCapture | null = null;
   private motionData: MotionSample[] = [];
   private touchData: TouchSample[] = [];
+  private projectionPolicyPromise: Promise<ProjectionPolicy | null>;
 
   constructor(config: ResolvedConfig, touchElement?: HTMLElement, studyContext?: StudyContext) {
     this.config = config;
     this.touchElement = touchElement;
     this.studyContext = studyContext;
+    this.projectionPolicyPromise = this.readProjectionPolicy().catch(() => null);
+  }
+
+  private async readProjectionPolicy(
+    connection?: ProjectionPolicyConnection,
+  ): Promise<ProjectionPolicy> {
+    if (connection) return fetchProjectionPolicy(connection);
+    const { clusterApiUrl, Connection } = await import("@solana/web3.js");
+    const endpoint =
+      this.config.rpcEndpoint ??
+      (this.config.cluster === "localnet"
+        ? "http://127.0.0.1:8899"
+        : clusterApiUrl(this.config.cluster));
+    return fetchProjectionPolicy(new Connection(endpoint, "confirmed"));
+  }
+
+  private async resolveProjectionPolicy(
+    connection?: ProjectionPolicyConnection,
+  ): Promise<ProjectionPolicy> {
+    // The constructor read only warms the configured RPC path. Completion
+    // always refreshes policy so a pre-cutover response cannot select the
+    // projection after the administrator changes on-chain configuration.
+    return this.readProjectionPolicy(connection);
   }
 
   // --- Audio ---
@@ -1433,21 +1528,10 @@ export class PulseSession {
     // Acquire microphone permission within the user gesture context.
     // Awaited so the caller knows audio is ready before proceeding.
     // State transitions happen AFTER permission succeeds to avoid zombie state.
+    const prefetchedPolicy = await this.projectionPolicyPromise;
+    const captureProjectionVersion = prefetchedPolicy?.current ?? 0;
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        sampleRate: 16000,
-        channelCount: 1,
-        // Capture constraints kept in lock-step with `sensor/audio.ts` —
-        // the two entry points (standalone capture vs session-based
-        // capture) must agree or the verify flow and direct-API
-        // consumers diverge.
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-        // @ts-expect-error -- W3C Media Capture Extensions property; not
-        // yet in lib.dom.d.ts as of TypeScript 6.0.
-        voiceIsolation: true,
-      },
+      audio: audioCaptureConstraints(captureProjectionVersion),
     });
 
     this.audioStageState = "capturing";
@@ -1469,6 +1553,7 @@ export class PulseSession {
       onReady: () => signalReady(),
       captureWindowSignal: this.captureWindowController.signal,
       stream,
+      projectionVersion: captureProjectionVersion,
     }).catch(() => {
       stream.getTracks().forEach((t) => t.stop());
       signalReady(); // unblock startAudio if setup failed before the first frame
@@ -1736,6 +1821,19 @@ export class PulseSession {
       },
     };
 
+    let projectionPolicy: ProjectionPolicy;
+    try {
+      projectionPolicy = await this.resolveProjectionPolicy(connection);
+    } catch (err) {
+      return {
+        success: false,
+        commitment: new Uint8Array(32),
+        isFirstVerification: true,
+        error: err instanceof Error ? err.message : String(err),
+        failedAt: "submission",
+      };
+    }
+
     return processSensorData(
       sensorData,
       this.config,
@@ -1743,6 +1841,7 @@ export class PulseSession {
       connection,
       onProgress,
       this.studyContext,
+      projectionPolicy,
     );
   }
 
@@ -1796,7 +1895,27 @@ export class PulseSession {
       },
     };
 
-    return processResetSensorData(sensorData, this.config, wallet, connection, onProgress);
+    let projectionPolicy: ProjectionPolicy;
+    try {
+      projectionPolicy = await this.resolveProjectionPolicy(connection);
+    } catch (err) {
+      return {
+        success: false,
+        commitment: new Uint8Array(32),
+        isFirstVerification: true,
+        error: err instanceof Error ? err.message : String(err),
+        failedAt: "submission",
+      };
+    }
+
+    return processResetSensorData(
+      sensorData,
+      this.config,
+      wallet,
+      connection,
+      onProgress,
+      projectionPolicy,
+    );
   }
 }
 

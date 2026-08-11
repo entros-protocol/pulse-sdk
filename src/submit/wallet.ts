@@ -2,7 +2,15 @@
 // Anchor program interactions are typed dynamically because the SDK's
 // peer dep on @coral-xyz/anchor + @solana/web3.js is loaded via dynamic
 // import (avoiding a hard dep for tree-shaking).
-import type { Idl } from "@coral-xyz/anchor";
+import type { Idl, Wallet } from "@coral-xyz/anchor";
+import type {
+  Commitment,
+  PublicKey,
+  SendOptions,
+  Transaction,
+  TransactionInstruction,
+  TransactionSignature,
+} from "@solana/web3.js";
 import type { SolanaProof } from "../proof/types";
 import type { SignedReceiptDto, SubmissionResult } from "./types";
 import type { VerificationPhase } from "../phases";
@@ -10,12 +18,11 @@ import {
   ATTESTATION_SIGNATURE_TIMEOUT_MS,
   CONFIRMATION_TIMEOUT_MS,
   PROGRAM_IDS,
-  PROJECTION_VERSION,
   SIGNATURE_TIMEOUT_MS,
 } from "../config";
 import { sdkLog, sdkWarn } from "../log";
 import { entrosAnchorIdl, entrosVerifierIdl } from "../protocol/idl";
-import { buildEd25519ReceiptIx } from "./receipt";
+import { buildEd25519ReceiptIx, receiptMatchesBinding } from "./receipt";
 import { ENCRYPTED_BASELINE_BLOB_BYTES } from "../identity/baseline";
 import {
   chainRevertError,
@@ -24,6 +31,42 @@ import {
   isUserRejection,
   withTimeout,
 } from "./errors";
+
+interface SubmissionConnection {
+  getLatestBlockhash(commitment: Commitment): Promise<{
+    blockhash: string;
+    lastValidBlockHeight: number;
+  }>;
+  confirmTransaction(
+    signature: TransactionSignature,
+    commitment: Commitment,
+  ): Promise<{ value: { err: unknown | null } }>;
+}
+
+interface SubmissionWallet {
+  publicKey: PublicKey;
+  signTransaction(transaction: Transaction): Promise<Transaction>;
+  signAllTransactions(transactions: Transaction[]): Promise<Transaction[]>;
+  sendTransaction(
+    transaction: Transaction,
+    connection: SubmissionConnection,
+    options?: SendOptions,
+  ): Promise<TransactionSignature>;
+}
+
+interface RebaselineInstructionBuilder {
+  accounts(accounts: Record<string, unknown>): RebaselineInstructionBuilder;
+  instruction(): Promise<TransactionInstruction>;
+}
+
+interface RebaselineProgram {
+  methods: {
+    rebaselineAnchor(
+      commitment: number[],
+      projectionVersion: number,
+    ): RebaselineInstructionBuilder;
+  };
+}
 
 /**
  * Build a `set_encrypted_baseline` instruction for the given anchor program
@@ -707,6 +750,10 @@ export async function submitResetViaWallet(
     connection: any;
     relayerUrl?: string;
     relayerApiKey?: string;
+    /** Version asserted against the active on-chain projection policy. */
+    projectionVersion?: number;
+    /** Validator receipt required by reset transitions on projection version 1 and later. */
+    signedReceipt?: SignedReceiptDto;
     /**
      * Encrypted baseline blob. When present, the SDK
      * appends a `set_encrypted_baseline` instruction so the wallet's
@@ -728,7 +775,13 @@ export async function submitResetViaWallet(
 ): Promise<SubmissionResult> {
   try {
     const anchor = await import("@coral-xyz/anchor");
-    const { PublicKey, SystemProgram, Transaction, ComputeBudgetProgram } =
+    const {
+      PublicKey,
+      SystemProgram,
+      SYSVAR_INSTRUCTIONS_PUBKEY,
+      Transaction,
+      ComputeBudgetProgram,
+    } =
       await import("@solana/web3.js");
 
     const provider = new anchor.AnchorProvider(
@@ -757,23 +810,61 @@ export async function submitResetViaWallet(
       entrosAnchorIdl as Idl,
       provider,
     );
+    const projectionVersion = options.projectionVersion ?? 0;
+    let receiptIx: import("@solana/web3.js").TransactionInstruction | undefined;
+    if (projectionVersion >= 1) {
+      if (
+        !options.signedReceipt ||
+        !receiptMatchesBinding(options.signedReceipt, {
+          purpose: 3,
+          projectionVersion,
+          wallet: provider.wallet.publicKey.toBytes(),
+          commitment,
+        })
+      ) {
+        return {
+          success: false,
+          error: "Baseline reset requires a matching validator-signed receipt.",
+          failedAt: "submission",
+        };
+      }
+      const builtReceiptIx = await buildEd25519ReceiptIx(options.signedReceipt);
+      if (!builtReceiptIx) {
+        return {
+          success: false,
+          error: "Baseline reset receipt is malformed.",
+          failedAt: "submission",
+        };
+      }
+      receiptIx = builtReceiptIx;
+    }
 
-    const resetIx = await anchorProgram.methods
-      .resetIdentityState(Array.from(commitment), PROJECTION_VERSION)
+    let resetBuilder = anchorProgram.methods
+      .resetIdentityState(Array.from(commitment), projectionVersion)
       .accounts({
         authority: provider.wallet.publicKey,
         identityState: identityPda,
         protocolConfig: protocolConfigPda,
         treasury: treasuryPda,
         systemProgram: SystemProgram.programId,
-      })
-      .instruction();
+      });
+    if (projectionVersion >= 1) {
+      resetBuilder = resetBuilder.remainingAccounts([
+        {
+          pubkey: SYSVAR_INSTRUCTIONS_PUBKEY,
+          isSigner: false,
+          isWritable: false,
+        },
+      ]);
+    }
+    const resetIx = await resetBuilder.instruction();
 
     // Reset does no ZK verification; budget is well under the 200K default
     // even with the encrypted-baseline ix bundled (~30K reset + ~17K init).
     // Keep an explicit limit for determinism and to match batched-tx ergonomics.
     const tx = new Transaction();
     tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }));
+    if (receiptIx) tx.add(receiptIx);
     tx.add(resetIx);
     if (options.encryptedBaselineBlob) {
       const setBaselineIx = await buildSetEncryptedBaselineIx(
@@ -833,6 +924,108 @@ export async function submitResetViaWallet(
     // a PDA derivation, a dynamic import. Nothing was spent, and `submission`
     // reports `possible` rather than `none`, which is the one direction it is
     // safe to be wrong in.
+    return { success: false, error: errToString(err), failedAt: "submission" };
+  }
+}
+
+/** Submit an authenticated projection migration and its encrypted baseline. */
+export async function submitRebaselineViaWallet(
+  commitment: Uint8Array,
+  projectionVersion: number,
+  options: {
+    wallet: SubmissionWallet;
+    connection: SubmissionConnection;
+    signedReceipt: SignedReceiptDto;
+    encryptedBaselineBlob: Uint8Array;
+  },
+): Promise<SubmissionResult> {
+  try {
+    const anchor = await import("@coral-xyz/anchor");
+    const {
+      ComputeBudgetProgram,
+      PublicKey,
+      SYSVAR_INSTRUCTIONS_PUBKEY,
+      SystemProgram,
+      Transaction,
+    } = await import("@solana/web3.js");
+    const provider = new anchor.AnchorProvider(
+      options.connection as ConstructorParameters<typeof anchor.AnchorProvider>[0],
+      options.wallet as unknown as Wallet,
+      { commitment: "confirmed" },
+    );
+    const anchorProgramId = new PublicKey(PROGRAM_IDS.entrosAnchor);
+    const registryProgramId = new PublicKey(PROGRAM_IDS.entrosRegistry);
+    const [identityPda] = PublicKey.findProgramAddressSync(
+      [new TextEncoder().encode("identity"), provider.wallet.publicKey.toBuffer()],
+      anchorProgramId,
+    );
+    const [protocolConfigPda] = PublicKey.findProgramAddressSync(
+      [new TextEncoder().encode("protocol_config")],
+      registryProgramId,
+    );
+    const [treasuryPda] = PublicKey.findProgramAddressSync(
+      [new TextEncoder().encode("protocol_treasury")],
+      registryProgramId,
+    );
+    const anchorProgram = new anchor.Program(
+      entrosAnchorIdl as Idl,
+      provider,
+    ) as unknown as RebaselineProgram;
+
+    if (
+      !receiptMatchesBinding(options.signedReceipt, {
+        purpose: 2,
+        projectionVersion,
+        wallet: provider.wallet.publicKey.toBytes(),
+        commitment,
+      })
+    ) {
+      return {
+        success: false,
+        error: "Projection migration requires a matching validator-signed receipt.",
+        failedAt: "submission",
+      };
+    }
+    const receiptIx = await buildEd25519ReceiptIx(options.signedReceipt);
+    if (!receiptIx) {
+      return {
+        success: false,
+        error: "Projection migration receipt is malformed.",
+        failedAt: "submission",
+      };
+    }
+    const rebaselineIx = await anchorProgram.methods
+      .rebaselineAnchor(Array.from(commitment), projectionVersion)
+      .accounts({
+        authority: provider.wallet.publicKey,
+        identityState: identityPda,
+        protocolConfig: protocolConfigPda,
+        treasury: treasuryPda,
+        instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+    const setBaselineIx = await buildSetEncryptedBaselineIx(
+      anchorProgram,
+      provider.wallet.publicKey,
+      options.encryptedBaselineBlob,
+    );
+
+    const tx = new Transaction().add(
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
+      receiptIx,
+      rebaselineIx,
+      setBaselineIx,
+    );
+    tx.feePayer = provider.wallet.publicKey;
+    tx.recentBlockhash = (
+      await options.connection.getLatestBlockhash("confirmed")
+    ).blockhash;
+    const sent = await sendAndConfirm(options.wallet, options.connection, tx);
+    return sent.ok
+      ? { success: true, txSignature: sent.txSig }
+      : { success: false, error: sent.error, failedAt: sent.failedAt };
+  } catch (err) {
     return { success: false, error: errToString(err), failedAt: "submission" };
   }
 }

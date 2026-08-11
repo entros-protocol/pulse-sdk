@@ -9,6 +9,25 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+## [4.7.0] - 2026-08-11
+
+### Added
+- **Versioned feature projections.** The SDK reads the on-chain projection policy and preserves version 0 compatibility during the version 1 migration.
+- `fetchProjectionPolicy`, `submitRebaselineViaWallet`, `featureSchemaVersionForProjection`, `CLIENT_PROJECTION_VERSION`, and `SAS_CONFIG` are now public exports.
+- Purpose-bound receipt version 2 support covers mint, rebaseline, and version 1 reset transactions.
+- Audio capture records whether the browser applied voice isolation.
+
+### Changed
+- **Projection version 1 corrects feature extraction.** It prefers available motion sensors, uses measured sample intervals, and normalizes zero-padded spectra by real sample count.
+- Version 1 applies one shared pre-emphasis pass to MFCC and LPC analysis. It also increases the LPC root solver limit.
+- Projection version 0 remains byte-compatible with Pulse SDK 4.6.0.
+- The devnet SAS configuration now names the `entros-protocol` credential and `entros-personhood-v1` schema.
+
+### Fixed
+- Rebaseline refreshes the on-chain projection policy before submission. The SDK stores the new local baseline after chain confirmation.
+- Reset uses a reset-purpose validator receipt and the instructions sysvar when version 1 requires them.
+- Study contexts reject feature schemas that do not match their projection version.
+
 ## [4.6.0] - 2026-08-08
 
 ### Added

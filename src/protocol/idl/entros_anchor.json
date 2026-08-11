@@ -742,7 +742,7 @@
         {
           "name": "instructions_sysvar",
           "docs": [
-            "receipt verification (master-list #146 Phase 3) to inspect the",
+            "receipt verification to inspect the",
             "preceding Ed25519Program::verify instruction in the same tx.",
             "Address is constrained to the canonical sysvar pubkey, so the",
             "program is guaranteed to be reading the real sysvar regardless of",
@@ -994,15 +994,12 @@
         "- 7-day cooldown (`RESET_COOLDOWN_SECS`) bounds abuse frequency.",
         "- Full zero of `verification_count`, `trust_score`, and",
         "`recent_timestamps` means an attacker who compromises the",
-        "wallet key and passes Tier 1 validation starts from zero.",
+        "wallet key and passes server-side validation starts from zero.",
         "- Verification fee charged, matching mint/update economics.",
         "",
-        "No ZK proof is consumed: there is no prior fingerprint to",
-        "Hamming-compare against, and the Hamming circuit's",
-        "`min_distance ≥ 3` constraint would reject a same-fingerprint",
-        "proof anyway. Live-humanness evidence comes from the Tier 1",
-        "validation pipeline at the SAS attestation step (handled by",
-        "the off-chain executor, not this instruction)."
+        "Reset does not consume a ZK comparison proof because the client cannot",
+        "recover its prior fingerprint. Versioned projections require a fresh",
+        "validator receipt bound to this wallet, commitment, and reset purpose."
       ],
       "discriminator": [
         26,
@@ -1210,7 +1207,7 @@
       "docs": [
         "Write or overwrite the caller's encrypted baseline blob.",
         "",
-        "The blob is opaque to the program — AES-256-GCM ciphertext of the",
+        "The blob is opaque AES-256-GCM ciphertext of the",
         "user's previous SimHash plus salt, produced off-chain in the SDK",
         "under a key derived from a deterministic `signMessage`. The GCM",
         "auth tag binds the blob to (wallet, this PDA's address, on-chain",
@@ -1218,14 +1215,14 @@
         "before a `reset_identity_state` fails authentication under the new",
         "commitment and the SDK falls back to a fresh-capture flow.",
         "",
-        "The program never decrypts the blob — it only stores opaque bytes.",
+        "The program never decrypts the blob. It only stores opaque bytes.",
         "Plaintext biometric data never reaches chain at any point.",
         "",
         "Guards:",
         "* Signer must equal the wallet that seeds the EncryptedBaseline",
         "PDA (enforced by the seeds constraint on the Accounts struct).",
         "* The caller's IdentityState PDA at `[b\"identity\", signer]` must",
-        "already exist — pre-mint attempts are rejected with",
+        "already exist. Pre-mint attempts are rejected with",
         "`IdentityStateNotFound`. Anchor's seeds constraint validates the",
         "PDA address; the `data_len() > 0` check confirms initialization."
       ],
@@ -1249,7 +1246,7 @@
           "name": "identity_state",
           "docs": [
             "UncheckedAccount because we only need to verify the IdentityState",
-            "PDA exists at the expected address — we don't need to deserialize",
+            "PDA exists at the expected address. We do not need to deserialize",
             "its fields. The seeds constraint validates the PDA address."
           ],
           "pda": {
@@ -1342,9 +1339,9 @@
         "Requires a matching, fresh `VerificationResult` PDA (owned by entros-verifier)",
         "whose `commitment_new` equals `new_commitment` and whose `commitment_prev`",
         "equals the identity's current stored commitment. Without this binding the",
-        "instruction would accept any commitment with no biometric proof — allowing",
+        "instruction would accept any commitment without biometric proof, allowing",
         "trust-score farming via per-call fee payment, which contradicts the",
-        "protocol's economic deterrence model. See AUDIT.md for details.",
+        "protocol's economic deterrence model.",
         "",
         "The `verification_nonce` argument supplies the challenge nonce used to",
         "derive the VerificationResult PDA (`seeds = [b\"verification\", authority, nonce]`).",
@@ -1402,7 +1399,7 @@
           "docs": [
             "PDA seeds validated by Anchor; layout + owner + cross-field constraints",
             "validated in instruction body. Binds the ZK proof to this specific",
-            "update — without this account, update_anchor would accept any commitment",
+            "update. Without this account, update_anchor would accept any commitment",
             "with no proof."
           ],
           "pda": {
@@ -1780,7 +1777,7 @@
     {
       "code": 6007,
       "name": "StaleVerificationResult",
-      "msg": "VerificationResult account has stale layout (pre-binding-patch)"
+      "msg": "VerificationResult account uses the legacy unbound layout"
     },
     {
       "code": 6008,
@@ -1825,7 +1822,7 @@
     {
       "code": 6016,
       "name": "MissingValidatorReceipt",
-      "msg": "mint_anchor expected a preceding Ed25519Program::verify instruction with a validator-signed receipt; none found"
+      "msg": "Expected a preceding Ed25519Program::verify instruction with a validator-signed receipt"
     },
     {
       "code": 6017,
@@ -1835,12 +1832,12 @@
     {
       "code": 6018,
       "name": "ReceiptCommitmentMismatch",
-      "msg": "Receipt commitment does not match the mint_anchor commitment argument"
+      "msg": "Receipt commitment does not match the requested commitment"
     },
     {
       "code": 6019,
       "name": "ReceiptWalletMismatch",
-      "msg": "Receipt wallet does not match the mint signer"
+      "msg": "Receipt wallet does not match the instruction signer"
     },
     {
       "code": 6020,
@@ -1860,17 +1857,57 @@
     {
       "code": 6023,
       "name": "IdentityStateNotFound",
-      "msg": "set_encrypted_baseline called before mint_anchor — IdentityState PDA does not exist"
+      "msg": "set_encrypted_baseline called before mint_anchor: IdentityState PDA does not exist"
     },
     {
       "code": 6024,
       "name": "ValidatorNotConfigured",
-      "msg": "ProtocolConfig.validator_pubkey is unset (all-zero); minting is disabled until a validator is configured"
+      "msg": "ProtocolConfig.validator_pubkey is unset. Receipt-bound instructions are disabled until a validator is configured"
     },
     {
       "code": 6025,
       "name": "VerificationIntervalTooShort",
       "msg": "Retired. Verifications are no longer rate limited on chain."
+    },
+    {
+      "code": 6026,
+      "name": "ProjectionVersionTooOld",
+      "msg": "Identity projection version is below the minimum supported version"
+    },
+    {
+      "code": 6027,
+      "name": "ProjectionVersionTooNew",
+      "msg": "Identity projection version is newer than the current protocol version"
+    },
+    {
+      "code": 6028,
+      "name": "ProjectionVersionNotAdvanced",
+      "msg": "Rebaseline requires a newer current projection version"
+    },
+    {
+      "code": 6029,
+      "name": "ReceiptVersionMismatch",
+      "msg": "Receipt version does not match the required receipt format"
+    },
+    {
+      "code": 6030,
+      "name": "ReceiptPurposeMismatch",
+      "msg": "Receipt purpose does not match the requested instruction"
+    },
+    {
+      "code": 6031,
+      "name": "ReceiptProjectionVersionMismatch",
+      "msg": "Receipt projection version does not match the current protocol version"
+    },
+    {
+      "code": 6032,
+      "name": "ProjectionVersionMismatch",
+      "msg": "Requested projection version does not match the current protocol version"
+    },
+    {
+      "code": 6033,
+      "name": "InvalidResetReceiptAccounts",
+      "msg": "Reset requires exactly one instructions sysvar account for versioned projections and none for projection zero"
     }
   ],
   "types": [
@@ -1987,7 +2024,7 @@
         "Hamming-distance ZK proof can recover its private witnesses on any",
         "device with the originating wallet.",
         "",
-        "The blob is opaque ciphertext to the program — AES-256-GCM produced",
+        "The blob is opaque AES-256-GCM ciphertext produced",
         "off-chain in the SDK under a key derived from a deterministic",
         "`signMessage` on a domain-separated payload. The GCM AAD binds the",
         "blob to (wallet, this PDA's address, current on-chain commitment),",
@@ -1995,7 +2032,7 @@
         "against the new commitment and the SDK falls back to a fresh-capture",
         "flow.",
         "",
-        "The program never decrypts the blob — it only stores opaque bytes.",
+        "The program never decrypts the blob. It only stores opaque bytes.",
         "Plaintext biometric data never reaches chain at any point."
       ],
       "type": {
@@ -2136,7 +2173,7 @@
           {
             "name": "projection_version",
             "docs": [
-              "Version of the fingerprint projection space used for the current_commitment (master-list #192)"
+              "Projection space version used for the current commitment."
             ],
             "type": "u16"
           },

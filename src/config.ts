@@ -18,11 +18,12 @@ export const PROOF_B_SIZE = 128;
 export const PROOF_C_SIZE = 64;
 export const TOTAL_PROOF_SIZE = 256;
 
-// Frozen at the original v1 string for backward compatibility — every existing
-// user's baseline projects features into bit positions derived from this seed,
-// so changing it would invalidate every prior fingerprint and force a global
-// baseline reset. Kerckhoffs-compliant either way (the seed is public).
-export const SIMHASH_SEED = "IAM-PROTOCOL-SIMHASH-V1";
+/** Public seed for projection version 1. */
+export const SIMHASH_PUBLIC_SEED_HEX =
+  "9ee9c02f3fc6a2abce703010e64378d4531f8bcb110f0bc4c177c36a60c75bb5";
+
+/** Projection version 0 seed retained for pre-cutover identities. */
+export const LEGACY_SIMHASH_SEED = "IAM-PROTOCOL-SIMHASH-V1";
 
 // Capture duration bounds (ms)
 export const MIN_CAPTURE_MS = 2000;
@@ -166,18 +167,12 @@ export const MAX_VERIFICATION_MS =
 
 /**
  * Feature-projection generation this SDK build produces fingerprints in.
- *
- * Written to `IdentityState.projection_version` by `reset_identity_state` and
- * `rebaseline_anchor`. Held at 0 because nothing reads it yet: master-list
- * #215 is the work that makes a stored baseline declare its projection and
- * routes a mismatch to re-enrolment instead of to a drift rejection. Bump it
- * there, in step with the validator, not here alone.
- *
- * It exists now because the deployed program has required the argument since
- * 2026-07-27 and the SDK was not passing it, which made every baseline reset
- * fail to deserialize on chain.
+ * The client routes older identities through an authenticated rebaseline.
  */
-export const PROJECTION_VERSION = 0;
+export const CLIENT_PROJECTION_VERSION = 1;
+
+/** @deprecated Use `CLIENT_PROJECTION_VERSION`. */
+export const PROJECTION_VERSION = CLIENT_PROJECTION_VERSION;
 
 export const PROGRAM_IDS = {
   entrosAnchor: "GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2",
@@ -193,8 +188,8 @@ export const AGENT_REGISTRY_CONFIG = {
 
 export const SAS_CONFIG = {
   programId: "22zoJMtdu4tQc2PzL74ZUT7FrwgB1Udec8DdW4yw4BdG",
-  entrosCredentialPda: "GaPTkZC6JEGds1G5h645qyUrogx7NWghR2JgjvKQwTDo",
-  entrosSchemaPda: "EPkajiGQjycPwcc3pupqExVdAmSfxWd31tRYZezd8c5g",
+  entrosCredentialPda: "AMBtabCgRFwGLjoZ21Z2LhSKJ6c47NckxUkMogJ3Lpuw",
+  entrosSchemaPda: "5LNc7syFW7USPLveVLcNcjjY1xqS7QTXVjHZ7CQCbAMQ",
 } as const;
 
 export interface PulseConfig {

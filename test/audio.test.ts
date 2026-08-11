@@ -1,6 +1,18 @@
 import { describe, it, expect } from "vitest";
 import { MAX_TRANSMITTED_CAPTURE_MS } from "../src/config";
-import { captureAudio, describeInputLevel, normalizeCaptureRMS } from "../src/sensor/audio";
+import {
+  audioCaptureConstraints,
+  captureAudio,
+  describeInputLevel,
+  normalizeCaptureRMS,
+} from "../src/sensor/audio";
+
+describe("projection-aware audio capture", () => {
+  it("preserves version 0 constraints and requests voice isolation in version 1", () => {
+    expect(audioCaptureConstraints(0)).not.toHaveProperty("voiceIsolation");
+    expect(audioCaptureConstraints(1)).toMatchObject({ voiceIsolation: true });
+  });
+});
 
 // Helper: compute RMS over a Float32Array. Used by the assertions to
 // confirm the helper achieves the documented target without re-deriving
@@ -188,6 +200,39 @@ describe("captureAudio onReady gate", () => {
       controller.abort();
       const result = await capture;
       expect(result.virtualDevice).toBe(true);
+    } finally {
+      g.AudioContext = original;
+    }
+  });
+
+  it("reports whether the browser applied voice isolation", async () => {
+    const g = globalThis as { AudioContext?: unknown };
+    const original = g.AudioContext;
+    g.AudioContext = MockAudioContext as unknown as typeof AudioContext;
+    try {
+      const track = {
+        label: "Built-in Microphone",
+        getSettings: () => ({ voiceIsolation: true }),
+        stop() {},
+      };
+      const stream = {
+        getTracks: () => [track],
+        getAudioTracks: () => [track],
+      } as unknown as MediaStream;
+      const controller = new AbortController();
+      const capture = captureAudio({
+        stream,
+        signal: controller.signal,
+        minDurationMs: 0,
+        maxDurationMs: 1000,
+        projectionVersion: 1,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fireFrame(MockAudioContext.lastProcessor!, 0.1);
+      controller.abort();
+
+      await expect(capture).resolves.toMatchObject({ voiceIsolationApplied: true });
     } finally {
       g.AudioContext = original;
     }

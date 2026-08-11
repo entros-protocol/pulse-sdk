@@ -93,26 +93,33 @@ describe("realFFT", () => {
 
 describe("bandEnergy", () => {
   it("returns zero on empty input", () => {
-    expect(bandEnergy([], [], 100, 0, 10)).toBe(0);
+    expect(bandEnergy([], [], 100, 0, 10, 0)).toBe(0);
   });
 
   it("returns zero for invalid sample rate", () => {
     const { real, imag } = realFFT([1, 0, -1, 0], 4);
-    expect(bandEnergy(real, imag, 0, 0, 10)).toBe(0);
-    expect(bandEnergy(real, imag, -100, 0, 10)).toBe(0);
+    expect(bandEnergy(real, imag, 0, 0, 10, 4)).toBe(0);
+    expect(bandEnergy(real, imag, -100, 0, 10, 4)).toBe(0);
   });
 
   it("returns zero for an inverted band", () => {
     const { real, imag } = realFFT([1, 0, -1, 0], 4);
-    expect(bandEnergy(real, imag, 100, 10, 5)).toBe(0);
+    expect(bandEnergy(real, imag, 100, 10, 5, 4)).toBe(0);
   });
 
   it("captures all sine energy when band brackets the frequency", () => {
     const freq = 8;
     const input = sineSignal(FFT_SIZE, freq, SAMPLE_RATE, 1);
     const { real, imag } = realFFT(input, FFT_SIZE);
-    const inBand = bandEnergy(real, imag, SAMPLE_RATE, 7, 9);
-    const fullSpectrum = bandEnergy(real, imag, SAMPLE_RATE, 0, SAMPLE_RATE);
+    const inBand = bandEnergy(real, imag, SAMPLE_RATE, 7, 9, input.length);
+    const fullSpectrum = bandEnergy(
+      real,
+      imag,
+      SAMPLE_RATE,
+      0,
+      SAMPLE_RATE,
+      input.length,
+    );
     // The single-frequency sine should put effectively all energy in the
     // 7-9 Hz band; allow 1% slack for windowing leakage.
     expect(inBand).toBeGreaterThan(0.99 * fullSpectrum);
@@ -122,9 +129,35 @@ describe("bandEnergy", () => {
     const freq = 8;
     const input = sineSignal(FFT_SIZE, freq, SAMPLE_RATE, 1);
     const { real, imag } = realFFT(input, FFT_SIZE);
-    const offBand = bandEnergy(real, imag, SAMPLE_RATE, 20, 30);
-    const inBand = bandEnergy(real, imag, SAMPLE_RATE, 7, 9);
+    const offBand = bandEnergy(real, imag, SAMPLE_RATE, 20, 30, input.length);
+    const inBand = bandEnergy(real, imag, SAMPLE_RATE, 7, 9, input.length);
     expect(offBand).toBeLessThan(0.01 * inBand);
+  });
+
+  it("preserves sine energy across sample rates and zero-padding ratios", () => {
+    const lowRate = sineSignal(180, 8, 60, 0.4);
+    const highRate = sineSignal(360, 8, 120, 0.4);
+    const lowSpectrum = realFFT(lowRate, nextPow2(lowRate.length));
+    const highSpectrum = realFFT(highRate, nextPow2(highRate.length));
+
+    const lowEnergy = bandEnergy(
+      lowSpectrum.real,
+      lowSpectrum.imag,
+      60,
+      7,
+      9,
+      lowRate.length,
+    );
+    const highEnergy = bandEnergy(
+      highSpectrum.real,
+      highSpectrum.imag,
+      120,
+      7,
+      9,
+      highRate.length,
+    );
+
+    expect(Math.abs(lowEnergy - highEnergy) / highEnergy).toBeLessThan(5e-5);
   });
 });
 
@@ -140,7 +173,7 @@ describe("realFFT determinism", () => {
 
 describe("peakInBand", () => {
   it("returns zero amplitude on empty input", () => {
-    const result = peakInBand([], [], 100, 0, 10);
+    const result = peakInBand([], [], 100, 0, 10, 0);
     expect(result).toEqual({ freq: 0, amplitude: 0 });
   });
 
@@ -154,7 +187,7 @@ describe("peakInBand", () => {
       input[i] = a + b;
     }
     const { real, imag } = realFFT(input, FFT_SIZE);
-    const { freq } = peakInBand(real, imag, SAMPLE_RATE, 4, 12);
+    const { freq } = peakInBand(real, imag, SAMPLE_RATE, 4, 12, input.length);
     expect(freq).toBeCloseTo(5, 1);
   });
 
@@ -162,7 +195,7 @@ describe("peakInBand", () => {
     const input = sineSignal(8, 1, 4, 1);
     const { real, imag } = realFFT(input, 8);
     // Bin spacing = sampleRate / N = 4 / 8 = 0.5 Hz; band [10, 11] is past Nyquist.
-    const result = peakInBand(real, imag, 4, 10, 11);
+    const result = peakInBand(real, imag, 4, 10, 11, input.length);
     expect(result).toEqual({ freq: 0, amplitude: 0 });
   });
 });

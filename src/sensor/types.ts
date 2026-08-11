@@ -46,6 +46,8 @@ export interface AudioCapture {
     voicedFrameRatio: number;
   };
   virtualDevice?: boolean;
+  /** Whether the audio track reports that the requested OS effect is active. */
+  voiceIsolationApplied: boolean | null;
 }
 
 
@@ -136,6 +138,8 @@ export interface CaptureOptions {
   captureWindowSignal?: AbortSignal;
   /** Pre-acquired MediaStream. If provided, captureAudio skips getUserMedia. */
   stream?: MediaStream;
+  /** Selects capture semantics that match the active on-chain projection. */
+  projectionVersion?: number;
   /** If true, captureMotion skips requestMotionPermission (already acquired). */
   permissionGranted?: boolean;
 }

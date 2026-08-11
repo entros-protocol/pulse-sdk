@@ -30,6 +30,52 @@ const MIN_RMS_FOR_NORMALIZATION = 1e-4;
  */
 const MAX_NORMALIZATION_GAIN = 50;
 
+interface VoiceIsolationConstraints extends MediaTrackConstraints {
+  voiceIsolation?: ConstrainBoolean;
+}
+
+interface VoiceIsolationSettings extends MediaTrackSettings {
+  voiceIsolation?: boolean;
+}
+
+/**
+ * Browser microphone constraints shared by direct and session capture.
+ * Disabled WebRTC processing preserves the signal used by feature extraction.
+ * The OS can ignore voice isolation when the track does not support it.
+ */
+const LEGACY_AUDIO_CAPTURE_CONSTRAINTS: VoiceIsolationConstraints = {
+  sampleRate: CANONICAL_SAMPLE_RATE,
+  channelCount: 1,
+  echoCancellation: false,
+  noiseSuppression: false,
+  autoGainControl: false,
+};
+
+export function audioCaptureConstraints(
+  projectionVersion = 0,
+): VoiceIsolationConstraints {
+  if (projectionVersion !== 0 && projectionVersion !== 1) {
+    throw new Error(`Unsupported projection version ${projectionVersion}`);
+  }
+  return projectionVersion === 1
+    ? { ...LEGACY_AUDIO_CAPTURE_CONSTRAINTS, voiceIsolation: true }
+    : LEGACY_AUDIO_CAPTURE_CONSTRAINTS;
+}
+
+/** Return only the bounded applied-state value exposed by the audio track. */
+export function readVoiceIsolationApplied(stream: MediaStream): boolean | null {
+  try {
+    const settings = stream.getAudioTracks()[0]?.getSettings() as
+      | VoiceIsolationSettings
+      | undefined;
+    return typeof settings?.voiceIsolation === "boolean"
+      ? settings.voiceIsolation
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Scale the capture buffer so its RMS lands at `TARGET_CAPTURE_RMS`,
  * with safety guards: empty input passes through unchanged, near-silent
@@ -180,38 +226,16 @@ export async function captureAudio(
     onReady,
     captureWindowSignal,
     stream: preAcquiredStream,
+    projectionVersion = 0,
   } = options;
 
-  const stream = preAcquiredStream ?? await navigator.mediaDevices.getUserMedia({
-    audio: {
-      sampleRate: CANONICAL_SAMPLE_RATE,
-      channelCount: 1,
-      // Capture without browser-side audio processing — preserves the
-      // raw microphone signal for the SDK's downstream feature extraction
-      // and for server-side validation. Audio cleanup intended for the
-      // transcription path runs server-side, on a parallel path that
-      // never feeds back to feature extraction. Matches the mobile SDK's
-      // choice of Android's `MIC` source over `VOICE_RECOGNITION` —
-      // same architectural decision, two platforms.
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-      // OS-level voice isolation request (W3C Media Capture Extensions,
-      // 2024). Activates the platform DSP on Chrome 124+ / ChromeOS and
-      // surfaces Apple Voice Isolation Mic Mode on Safari macOS Sonoma+
-      // / iOS 17+ when the user has it enabled in Control Center.
-      // Silently ignored on browsers/OSes without support, so the
-      // constraint costs nothing where it doesn't help. Distinct
-      // mechanism from `noiseSuppression` above — that flag controls
-      // WebRTC's hand-tuned AudioProcessingModule, this requests the
-      // OS-native neural effect.
-      // @ts-expect-error -- W3C Media Capture Extensions property; not
-      // yet in lib.dom.d.ts as of TypeScript 6.0. Removing this directive
-      // becomes a compile error once lib.dom catches up, signaling that
-      // it can be deleted.
-      voiceIsolation: true,
-    },
-  });
+  const stream =
+    preAcquiredStream ??
+    (await navigator.mediaDevices.getUserMedia({
+      audio: audioCaptureConstraints(projectionVersion),
+    }));
+
+  const voiceIsolationApplied = readVoiceIsolationApplied(stream);
 
   let isVirtual = false;
   try {
@@ -438,6 +462,7 @@ export async function captureAudio(
           windowEndMs: windowStartMs + duration * 1000,
           inputLevel,
           virtualDevice: isVirtual,
+          voiceIsolationApplied,
         });
       } catch {
         resolve({
@@ -450,6 +475,7 @@ export async function captureAudio(
           windowEndMs: audioEpochMs,
           inputLevel: describeInputLevel(new Float32Array(0)),
           virtualDevice: isVirtual,
+          voiceIsolationApplied,
         });
       }
     }

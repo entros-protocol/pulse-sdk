@@ -1,5 +1,6 @@
 import type { Idl } from "@coral-xyz/anchor";
-import { PROGRAM_IDS } from "../config";
+import type { PublicKey } from "@solana/web3.js";
+import { CLIENT_PROJECTION_VERSION, PROGRAM_IDS } from "../config";
 import { sdkLog, sdkWarn } from "../log";
 import { entrosAnchorIdl } from "../protocol/idl";
 import type { IdentityState, StoredVerificationData } from "./types";
@@ -23,6 +24,21 @@ import {
 
 const STORAGE_KEY = "entros-protocol-verification-data";
 const ENCRYPTED_VERSION = 2;
+const PROTOCOL_CONFIG_CURRENT_OFFSET = 109;
+const PROTOCOL_CONFIG_MINIMUM_OFFSET = 111;
+const PROTOCOL_CONFIG_POLICY_LENGTH = 113;
+
+export interface ProjectionPolicy {
+  current: number;
+  minimum: number;
+}
+
+export interface ProjectionPolicyConnection {
+  getAccountInfo(address: PublicKey): Promise<{
+    data: Uint8Array;
+    owner: { equals(other: PublicKey): boolean };
+  } | null>;
+}
 
 // In-memory fallback for environments without localStorage (Node.js, SSR,
 // private browsing on some browsers). Data is lost on page reload — users
@@ -72,7 +88,22 @@ function isPlaintextData(obj: unknown): obj is StoredVerificationData {
   if (typeof o.salt !== "string" || o.salt.length === 0) return false;
   if (typeof o.commitment !== "string" || o.commitment.length === 0) return false;
   if (typeof o.timestamp !== "number" || !Number.isFinite(o.timestamp)) return false;
+  if (
+    o.projectionVersion !== undefined &&
+    (typeof o.projectionVersion !== "number" ||
+      !Number.isInteger(o.projectionVersion) ||
+      o.projectionVersion < 0)
+  ) {
+    return false;
+  }
   return true;
+}
+
+function normalizeStoredData(data: StoredVerificationData): StoredVerificationData {
+  return {
+    ...data,
+    projectionVersion: data.projectionVersion ?? 0,
+  };
 }
 
 // --- Public API ---
@@ -191,6 +222,7 @@ export async function decodeIdentityState(
       // is safe here because Unix timestamps fit in Number.MAX_SAFE_INTEGER
       // until year 275760.
       lastResetTimestamp: decoded.last_reset_timestamp?.toNumber?.() ?? 0,
+      projectionVersion: decoded.projection_version ?? 0,
     };
   } catch {
     return null;
@@ -214,6 +246,52 @@ export async function fetchIdentityState(
   } catch {
     return null;
   }
+}
+
+/** Read the active projection policy from the registry config account. */
+export async function fetchProjectionPolicy(
+  connection: ProjectionPolicyConnection,
+): Promise<ProjectionPolicy> {
+  const { PublicKey } = await import("@solana/web3.js");
+  const registryProgramId = new PublicKey(PROGRAM_IDS.entrosRegistry);
+  const [configPda] = PublicKey.findProgramAddressSync(
+    [new TextEncoder().encode("protocol_config")],
+    registryProgramId
+  );
+  const accountInfo = await connection.getAccountInfo(configPda);
+  if (!accountInfo) {
+    throw new Error("Protocol projection policy is unavailable");
+  }
+  if (!accountInfo.owner.equals(registryProgramId)) {
+    throw new Error("Protocol projection policy has an invalid owner");
+  }
+
+  const data = accountInfo.data as Uint8Array;
+  const policy: ProjectionPolicy =
+    data.length <= PROTOCOL_CONFIG_CURRENT_OFFSET
+      ? { current: 0, minimum: 0 }
+      : data.length >= PROTOCOL_CONFIG_POLICY_LENGTH
+        ? {
+            current:
+              (data[PROTOCOL_CONFIG_CURRENT_OFFSET] ?? 0) |
+              ((data[PROTOCOL_CONFIG_CURRENT_OFFSET + 1] ?? 0) << 8),
+            minimum:
+              (data[PROTOCOL_CONFIG_MINIMUM_OFFSET] ?? 0) |
+              ((data[PROTOCOL_CONFIG_MINIMUM_OFFSET + 1] ?? 0) << 8),
+          }
+        : (() => {
+            throw new Error("Protocol projection policy has an invalid length");
+          })();
+
+  if (policy.minimum > policy.current) {
+    throw new Error("Protocol projection policy is inconsistent");
+  }
+  if (policy.current > CLIENT_PROJECTION_VERSION) {
+    throw new Error(
+      `This SDK supports projection versions through ${CLIENT_PROJECTION_VERSION}, but the protocol requires ${policy.current}`
+    );
+  }
+  return policy;
 }
 
 /**
@@ -356,7 +434,8 @@ export async function loadVerificationData(
       }
       try {
         const plaintext = await decrypt(parsed.iv, parsed.ct, key);
-        return JSON.parse(plaintext) as StoredVerificationData;
+        const decrypted: unknown = JSON.parse(plaintext);
+        return isPlaintextData(decrypted) ? normalizeStoredData(decrypted) : inMemoryStore;
       } catch {
         // Same rationale as above: decrypt failure is often transient
         // (IndexedDB hiccup, key re-derivation edge case). Preserve the
@@ -374,11 +453,12 @@ export async function loadVerificationData(
 
     // Plaintext legacy data — migrate to encrypted
     if (isPlaintextData(parsed)) {
-      await storeVerificationData(parsed, walletAddress);
+      const normalized = normalizeStoredData(parsed);
+      await storeVerificationData(normalized, walletAddress);
       if (isLegacyFallback) {
         localStorage.removeItem(STORAGE_KEY);
       }
-      return parsed;
+      return normalized;
     }
 
     // Unrecognized format
@@ -513,6 +593,7 @@ export async function recoverBaselineFromChain(
         identity.lastVerificationTimestamp > 0
           ? identity.lastVerificationTimestamp * 1000
           : Date.now(),
+      projectionVersion: identity.projectionVersion,
     }, wallet.publicKey.toBase58());
     sdkLog(
       "[Entros SDK] Recovered local baseline from on-chain EncryptedBaseline PDA"

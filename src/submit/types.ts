@@ -21,8 +21,8 @@ export interface SubmissionResult {
 }
 
 /**
- * Validator-signed receipt binding (wallet, commitment, validated_at) for the
- * upcoming `mint_anchor` transaction. Returned in the `/validate-features`
+ * Validator-signed receipt binding the transition purpose and projection
+ * version to the wallet, commitment, and validation time.
  * response when the request includes `commitment_new_hex` and the validator
  * has a signing key configured.
  *
@@ -33,8 +33,7 @@ export interface SignedReceiptDto {
   /** Hex-encoded 32-byte Ed25519 public key of the validator. */
   validator_pubkey_hex: string;
   /**
-   * Hex-encoded 72-byte message:
-   *   wallet_pubkey (32) || commitment_new (32) || validated_at i64 LE (8)
+   * Hex-encoded 103-byte version 2 receipt message.
    */
   message_hex: string;
   /** Hex-encoded 64-byte Ed25519 signature over `message_hex`. */

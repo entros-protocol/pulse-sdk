@@ -1,6 +1,9 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
+import { PublicKey } from "@solana/web3.js";
 import { PulseSDK } from "../src/pulse";
+import { PROGRAM_IDS } from "../src/config";
 import { resampleCurveTrace } from "../src/sensor/curve";
+import { extractMotionFeatures } from "../src/extraction/kinematic";
 import type { AudioCapture, MotionSample, TouchSample, CurveTracePoint } from "../src/sensor/types";
 import type { StudyContext } from "../src/study";
 
@@ -24,6 +27,7 @@ function validAudio(): AudioCapture {
     windowStartMs: 0,
     windowEndMs: duration * 1000,
     inputLevel: { rms: 0.07, peak: 0.1, gain: 1, gainClipped: false, voicedFrameRatio: 1 },
+    voiceIsolationApplied: null,
   };
 }
 // 26 samples at 50ms spans 1250ms, exactly `validAudio`'s duration.
@@ -52,9 +56,27 @@ function rawOutline(): CurveTracePoint[] {
   return Array.from({ length: 30 }, (_, i) => ({ x: i * 3, y: 100 + i, t: i * 40 }));
 }
 
-// walletAddress derivation only needs publicKey.toBase58() (pulse.ts:510-511).
-const fakeWallet = { publicKey: { toBase58: () => "So11111111111111111111111111111111111111112" } };
-const fakeConnection = { getAccountInfo: async () => null };
+const fakeWallet = { publicKey: new PublicKey("So11111111111111111111111111111111111111112") };
+const registryProgramId = new PublicKey(PROGRAM_IDS.entrosRegistry);
+const [protocolConfigPda] = PublicKey.findProgramAddressSync(
+  [new TextEncoder().encode("protocol_config")],
+  registryProgramId,
+);
+const fakeConnection = {
+  getAccountInfo: async (address: PublicKey) =>
+    address.equals(protocolConfigPda)
+      ? { data: Buffer.alloc(109), owner: registryProgramId }
+      : null,
+};
+const versionOneConnection = {
+  getAccountInfo: async (address: PublicKey) => {
+    if (!address.equals(protocolConfigPda)) return null;
+    const data = Buffer.alloc(113);
+    data.writeUInt16LE(1, 109);
+    data.writeUInt16LE(0, 111);
+    return { data, owner: registryProgramId };
+  },
+};
 
 function newSession(studyContext?: StudyContext) {
   const sdk = new PulseSDK({
@@ -95,7 +117,7 @@ describe("/validate-features body — curve_trace", () => {
     const getBody = stubFetchCapturing();
     const outline = rawOutline();
 
-    await session.complete(fakeWallet, undefined, undefined, outline);
+    await session.complete(fakeWallet, fakeConnection, undefined, outline);
 
     const body = getBody();
     expect(body).toBeDefined();
@@ -107,7 +129,7 @@ describe("/validate-features body — curve_trace", () => {
     session.__injectSensorData({ audio: validAudio(), motion: validMotion(), touch: validTouch() });
     const getBody = stubFetchCapturing();
 
-    await session.complete(fakeWallet);
+    await session.complete(fakeWallet, fakeConnection);
 
     const body = getBody();
     expect(body).toBeDefined();
@@ -125,6 +147,20 @@ describe("/validate-features body — curve_trace", () => {
     expect(body).toBeDefined();
     expect("curve_trace" in body!).toBe(false);
   });
+
+  it.skipIf(!isInternalTestBuild)("requests a purpose-3 receipt for a version-one reset", async () => {
+    const session = newSession();
+    session.__injectSensorData({ audio: validAudio(), motion: validMotion(), touch: validTouch() });
+    const getBody = stubFetchCapturing();
+
+    await session.completeReset(fakeWallet, versionOneConnection);
+
+    expect(getBody()).toMatchObject({
+      projection_version: 1,
+      request_receipt: true,
+      receipt_purpose: "reset",
+    });
+  });
 });
 
 describe("/validate-features body - study context", () => {
@@ -133,7 +169,7 @@ describe("/validate-features body - study context", () => {
     session.__injectSensorData({ audio: validAudio(), motion: validMotion(), touch: validTouch() });
     const getBody = stubFetchCapturing();
 
-    await session.complete(fakeWallet);
+    await session.complete(fakeWallet, fakeConnection);
 
     const body = getBody();
     expect(body).toBeDefined();
@@ -152,8 +188,40 @@ describe("/validate-features body - study context", () => {
     session.__injectSensorData({ audio: validAudio(), motion: validMotion(), touch: validTouch() });
     const getBody = stubFetchCapturing();
 
-    await session.complete(fakeWallet);
+    await session.complete(fakeWallet, fakeConnection);
 
     expect(getBody()?.study).toEqual(context);
+  });
+});
+
+describe("/validate-features body - mobile modality selection", () => {
+  it.skipIf(!isInternalTestBuild)(
+    "uses accelerometer features when a complete capture also has touch",
+    async () => {
+      const motion = validMotion();
+      const session = newSession();
+      session.__injectSensorData({ audio: validAudio(), motion, touch: validTouch() });
+      const getBody = stubFetchCapturing();
+
+      await session.complete(fakeWallet, versionOneConnection);
+
+      const features = getBody()?.features as number[];
+      expect(features.slice(170, 251)).toEqual(extractMotionFeatures(motion, 1));
+    },
+  );
+
+  it.skipIf(!isInternalTestBuild)("reports the bounded voice-isolation state", async () => {
+    const audio = validAudio();
+    audio.voiceIsolationApplied = true;
+    const session = newSession();
+    session.__injectSensorData({ audio, motion: validMotion(), touch: validTouch() });
+    const getBody = stubFetchCapturing();
+
+    await session.complete(fakeWallet, fakeConnection);
+
+    const clientSignals = getBody()?.client_signals as {
+      capture?: { voice_isolation_applied?: boolean | null };
+    };
+    expect(clientSignals.capture?.voice_isolation_applied).toBe(true);
   });
 });

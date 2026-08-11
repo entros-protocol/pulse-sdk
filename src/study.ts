@@ -25,6 +25,14 @@ export interface StudyGrant {
   projection_version: number;
 }
 
+export function featureSchemaVersionForProjection(
+  projectionVersion: number,
+): number {
+  if (projectionVersion === 0) return 3;
+  if (projectionVersion === 1) return 4;
+  throw new Error(`Unsupported projection version ${projectionVersion}`);
+}
+
 export function createStudyContext(
   grant: StudyGrant,
   captureClass: StudyCaptureClass,
@@ -39,6 +47,14 @@ export function createStudyContext(
     if (!Number.isInteger(value) || value < 0 || value > 65_535) {
       throw new Error(`Study ${name} is malformed`);
     }
+  }
+  const expectedFeatureSchemaVersion = featureSchemaVersionForProjection(
+    grant.projection_version,
+  );
+  if (grant.feature_schema_version !== expectedFeatureSchemaVersion) {
+    throw new Error(
+      `Study feature schema ${grant.feature_schema_version} does not match projection ${grant.projection_version}`,
+    );
   }
   if (!globalThis.crypto?.getRandomValues) {
     throw new Error("Secure randomness is unavailable for this study capture");

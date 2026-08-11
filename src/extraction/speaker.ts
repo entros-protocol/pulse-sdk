@@ -13,7 +13,12 @@
 import type { AudioCapture } from "../sensor/types";
 import { condense, entropy, mean as meanOf, variance as varianceOf } from "./statistics";
 import { extractLpcAnalysis } from "./lpc";
-import { extractMfccFeatures, MFCC_FEATURE_COUNT } from "./mfcc";
+import {
+  extractMfccFeatures,
+  extractMfccFeaturesFromPreEmphasized,
+  MFCC_FEATURE_COUNT,
+  preEmphasizeAudio,
+} from "./mfcc";
 import {
   extractVoiceQualityFeatures,
   VOICE_QUALITY_FEATURE_COUNT,
@@ -394,6 +399,7 @@ function derivative(values: number[]): number[] {
  */
 export async function extractSpeakerFeaturesDetailed(
   audio: AudioCapture,
+  projectionVersion = 0,
 ): Promise<{ features: number[]; f0Contour: number[] }> {
   const { samples, sampleRate } = audio;
 
@@ -493,12 +499,27 @@ export async function extractSpeakerFeaturesDetailed(
   // synchronous stages.
   await yieldToMainThread();
 
-  // 7. Formant analysis — single LPC pass surfaces ratios (legacy
+  if (projectionVersion !== 0 && projectionVersion !== 1) {
+    throw new Error(`Unsupported projection version ${projectionVersion}`);
+  }
+  const corrected = projectionVersion === 1;
+  const lpcSamples = corrected
+    ? preEmphasizeAudio(normalizedSamples)
+    : normalizedSamples;
+
+  // 7. Formant analysis. A single LPC pass surfaces ratios (legacy
   // 8 features), LPC coefficients (24 new), absolute formants + dynamics
   // + bandwidths (16 new). All derived from one autocorrelate +
   // Levinson-Durbin per frame; CPU cost identical to the legacy
   // extractFormantRatios call but the output is much richer.
-  const lpc = extractLpcAnalysis(normalizedSamples, sampleRate, frameSize, hopSize);
+  const lpc = extractLpcAnalysis(
+    lpcSamples,
+    sampleRate,
+    frameSize,
+    hopSize,
+    12,
+    corrected ? 200 : 50,
+  );
   const f1f2Stats = condense(lpc.f1f2);
   const f2f3Stats = condense(lpc.f2f3);
   const formantFeatures = [
@@ -525,12 +546,19 @@ export async function extractSpeakerFeaturesDetailed(
 
   // 11. MFCC + delta-MFCC stats (72 values total: 12×4 + 12×2 — MFCC[0] dropped)
   await yieldToMainThread();
-  const mfccFeatures = await extractMfccFeatures(
-    normalizedSamples,
-    sampleRate,
-    frameSize,
-    hopSize,
-  );
+  const mfccFeatures = corrected
+    ? await extractMfccFeaturesFromPreEmphasized(
+        lpcSamples,
+        sampleRate,
+        frameSize,
+        hopSize,
+      )
+    : await extractMfccFeatures(
+        normalizedSamples,
+        sampleRate,
+        frameSize,
+        hopSize,
+      );
 
   // 12. LPC coefficient statistics (24 values: 12 coefficients × mean, variance)
   // Derived from the single LPC pass that already ran for the formant block.
@@ -606,8 +634,14 @@ export async function extractSpeakerFeaturesDetailed(
  * the F0 contour; use `extractSpeakerFeaturesDetailed` when the contour is
  * needed (e.g. for server-side analysis).
  */
-export async function extractSpeakerFeatures(audio: AudioCapture): Promise<number[]> {
-  const { features } = await extractSpeakerFeaturesDetailed(audio);
+export async function extractSpeakerFeatures(
+  audio: AudioCapture,
+  projectionVersion = 0,
+): Promise<number[]> {
+  const { features } = await extractSpeakerFeaturesDetailed(
+    audio,
+    projectionVersion,
+  );
   return features;
 }
 

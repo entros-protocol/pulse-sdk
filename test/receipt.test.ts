@@ -10,10 +10,14 @@ import type { SignedReceiptDto } from "../src/submit/types";
 const VALIDATOR_PUBKEY_HEX = "8c".repeat(32);
 // 64 bytes = 128 hex chars
 const SIGNATURE_HEX = "ab".repeat(64);
-const MESSAGE_HEX =
-  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" + // wallet (32B)
-  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" + // commitment (32B)
-  "0102030405060708"; // validated_at i64 LE (8B)
+const message = Buffer.alloc(103);
+Buffer.from("entros-validator-receipt-v2\0", "ascii").copy(message, 0);
+message[28] = 2;
+message.writeUInt16LE(1, 29);
+Buffer.from("aa".repeat(32), "hex").copy(message, 31);
+Buffer.from("bb".repeat(32), "hex").copy(message, 63);
+message.writeBigInt64LE(1_786_310_400n, 95);
+const MESSAGE_HEX = message.toString("hex");
 
 const VALID_RECEIPT: SignedReceiptDto = {
   validator_pubkey_hex: VALIDATOR_PUBKEY_HEX,
@@ -45,7 +49,12 @@ describe("decodeSignedReceipt", () => {
     expect(decoded).not.toBeNull();
     expect(decoded!.publicKey).toHaveLength(32);
     expect(decoded!.signature).toHaveLength(64);
-    expect(decoded!.message).toHaveLength(72);
+    expect(decoded!.message).toHaveLength(103);
+    expect(Buffer.from(decoded!.message.subarray(0, 28)).toString("ascii")).toBe(
+      "entros-validator-receipt-v2\0"
+    );
+    expect(decoded!.message[28]).toBe(2);
+    expect(new DataView(decoded!.message.buffer).getUint16(29, true)).toBe(1);
   });
 
   it("accepts hex with leading 0x prefix on any field", () => {
@@ -79,7 +88,7 @@ describe("decodeSignedReceipt", () => {
     expect(
       decodeSignedReceipt({
         ...VALID_RECEIPT,
-        message_hex: "ab".repeat(71),
+        message_hex: "ab".repeat(102),
       })
     ).toBeNull();
   });
@@ -161,13 +170,13 @@ describe("buildEd25519ReceiptIx", () => {
     //   [6..8] public_key_offset (u16 LE)
     //   [8..10] public_key_instruction_index (u16 LE) — must be 0xFFFF
     //   [10..12] message_data_offset (u16 LE)
-    //   [12..14] message_data_size (u16 LE) — must be 72
+    //   [12..14] message_data_size (u16 LE), which must be 103
     //   [14..16] message_instruction_index (u16 LE) — must be 0xFFFF
     expect(data[0]).toBe(1); // num_signatures
     expect(data.readUInt16LE(4)).toBe(0xffff); // signature_instruction_index
     expect(data.readUInt16LE(8)).toBe(0xffff); // public_key_instruction_index
     expect(data.readUInt16LE(14)).toBe(0xffff); // message_instruction_index
-    expect(data.readUInt16LE(12)).toBe(72); // message_data_size
+    expect(data.readUInt16LE(12)).toBe(103); // message_data_size
   });
 
   it("places the message bytes verbatim at message_data_offset", async () => {

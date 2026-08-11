@@ -3,7 +3,18 @@ export { PulseSDK, PulseSession, MIN_AUDIO_SAMPLES, MIN_MOTION_SAMPLES, MIN_TOUC
 
 // Configuration
 export type { PulseConfig } from "./config";
-export { PROGRAM_IDS, DEFAULT_THRESHOLD, DEFAULT_MIN_DISTANCE, FINGERPRINT_BITS, MIN_CAPTURE_MS, MAX_CAPTURE_MS, DEFAULT_CAPTURE_MS, MAX_TRANSMITTED_CAPTURE_MS } from "./config";
+export {
+  PROGRAM_IDS,
+  SAS_CONFIG,
+  CLIENT_PROJECTION_VERSION,
+  DEFAULT_THRESHOLD,
+  DEFAULT_MIN_DISTANCE,
+  FINGERPRINT_BITS,
+  MIN_CAPTURE_MS,
+  MAX_CAPTURE_MS,
+  DEFAULT_CAPTURE_MS,
+  MAX_TRANSMITTED_CAPTURE_MS,
+} from "./config";
 // Clocks. `MAX_VERIFICATION_MS` is the one a host with its own backstop timer
 // needs: it is derived from the other two plus the validate deadline, so a
 // host that reads it cannot fall behind a change here.
@@ -35,11 +46,15 @@ export { generateProof, generateSolanaProof, prepareCircuitInput } from "./proof
 // Submission
 export type { SubmissionResult, VerificationResult } from "./submit/types";
 export type { StudyCaptureClass, StudyContext, StudyRecordStatus } from "./study";
-export { createStudyContext } from "./study";
+export { createStudyContext, featureSchemaVersionForProjection } from "./study";
 // `submitResetViaWallet` is exported for advanced integrators building
 // their own reset UX. Most consumers should use `PulseSDK.resetBaseline()`
 // or `PulseSession.completeReset()` which handle capture + validation.
-export { submitViaWallet, submitResetViaWallet } from "./submit/wallet";
+export {
+  submitViaWallet,
+  submitResetViaWallet,
+  submitRebaselineViaWallet,
+} from "./submit/wallet";
 export { submitViaRelayer } from "./submit/relayer";
 
 // Attestation (SAS)
@@ -52,9 +67,14 @@ export { attestAgentOperator, getAgentHumanOperator } from "./agent/anchor";
 
 // Identity
 export type { IdentityState, StoredVerificationData } from "./identity/types";
-export type { BaselineRecoveryReason, BaselineRecoveryResult } from "./identity/anchor";
+export type {
+  BaselineRecoveryReason,
+  BaselineRecoveryResult,
+  ProjectionPolicy,
+} from "./identity/anchor";
 export {
   fetchIdentityState,
+  fetchProjectionPolicy,
   storeVerificationData,
   loadVerificationData,
   recoverBaselineFromChain,

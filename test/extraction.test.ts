@@ -28,6 +28,7 @@ function makeAudio(opts: {
     windowStartMs: 0,
     windowEndMs: duration * 1000,
     inputLevel: { rms: 0.07, peak: 0.1, gain: 1, gainClipped: false, voicedFrameRatio: 1 },
+    voiceIsolationApplied: null,
   };
 }
 

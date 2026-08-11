@@ -35,6 +35,7 @@ interface IdlArg {
 interface IdlInstruction {
   name: string;
   args?: IdlArg[];
+  accounts?: { name: string }[];
 }
 interface IdlError {
   code: number;
@@ -171,10 +172,29 @@ describe("the reset instruction carries a projection version", () => {
   });
 
   it("knows about rebaseline_anchor", () => {
-    // The instruction that migrates an anchor across projection versions.
-    // It has never had a caller partly because the bundled IDL did not
-    // declare it. See master-list #215.
-    const names = load(SDK_IDL).instructions.map((ix) => ix.name);
-    expect(names).toContain("rebaseline_anchor");
+    const rebaseline = load(SDK_IDL).instructions.find(
+      (ix) => ix.name === "rebaseline_anchor",
+    );
+    expect(rebaseline, "rebaseline_anchor missing from the bundled IDL").toBeDefined();
+    expect((rebaseline!.args ?? []).map((arg) => arg.name)).toEqual([
+      "new_commitment",
+      "projection_version",
+    ]);
+    expect((rebaseline!.accounts ?? []).map((account) => account.name)).toContain(
+      "instructions_sysvar",
+    );
+  });
+
+  it("keeps the reset named accounts compatible with version 0 clients", () => {
+    const reset = load(SDK_IDL).instructions.find(
+      (ix) => ix.name === "reset_identity_state",
+    );
+    expect((reset!.accounts ?? []).map((account) => account.name)).toEqual([
+      "authority",
+      "identity_state",
+      "protocol_config",
+      "treasury",
+      "system_program",
+    ]);
   });
 });

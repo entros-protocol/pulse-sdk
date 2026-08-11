@@ -96,16 +96,13 @@ export function realFFT(
 
 /**
  * Sum the squared magnitudes of FFT bins falling inside the half-open
- * frequency interval [`fLow`, `fHigh`) Hz, NORMALIZED by `N²` so the
- * result is a per-bin power density in the same units as the squared
- * input signal (not Parseval N²-scaled energy).
+ * frequency interval [`fLow`, `fHigh`) Hz. The result is normalized by
+ * the FFT size and the number of real input samples.
  *
  * Why normalize: an unscaled `Σ|X[k]|²` grows as O(N²·A²) for a sine
  * of amplitude A on N samples, which would put band energies 10,000×
- * larger than other motion features (O(0.01-1)) and dominate the
- * z-score normalization in `statistics.ts::normalizeGroup`. Dividing
- * by `N²` aligns the band energy with the squared-signal scale and
- * lets it sit alongside other motion moments cleanly.
+ * larger than other motion features. Dividing by `N * realSampleCount`
+ * preserves the signal-power scale when zero padding changes.
  *
  * Out-of-range or NaN/Infinity inputs return 0 — never throw — so a
  * malformed sensor capture downstream produces a deterministic zero
@@ -117,12 +114,16 @@ export function bandEnergy(
   sampleRate: number,
   fLow: number,
   fHigh: number,
+  realSampleCount: number,
 ): number {
   const N = real.length;
   if (
     N === 0 ||
     !Number.isFinite(sampleRate) ||
     sampleRate <= 0 ||
+    !Number.isInteger(realSampleCount) ||
+    realSampleCount <= 0 ||
+    realSampleCount > N ||
     fLow >= fHigh ||
     fLow < 0
   ) {
@@ -141,12 +142,12 @@ export function bandEnergy(
     const im = imag[k] ?? 0;
     energy += re * re + im * im;
   }
-  return energy / (N * N);
+  return energy / (N * realSampleCount);
 }
 
 /**
  * Return the dominant frequency (Hz) and its squared-magnitude amplitude
- * (normalized by `N²` for the same reason as `bandEnergy`) in the
+ * normalized by `N * realSampleCount` in the
  * half-open frequency interval [`fLow`, `fHigh`) Hz.
  *
  * If no bin falls inside the band (e.g. capture is too short to resolve
@@ -160,12 +161,16 @@ export function peakInBand(
   sampleRate: number,
   fLow: number,
   fHigh: number,
+  realSampleCount: number,
 ): { freq: number; amplitude: number } {
   const N = real.length;
   if (
     N === 0 ||
     !Number.isFinite(sampleRate) ||
     sampleRate <= 0 ||
+    !Number.isInteger(realSampleCount) ||
+    realSampleCount <= 0 ||
+    realSampleCount > N ||
     fLow >= fHigh ||
     fLow < 0
   ) {
@@ -188,7 +193,7 @@ export function peakInBand(
     }
   }
   if (bestK < 0) return { freq: 0, amplitude: 0 };
-  return { freq: bestK * binHz, amplitude: bestAmp / (N * N) };
+  return { freq: bestK * binHz, amplitude: bestAmp / (N * realSampleCount) };
 }
 
 export { nextPow2 };

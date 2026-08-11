@@ -13,6 +13,8 @@ export interface IdentityState {
    * minted before the reset feature was deployed).
    */
   lastResetTimestamp: number;
+  /** Projection generation used by `currentCommitment`. */
+  projectionVersion: number;
 }
 
 /** Local storage of previous verification data (needed for re-verification) */
@@ -21,4 +23,6 @@ export interface StoredVerificationData {
   salt: string;
   commitment: string;
   timestamp: number;
+  /** Projection generation used by `fingerprint` and `commitment`. */
+  projectionVersion: number;
 }

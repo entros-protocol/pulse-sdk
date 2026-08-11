@@ -31,6 +31,7 @@ function validAudio(): AudioCapture {
     windowStartMs: 0,
     windowEndMs: duration * 1000,
     inputLevel: { rms: 0.07, peak: 0.1, gain: 1, gainClipped: false, voicedFrameRatio: 1 },
+    voiceIsolationApplied: null,
   };
 }
 
@@ -142,6 +143,7 @@ describe("PulseSession.__injectSensorData — internal-build behavior", () => {
             windowStartMs: 0,
             windowEndMs: 10,
             inputLevel: { rms: 0.07, peak: 0.1, gain: 1, gainClipped: false, voicedFrameRatio: 1 },
+            voiceIsolationApplied: null,
           },
           motion: validMotion(),
           touch: validTouch(),
