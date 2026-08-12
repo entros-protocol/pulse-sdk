@@ -9,6 +9,11 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+## [4.7.1] - 2026-08-12
+
+### Fixed
+- Baseline reset requests now send explicit reset intent to the executor.
+
 ## [4.7.0] - 2026-08-11
 
 ### Added
