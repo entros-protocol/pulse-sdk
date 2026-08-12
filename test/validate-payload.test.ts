@@ -122,6 +122,7 @@ describe("/validate-features body — curve_trace", () => {
     const body = getBody();
     expect(body).toBeDefined();
     expect(body!.curve_trace).toEqual(resampleCurveTrace(outline));
+    expect(body!.baseline_reset).toBe(false);
   });
 
   it.skipIf(!isInternalTestBuild)("verify without an outline omits curve_trace", async () => {
@@ -159,6 +160,7 @@ describe("/validate-features body — curve_trace", () => {
       projection_version: 1,
       request_receipt: true,
       receipt_purpose: "reset",
+      baseline_reset: true,
     });
   });
 });

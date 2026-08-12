@@ -525,6 +525,7 @@ async function extractFingerprintAndValidate(
           // still sent so older validators (which trust it) keep working.
           request_receipt: receiptPurpose !== undefined,
           receipt_purpose: receiptPurpose,
+          baseline_reset: receiptPurpose === "reset",
           // Observe-only automation-detection signal. Optional and
           // additive — the executor logs it; older executors ignore the
           // unknown field. Never affects the verification decision.
