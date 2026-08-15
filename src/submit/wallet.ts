@@ -521,8 +521,9 @@ export async function submitViaWallet(
         })
         .instruction();
 
-      // Batch: compute budget + 3 program instructions → 1 wallet prompt.
-      // Total CU ~205K alone, ~218K with set_encrypted_baseline appended.
+      // Batch: compute budget + three program instructions in one wallet prompt.
+      // Live diagnostics measured 112,733 CU for `verify_proof` and 148K to
+      // 151K CU for this complete shape with the baseline write.
       // Request 300K when the encrypted-baseline ix is bundled (covers
       // worst-case `verify_proof` + `update_anchor` + init-if-needed cost),
       // 250K otherwise.
@@ -663,10 +664,9 @@ export async function submitViaWallet(
       // `set_encrypted_baseline` is appended LAST because it depends on the
       // IdentityState PDA created by `mint_anchor`; intra-tx instructions
       // execute sequentially, so the existence check (`data_len() > 0`)
-      // passes when `mint_anchor` runs first. Budget 250K covers
-      // `mint_anchor` (~99K) + `set_encrypted_baseline` init (~17K) with
-      // headroom; the Ed25519 precompile runs in the runtime, not against
-      // the program's CU budget.
+      // passes when `mint_anchor` runs first. A live diagnostic measured this
+      // four-instruction shape at 94,440 CU. The Ed25519 precompile runs in
+      // the runtime, not against the program's CU budget.
       const tx = new Transaction();
       const computeUnitLimit = options.encryptedBaselineBlob ? 250_000 : 200_000;
       tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnitLimit }));
