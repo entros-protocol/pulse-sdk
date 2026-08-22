@@ -28,7 +28,7 @@
     "build": "tsup",
     "build:internal": "IAM_INTERNAL_TEST=1 tsup",
     "test": "vitest run",
-    "test:internal": "IAM_INTERNAL_TEST=1 vitest run",
+    "test:internal": "IAM_INTERNAL_TEST=1 vitest run test/internal-test-hooks.test.ts test/validate-payload.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "verify-publish-contents": "node scripts/verify-publish-contents.mjs",
