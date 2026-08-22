@@ -22,29 +22,15 @@ choose.
 
 ## Before you open a pull request
 
-Run the checks for the language you touched.
-
-**Rust**
+Run every repository check.
 
 ```bash
-cargo fmt --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test
-```
-
-**TypeScript**
-
-```bash
-npx eslint .
-npx tsc --noEmit
+npm ci
+npm run typecheck
 npm test
-```
-
-**Anchor programs**
-
-```bash
-anchor build
-anchor test
+npm run test:internal
+npm run build
+npm run verify-publish-contents
 ```
 
 A pull request that fails any of these will not be merged.

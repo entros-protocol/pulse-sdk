@@ -2,39 +2,66 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches:
+      - develop
+      - main
   pull_request:
-    branches: [main, develop]
+    branches:
+      - develop
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
-    name: Typecheck + test + build
-    runs-on: ubuntu-latest
+    name: Verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           cache: npm
 
-      - name: Install
+      - name: Verify Node.js version
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(tr -d '[:space:]' < .nvmrc)"
+
+      - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
+      - name: Verify TypeScript
         run: npm run typecheck
 
-      - name: Test
-        run: npm test
+      - name: Run public tests
+        run: npm test -- --silent=true --reporter=dot
 
-      # Every other repo in the org consumes this package, so a build that only
-      # ever runs immediately before `npm publish` is a build nobody has checked.
-      - name: Build
+      - name: Run internal-path tests
+        run: npm run test:internal -- --silent=true --reporter=dot
+
+      - name: Build package
         run: npm run build
 
-      # Guards the published tarball's contents, which `files` alone does not.
       - name: Verify publish contents
         run: npm run verify-publish-contents
+
+      - name: Verify repository state
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=no)"
