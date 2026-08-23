@@ -2,21 +2,14 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { Keypair } from "@solana/web3.js";
 import { submitViaWallet } from "../src/submit/wallet";
 import { ATTESTATION_SIGNATURE_TIMEOUT_MS } from "../src/config";
+import { toBigEndian32 } from "../src/proof/serializer";
 
 /**
  * A confirmed verification must survive anything that happens afterwards.
  *
  * The SAS attestation runs last, is best-effort, and needs a wallet signature.
- * That signature was unbounded, so a wallet that never surfaced the prompt held
- * the whole submission open. On 2026-07-31 a mobile verification confirmed on
- * chain at 22:38:36, the user dismissed the wallet after seeing "Sent!", the
- * fourth prompt never appeared, and the page sat on "Submitting to Solana..."
- * with no end. The executor logs show `/attest` was never called, while the two
- * desktop runs minutes earlier reached it fine.
- *
- * The cost was not only the spinner. `storeVerificationData` runs on
- * `submission.success`, so the device's local baseline was never written and
- * fell behind the chain it had just advanced.
+ * An invisible prompt must not hold the submission open. Local baseline
+ * storage depends on the submission result.
  */
 
 const AUTHORITY = Keypair.generate().publicKey;
@@ -63,8 +56,16 @@ describe("a hanging attestation signature", () => {
     );
 
     const promise = submitViaWallet(
-      { proofBytes: new Uint8Array(256), publicInputs: [] },
-      new Uint8Array(32),
+      {
+        proofBytes: new Uint8Array(256),
+        publicInputs: [
+          new Uint8Array(32).fill(17),
+          new Uint8Array(32).fill(34),
+          toBigEndian32("30"),
+          toBigEndian32("3"),
+        ],
+      },
+      new Uint8Array(32).fill(17),
       {
         wallet: walletWithHangingSignMessage(),
         connection: fakeConnection(),

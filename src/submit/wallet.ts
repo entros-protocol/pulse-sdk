@@ -17,8 +17,12 @@ import type { VerificationPhase } from "../phases";
 import {
   ATTESTATION_SIGNATURE_TIMEOUT_MS,
   CONFIRMATION_TIMEOUT_MS,
+  MAX_THRESHOLD,
+  MIN_DISTANCE_FLOOR,
+  NUM_PUBLIC_INPUTS,
   PROGRAM_IDS,
   SIGNATURE_TIMEOUT_MS,
+  TOTAL_PROOF_SIZE,
 } from "../config";
 import { sdkLog, sdkWarn } from "../log";
 import { entrosAnchorIdl, entrosVerifierIdl } from "../protocol/idl";
@@ -66,6 +70,109 @@ interface RebaselineProgram {
       projectionVersion: number,
     ): RebaselineInstructionBuilder;
   };
+}
+
+interface CompactProofArguments {
+  proofBytes: number[];
+  commitmentNew: number[];
+  commitmentPrev: number[];
+  threshold: number;
+  minDistance: number;
+}
+
+function fixedBytes(value: unknown, length: number, name: string): number[] {
+  if (!Array.isArray(value) && !(value instanceof Uint8Array)) {
+    throw new Error(`${name} must be a byte array`);
+  }
+  const bytes = Array.from(value);
+  if (bytes.length !== length) {
+    throw new Error(`${name} must contain ${length} bytes, got ${bytes.length}`);
+  }
+  if (
+    bytes.some(
+      (byte) => !Number.isInteger(byte) || byte < 0 || byte > 255,
+    )
+  ) {
+    throw new Error(`${name} must contain only bytes`);
+  }
+  return bytes;
+}
+
+function nonZeroFixedBytes(
+  value: unknown,
+  length: number,
+  name: string,
+): number[] {
+  const bytes = fixedBytes(value, length, name);
+  if (!bytes.some((byte) => byte !== 0)) {
+    throw new Error(`${name} must not be zero`);
+  }
+  return bytes;
+}
+
+function decodeU16FieldElement(value: Uint8Array, name: string): number {
+  const bytes = fixedBytes(value, 32, name);
+  for (let index = 0; index < 30; index += 1) {
+    if (bytes[index] !== 0) {
+      throw new Error(`${name} does not fit in u16`);
+    }
+  }
+  return (bytes[30]! << 8) | bytes[31]!;
+}
+
+function compactProofArguments(proof: SolanaProof): CompactProofArguments {
+  if (proof.publicInputs.length !== NUM_PUBLIC_INPUTS) {
+    throw new Error(
+      `proof must contain ${NUM_PUBLIC_INPUTS} public inputs, got ${proof.publicInputs.length}`,
+    );
+  }
+
+  const threshold = decodeU16FieldElement(proof.publicInputs[2]!, "threshold");
+  const minDistance = decodeU16FieldElement(
+    proof.publicInputs[3]!,
+    "min_distance",
+  );
+  if (threshold > MAX_THRESHOLD) {
+    throw new Error(`threshold must be at most ${MAX_THRESHOLD}`);
+  }
+  if (minDistance < MIN_DISTANCE_FLOOR) {
+    throw new Error(`min_distance must be at least ${MIN_DISTANCE_FLOOR}`);
+  }
+  if (minDistance >= threshold) {
+    throw new Error("min_distance must be less than threshold");
+  }
+
+  return {
+    proofBytes: fixedBytes(proof.proofBytes, TOTAL_PROOF_SIZE, "proof_bytes"),
+    commitmentNew: nonZeroFixedBytes(
+      proof.publicInputs[0]!,
+      32,
+      "commitment_new",
+    ),
+    commitmentPrev: nonZeroFixedBytes(
+      proof.publicInputs[1]!,
+      32,
+      "commitment_prev",
+    ),
+    threshold,
+    minDistance,
+  };
+}
+
+function randomNonce(): number[] {
+  const nonce = crypto.getRandomValues(new Uint8Array(32));
+  if (!nonce.some((byte) => byte !== 0)) {
+    nonce[31] = 1;
+  }
+  return Array.from(nonce);
+}
+
+function validatedServerNonce(value: unknown): number[] | null {
+  try {
+    return nonZeroFixedBytes(value, 32, "server nonce");
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -143,11 +250,8 @@ async function confirmAndCheck(
  * Sign, broadcast and confirm, attributing any failure to the phase it
  * belongs to.
  *
- * Wallet adapters merge signing and sending into one `sendTransaction` call,
- * and that seam is where both of the 2026-07-31 production failures lived: a
- * prompt that never appeared was reported as a proving timeout, and an on-chain
- * revert was reported as a validator rejection. Splitting the outcomes here is
- * what lets a host describe each of them correctly.
+ * Wallet adapters merge signing and sending into one `sendTransaction` call.
+ * The host needs separate signing, submission, and confirmation outcomes.
  *
  * Two rules, both deliberately conservative:
  *
@@ -394,8 +498,18 @@ export async function submitViaWallet(
     let nonce: number[] = [];
 
     if (!options.isFirstVerification) {
-      // Re-verification: batch create_challenge + verify_proof + update_anchor
-      // into a single transaction (1 wallet prompt instead of 3)
+      const compactProof = compactProofArguments(proof);
+      const expectedCommitment = fixedBytes(commitment, 32, "commitment");
+      if (
+        expectedCommitment.some(
+          (byte, index) => byte !== compactProof.commitmentNew[index],
+        )
+      ) {
+        throw new Error("proof commitment does not match the submitted commitment");
+      }
+
+      // Re-verification submits challenge creation, proof verification, and
+      // identity update in one transaction.
       const verifierProgramId = new PublicKey(PROGRAM_IDS.entrosVerifier);
 
       // Fetch server-generated nonce (prevents pre-computation attacks).
@@ -415,25 +529,26 @@ export async function submitViaWallet(
           );
           clearTimeout(challengeTimer);
           if (challengeRes.ok) {
-            const challengeData = (await challengeRes.json()) as { nonce?: number[] };
-            if (challengeData.nonce && challengeData.nonce.length === 32) {
-              nonce = challengeData.nonce;
+            const challengeData = (await challengeRes.json()) as { nonce?: unknown };
+            const validatedNonce = validatedServerNonce(challengeData.nonce);
+            if (validatedNonce) {
+              nonce = validatedNonce;
               serverNonce = true;
               sdkLog("Using server-generated challenge nonce");
             } else {
-              nonce = Array.from(crypto.getRandomValues(new Uint8Array(32)));
+              nonce = randomNonce();
               sdkWarn("Server returned invalid nonce, using client-generated");
             }
           } else {
-            nonce = Array.from(crypto.getRandomValues(new Uint8Array(32)));
+            nonce = randomNonce();
             sdkWarn("Challenge endpoint returned error, using client-generated nonce");
           }
         } catch {
-          nonce = Array.from(crypto.getRandomValues(new Uint8Array(32)));
+          nonce = randomNonce();
           sdkWarn("Challenge fetch failed, using client-generated nonce");
         }
       } else {
-        nonce = Array.from(crypto.getRandomValues(new Uint8Array(32)));
+        nonce = randomNonce();
       }
 
       const [challengePda] = PublicKey.findProgramAddressSync(
@@ -477,7 +592,6 @@ export async function submitViaWallet(
         entrosAnchorIdl as Idl,
         provider,
       );
-      const { Buffer: SolBuffer } = await import("buffer");
 
       // Build all three instructions without sending
       const createChallengeIx = await verifierProgram.methods
@@ -489,13 +603,14 @@ export async function submitViaWallet(
         })
         .instruction();
 
-      // Anchor 0.32.1 uses buffer-layout v1.2 which requires Node.js Buffer
-      // (not Uint8Array) for Blob.encode on Vec<u8> fields.
       const verifyProofIx = await verifierProgram.methods
-        .verifyProof(
-          SolBuffer.from(proof.proofBytes),
-          proof.publicInputs.map((pi) => SolBuffer.from(pi)),
-          nonce
+        .verifyProofCompact(
+          nonce,
+          compactProof.proofBytes,
+          compactProof.commitmentNew,
+          compactProof.commitmentPrev,
+          compactProof.threshold,
+          compactProof.minDistance,
         )
         .accounts({
           verifier: provider.wallet.publicKey,
@@ -505,12 +620,8 @@ export async function submitViaWallet(
         })
         .instruction();
 
-      // updateAnchor post-2026-04-20 binding patch takes the verification
-      // nonce as a second arg and requires the VerificationResult PDA as an
-      // account. Without these, the instruction would accept any commitment
-      // with no biometric proof — see protocol-core AUDIT.md for details.
       const updateAnchorIx = await anchorProgram.methods
-        .updateAnchor(Array.from(commitment), nonce)
+        .updateAnchorCompact(nonce)
         .accounts({
           authority: provider.wallet.publicKey,
           identityState: identityPda,
@@ -521,12 +632,8 @@ export async function submitViaWallet(
         })
         .instruction();
 
-      // Batch: compute budget + three program instructions in one wallet prompt.
-      // Live diagnostics measured 112,733 CU for `verify_proof` and 148K to
-      // 151K CU for this complete shape with the baseline write.
-      // Request 300K when the encrypted-baseline ix is bundled (covers
-      // worst-case `verify_proof` + `update_anchor` + init-if-needed cost),
-      // 250K otherwise.
+      // Request more compute when the transaction also creates or updates the
+      // encrypted baseline account.
       const tx = new Transaction();
       const computeUnitLimit = options.encryptedBaselineBlob ? 300_000 : 250_000;
       tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnitLimit }));

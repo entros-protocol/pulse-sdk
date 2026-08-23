@@ -5,7 +5,7 @@
 // per call) is needed during submit or read flows.
 //
 // IDL bundling is the right call here because:
-//   - Anchor 0.32 IDLs embed the `address` field, so consumers don't
+//   - The generated IDLs embed the `address` field, so consumers don't
 //     need a separate program-ID arg to `new anchor.Program(idl, provider)`.
 //   - Each IDL is ~10–25 KB, ~50 KB total — small impact on the SDK
 //     bundle relative to the per-call RPC saved.
