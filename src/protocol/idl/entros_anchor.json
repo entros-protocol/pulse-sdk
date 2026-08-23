@@ -1628,6 +1628,269 @@
           }
         }
       ]
+    },
+    {
+      "name": "update_anchor_compact",
+      "docs": [
+        "Update the identity state using the commitment bound to the proof."
+      ],
+      "discriminator": [
+        213,
+        176,
+        229,
+        104,
+        213,
+        148,
+        253,
+        186
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "identity_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "verification_result",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  101,
+                  114,
+                  105,
+                  102,
+                  105,
+                  99,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              },
+              {
+                "kind": "arg",
+                "path": "verification_nonce"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                48,
+                50,
+                94,
+                115,
+                90,
+                162,
+                108,
+                8,
+                240,
+                151,
+                76,
+                223,
+                101,
+                176,
+                170,
+                86,
+                254,
+                247,
+                252,
+                28,
+                240,
+                145,
+                60,
+                108,
+                42,
+                129,
+                105,
+                32,
+                232,
+                212,
+                226,
+                52
+              ]
+            }
+          }
+        },
+        {
+          "name": "protocol_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                81,
+                130,
+                250,
+                230,
+                30,
+                253,
+                246,
+                69,
+                82,
+                96,
+                7,
+                173,
+                78,
+                160,
+                131,
+                188,
+                70,
+                106,
+                173,
+                59,
+                102,
+                163,
+                198,
+                189,
+                82,
+                37,
+                225,
+                38,
+                52,
+                233,
+                157,
+                117
+              ]
+            }
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                81,
+                130,
+                250,
+                230,
+                30,
+                253,
+                246,
+                69,
+                82,
+                96,
+                7,
+                173,
+                78,
+                160,
+                131,
+                188,
+                70,
+                106,
+                173,
+                59,
+                102,
+                163,
+                198,
+                189,
+                82,
+                37,
+                225,
+                38,
+                52,
+                233,
+                157,
+                117
+              ]
+            }
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "verification_nonce",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
     }
   ],
   "accounts": [
