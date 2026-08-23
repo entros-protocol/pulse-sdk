@@ -9,6 +9,15 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+## [4.8.0] - 2026-08-23
+
+### Added
+- Compact re-verification support for the fixed-size verifier and Anchor instructions.
+
+### Changed
+- Re-verification now serializes to 1,040 bytes, down from 1,140 bytes, while preserving proof and identity outcomes.
+- The SDK validates proof lengths, commitments, public bounds, and challenge nonces before requesting a wallet transaction.
+
 ## [4.7.1] - 2026-08-12
 
 ### Fixed
