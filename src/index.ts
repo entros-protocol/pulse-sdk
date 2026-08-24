@@ -1,5 +1,6 @@
 // Main SDK
 export { PulseSDK, PulseSession, MIN_AUDIO_SAMPLES, MIN_MOTION_SAMPLES, MIN_TOUCH_SAMPLES } from "./pulse";
+export type { TouchStartOptions } from "./pulse";
 
 // Configuration
 export type { PulseConfig } from "./config";
@@ -80,9 +81,8 @@ export {
   recoverBaselineFromChain,
 } from "./identity/anchor";
 
-// Encrypted baseline (master-list #98) — wallet-keyed encrypted SimHash+salt
-// persisted on-chain in a per-wallet EncryptedBaseline PDA, recoverable
-// across devices via deterministic signMessage-derived AES-256-GCM key.
+// Wallet-keyed encrypted SimHash and salt persist in each wallet's
+// EncryptedBaseline PDA. A deterministic wallet signature derives the key.
 export type { BaselineWallet } from "./identity/baseline";
 export {
   deriveBaselineKey,

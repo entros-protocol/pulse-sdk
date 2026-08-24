@@ -4,6 +4,37 @@ import {
   resampleTouchPath,
   runTouchScaleMeasurement,
 } from "./support/touch-scale-measurement";
+import {
+  extractMouseDynamics,
+  extractTouchFeatures,
+} from "../src/extraction/kinematic";
+import { fuseFeatures } from "../src/extraction/statistics";
+import { hammingDistance, simhash } from "../src/hashing/simhash";
+import { canonicalizeTouchSamples } from "../src/sensor/touch";
+
+const projectionTwoAudio = Array.from(
+  { length: 170 },
+  (_, index) => Math.sin(index * 0.37) + 0.25 * Math.cos(index * 0.11),
+);
+
+function projectionTwoResult(sampleCount: number, profile: "smooth" | "paused") {
+  const source = renderTouchPath(
+    { left: 0, top: 0, width: 200, height: 200 },
+    "unit",
+    "neutral",
+    sampleCount,
+    4_000,
+    profile,
+  );
+  const samples = canonicalizeTouchSamples(source, 2);
+  const touch = extractTouchFeatures(samples, 2);
+  const motion = extractMouseDynamics(samples, 2);
+  return {
+    touch,
+    motion,
+    fingerprint: simhash(fuseFeatures(projectionTwoAudio, motion, touch), 2),
+  };
+}
 
 describe("projection 1 touch scale measurement", () => {
   const report = runTouchScaleMeasurement();
@@ -174,5 +205,38 @@ describe("projection 1 touch scale measurement", () => {
     expect(() => resampleTouchPath(source)).toThrow(
       "touch timestamps must increase",
     );
+  });
+});
+
+describe("projection 2 touch invariance", () => {
+  it.each(["smooth", "paused"] as const)(
+    "keeps the %s fingerprint stable across 30, 60, and 120 Hz sources",
+    (profile) => {
+      const results = [121, 241, 481].map((sampleCount) =>
+        projectionTwoResult(sampleCount, profile),
+      );
+      for (const candidate of results.slice(1)) {
+        expect(hammingDistance(results[0]!.fingerprint, candidate.fingerprint)).toBe(0);
+        expect(candidate.touch.every(Number.isFinite)).toBe(true);
+        expect(candidate.motion.every(Number.isFinite)).toBe(true);
+      }
+    },
+  );
+
+  it("uses the normalized movement threshold in rate units", () => {
+    const samplesAt = (speed: number) =>
+      Array.from({ length: 31 }, (_, index) => ({
+        timestamp: (index * 1_000) / 30,
+        x: (index * speed) / 30,
+        y: 0.5,
+        pressure: 0.5,
+        width: 1,
+        height: 1,
+      }));
+
+    expect(extractMouseDynamics(samplesAt(0), 2)[15]).toBe(1);
+    expect(extractMouseDynamics(samplesAt(0.149), 2)[15]).toBe(1);
+    expect(extractMouseDynamics(samplesAt(0.15), 2)[15]).toBe(0);
+    expect(extractMouseDynamics(samplesAt(0.151), 2)[15]).toBe(0);
   });
 });

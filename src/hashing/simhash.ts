@@ -1,8 +1,4 @@
-import {
-  CLIENT_PROJECTION_VERSION,
-  FINGERPRINT_BITS,
-  LEGACY_SIMHASH_SEED,
-} from "../config";
+import { FINGERPRINT_BITS, LEGACY_SIMHASH_SEED } from "../config";
 import { SPEAKER_FEATURE_COUNT } from "../extraction/speaker";
 import {
   MOTION_FEATURE_COUNT,
@@ -11,6 +7,7 @@ import {
 import { sdkWarn } from "../log";
 import type { TemporalFingerprint } from "./types";
 import { publicProjectionCoefficients } from "./hyperplanes";
+import { getProjectionDefinition } from "../projection";
 
 const hyperplaneCache = new Map<string, Float64Array>();
 
@@ -47,15 +44,14 @@ function getHyperplanes(dimension: number, projectionVersion: number): Float64Ar
     return cached;
   }
 
+  const definition = getProjectionDefinition(projectionVersion);
   const hyperplanes =
-    projectionVersion === 0
+    definition.hyperplanes.family === "legacy"
       ? legacyProjectionCoefficients(dimension)
-      : projectionVersion === 1
-        ? publicProjectionCoefficients(dimension)
-        : null;
-  if (!hyperplanes || projectionVersion > CLIENT_PROJECTION_VERSION) {
-    throw new Error(`Unsupported projection version ${projectionVersion}`);
-  }
+      : publicProjectionCoefficients(
+          dimension,
+          definition.hyperplanes.transcriptVersion,
+        );
   hyperplaneCache.set(cacheKey, hyperplanes);
   return hyperplanes;
 }
@@ -88,11 +84,11 @@ export function simhash(
   projectionVersion = 0
 ): TemporalFingerprint {
   if (
-    projectionVersion === 1 &&
+    getProjectionDefinition(projectionVersion).hyperplanes.family === "public" &&
     features.length !== EXPECTED_FEATURE_DIMENSION
   ) {
     throw new Error(
-      `Projection version 1 requires exactly ${EXPECTED_FEATURE_DIMENSION} features`
+      `Projection version ${projectionVersion} requires exactly ${EXPECTED_FEATURE_DIMENSION} features`
     );
   }
 

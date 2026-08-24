@@ -77,6 +77,26 @@ const versionOneConnection = {
     return { data, owner: registryProgramId };
   },
 };
+const versionTwoConnection = {
+  getAccountInfo: async (address: PublicKey) => {
+    if (!address.equals(protocolConfigPda)) return null;
+    const data = Buffer.alloc(113);
+    data.writeUInt16LE(2, 109);
+    data.writeUInt16LE(1, 111);
+    return { data, owner: registryProgramId };
+  },
+};
+
+function validNormalizedTouch(count = 61): TouchSample[] {
+  return Array.from({ length: count }, (_, index) => ({
+    timestamp: index * 50,
+    x: 0.1 + (index / (count - 1)) * 0.8,
+    y: 0.5 + Math.sin(index * 0.1) * 0.2,
+    pressure: 0.5,
+    width: 1,
+    height: 1,
+  }));
+}
 
 function newSession(studyContext?: StudyContext) {
   const sdk = new PulseSDK({
@@ -85,6 +105,23 @@ function newSession(studyContext?: StudyContext) {
     relayerApiKey: "test",
   });
   return sdk.createSession(undefined, studyContext);
+}
+
+function primeSessionWithoutTouch(session: ReturnType<typeof newSession>): void {
+  const internal = session as unknown as {
+    audioData: AudioCapture;
+    motionData: MotionSample[];
+    touchData: TouchSample[];
+    audioStageState: "captured";
+    motionStageState: "captured";
+    touchStageState: "captured";
+  };
+  internal.audioData = validAudio();
+  internal.motionData = validMotion();
+  internal.touchData = [];
+  internal.audioStageState = "captured";
+  internal.motionStageState = "captured";
+  internal.touchStageState = "captured";
 }
 
 /**
@@ -193,6 +230,89 @@ describe("/validate-features body - study context", () => {
     await session.complete(fakeWallet, fakeConnection);
 
     expect(getBody()?.study).toEqual(context);
+  });
+
+  it.skipIf(!isInternalTestBuild)("binds projection 2 capture and study metadata", async () => {
+    const context: StudyContext = {
+      token: "opaque-study-token",
+      record_id: "00112233445566778899aabbccddeeff",
+      capture_class: "web-desktop",
+      feature_schema_version: 5,
+      projection_version: 2,
+    };
+    const session = newSession(context);
+    session.__injectSensorData({
+      audio: validAudio(),
+      motion: validMotion(),
+      touch: validNormalizedTouch(),
+    });
+    const getBody = stubFetchCapturing();
+
+    await session.complete(fakeWallet, versionTwoConnection);
+
+    const body = getBody();
+    expect(body).toMatchObject({
+      projection_version: 2,
+      study: context,
+    });
+    expect(body?.features).toHaveLength(308);
+    expect(body).not.toHaveProperty("touch_samples");
+  });
+
+  it.skipIf(!isInternalTestBuild)("does not reinterpret capture after a policy cutover", async () => {
+    const session = newSession();
+    const internal = session as unknown as {
+      pinProjectionPolicy(connection?: unknown): Promise<{
+        current: number;
+        minimum: number;
+      }>;
+    };
+    await internal.pinProjectionPolicy(versionOneConnection);
+    session.__injectSensorData({
+      audio: validAudio(),
+      motion: validMotion(),
+      touch: validTouch(),
+    });
+    const getBody = stubFetchCapturing();
+
+    const result = await session.complete(fakeWallet, versionTwoConnection);
+
+    expect(result).toMatchObject({
+      success: false,
+      failedAt: "capture",
+    });
+    expect(result.error).toMatch(/projection policy changed/i);
+    expect(getBody()).toBeUndefined();
+  });
+
+  it("rejects projection 2 completion without touch evidence", async () => {
+    const session = newSession();
+    primeSessionWithoutTouch(session);
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const result = await session.complete(fakeWallet, versionTwoConnection);
+
+    expect(result).toMatchObject({
+      success: false,
+      failedAt: "capture",
+    });
+    expect(result.error).toMatch(/no touch trace/i);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects projection 2 reset without touch evidence", async () => {
+    const session = newSession();
+    primeSessionWithoutTouch(session);
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const result = await session.completeReset(fakeWallet, versionTwoConnection);
+
+    expect(result).toMatchObject({
+      success: false,
+      failedAt: "capture",
+    });
+    expect(result.error).toMatch(/no touch trace/i);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 

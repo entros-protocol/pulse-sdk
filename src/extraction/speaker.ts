@@ -11,6 +11,7 @@
  *   amplitude statistics (5)
  */
 import type { AudioCapture } from "../sensor/types";
+import { getProjectionDefinition } from "../projection";
 import { condense, entropy, mean as meanOf, variance as varianceOf } from "./statistics";
 import { extractLpcAnalysis } from "./lpc";
 import {
@@ -499,10 +500,8 @@ export async function extractSpeakerFeaturesDetailed(
   // synchronous stages.
   await yieldToMainThread();
 
-  if (projectionVersion !== 0 && projectionVersion !== 1) {
-    throw new Error(`Unsupported projection version ${projectionVersion}`);
-  }
-  const corrected = projectionVersion === 1;
+  const corrected =
+    getProjectionDefinition(projectionVersion).featurePipeline !== "legacy";
   const lpcSamples = corrected
     ? preEmphasizeAudio(normalizedSamples)
     : normalizedSamples;

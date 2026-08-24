@@ -16,7 +16,7 @@ import { audioCaptureConstraints, captureAudio, analyzeAcousticRealism } from ".
 import { encodeAudioAsBase64 } from "./sensor/encode";
 import { resampleCurveTrace } from "./sensor/curve";
 import { captureMotion, requestMotionPermission } from "./sensor/motion";
-import { captureTouch } from "./sensor/touch";
+import { canonicalizeTouchSamples, captureTouch } from "./sensor/touch";
 import { extractSpeakerFeaturesDetailed, SPEAKER_FEATURE_COUNT } from "./extraction/speaker";
 import {
   extractMotionFeatures,
@@ -65,6 +65,7 @@ import {
 } from "./identity/anchor";
 import type { ProjectionPolicy } from "./identity/anchor";
 import type { ProjectionPolicyConnection } from "./identity/anchor";
+import { getProjectionDefinition } from "./projection";
 import {
   BaselineWallet,
   deriveEncryptedBaselinePda,
@@ -106,6 +107,8 @@ interface ExtractedFeatures {
   captureTiming?: CaptureTiming;
 }
 
+class ProjectionPolicyChangedError extends Error {}
+
 /**
  * Extract features from sensor data. Returns both raw (physical units)
  * and normalized (z-scored) feature vectors.
@@ -129,21 +132,25 @@ async function extractFeatures(
   await yieldToMainThread();
 
   const hasMotion = data.motion.length >= MIN_MOTION_SAMPLES;
-  const hasTouch = data.touch.length >= MIN_TOUCH_SAMPLES;
+  const touchSamples = canonicalizeTouchSamples(
+    data.touch,
+    projectionVersion,
+  );
+  const hasTouch = touchSamples.length >= MIN_TOUCH_SAMPLES;
 
   const motionFeatures =
-    projectionVersion >= 1
+    getProjectionDefinition(projectionVersion).featurePipeline !== "legacy"
       ? hasMotion
         ? extractMotionFeatures(data.motion, projectionVersion)
-        : extractMouseDynamics(data.touch, projectionVersion)
+        : extractMouseDynamics(touchSamples, projectionVersion)
       : hasMotion && hasTouch
-        ? extractMouseDynamics(data.touch, projectionVersion)
+        ? extractMouseDynamics(touchSamples, projectionVersion)
         : hasMotion
           ? extractMotionFeatures(data.motion, projectionVersion)
-          : extractMouseDynamics(data.touch, projectionVersion);
+          : extractMouseDynamics(touchSamples, projectionVersion);
   await yieldToMainThread();
 
-  const touchFeatures = extractTouchFeatures(data.touch, projectionVersion);
+  const touchFeatures = extractTouchFeatures(touchSamples, projectionVersion);
   await yieldToMainThread();
 
   // Resample acceleration magnitude onto the exact stretch of wall-clock time
@@ -580,7 +587,7 @@ async function extractFingerprintAndValidate(
           sdkLog(`[Entros SDK] Validation composite risk score: ${compositeRiskScore.toFixed(4)}`);
         }
         studyRecordStatus = parseStudyRecordStatus(successBody.study_record_status);
-        // C2: adopt the validator-derived commitment + salt. The validator
+        // Adopt the validator-derived commitment and salt. The validator
         // signs — and the chain enforces — a commitment it computed from the
         // features we sent, not one we chose, so we must mint exactly that.
         // Our local `fingerprint` is unchanged and stays consistent with the
@@ -807,6 +814,20 @@ async function processSensorData(
     };
   }
 
+  if (
+    getProjectionDefinition(projectionPolicy.current).featurePipeline ===
+      "normalized-touch" &&
+    !hasTouch
+  ) {
+    return {
+      success: false,
+      commitment: new Uint8Array(32),
+      isFirstVerification: true,
+      error: "No touch trace was captured. Trace the curve and try again.",
+      failedAt: "capture",
+    };
+  }
+
   const walletAddress = wallet?.adapter?.publicKey?.toBase58?.()
     ?? wallet?.publicKey?.toBase58?.();
 
@@ -950,7 +971,7 @@ async function processSensorData(
   // and rewrites local storage with the matching fingerprint + current
   // commitment, so the rebuilt proof's `commitment_prev` equals the chain
   // head. Requires the wallet to sign for AES key derivation; the
-  // session-cached key short-circuits a second prompt (master-list #98).
+  // session-cached key short-circuits a second prompt.
   let recoveryReason: BaselineRecoveryReason | undefined;
   if (
     !isFirstVerification &&
@@ -1331,6 +1352,20 @@ async function processResetSensorData(
     };
   }
 
+  if (
+    getProjectionDefinition(projectionPolicy.current).featurePipeline ===
+      "normalized-touch" &&
+    !hasTouch
+  ) {
+    return {
+      success: false,
+      commitment: new Uint8Array(32),
+      isFirstVerification: true,
+      error: "No touch trace was captured. Trace the curve and try again.",
+      failedAt: "capture",
+    };
+  }
+
   // Reset requires the full multi-modal capture just like a fresh mint, so
   // the on-chain baseline is established from a meaningful fingerprint.
   if (!hasMotion && !hasTouch) {
@@ -1352,7 +1387,9 @@ async function processResetSensorData(
     onProgress,
     undefined,
     projectionPolicy.current,
-    projectionPolicy.current >= 1 ? "reset" : undefined,
+    getProjectionDefinition(projectionPolicy.current).authenticatedTransitions
+      ? "reset"
+      : undefined,
   );
   if (!extraction.ok) {
     return {
@@ -1446,6 +1483,15 @@ async function processResetSensorData(
   };
 }
 
+export interface TouchStartOptions {
+  /** Receives pointer events. Defaults to the element passed to `createSession()`. */
+  eventTarget?: HTMLElement;
+  /** Defines the projection-2 unit coordinate frame. Defaults to the event target. */
+  coordinateSurface?: HTMLElement;
+}
+
+type SessionStageState = StageState | "failed";
+
 /**
  * PulseSession — event-driven staged capture session.
  *
@@ -1472,7 +1518,7 @@ export class PulseSession {
 
   private audioStageState: StageState = "idle";
   private motionStageState: StageState = "idle";
-  private touchStageState: StageState = "idle";
+  private touchStageState: SessionStageState = "idle";
 
   private audioController: AbortController | null = null;
   /** Fires the capture-window mark; see `markCaptureStart`. */
@@ -1487,13 +1533,13 @@ export class PulseSession {
   private audioData: AudioCapture | null = null;
   private motionData: MotionSample[] = [];
   private touchData: TouchSample[] = [];
-  private projectionPolicyPromise: Promise<ProjectionPolicy | null>;
+  private touchCaptureError: Error | null = null;
+  private pinnedProjectionPolicyPromise: Promise<ProjectionPolicy> | null = null;
 
   constructor(config: ResolvedConfig, touchElement?: HTMLElement, studyContext?: StudyContext) {
     this.config = config;
     this.touchElement = touchElement;
     this.studyContext = studyContext;
-    this.projectionPolicyPromise = this.readProjectionPolicy().catch(() => null);
   }
 
   private async readProjectionPolicy(
@@ -1509,13 +1555,48 @@ export class PulseSession {
     return fetchProjectionPolicy(new Connection(endpoint, "confirmed"));
   }
 
-  private async resolveProjectionPolicy(
+  private pinProjectionPolicy(
     connection?: ProjectionPolicyConnection,
   ): Promise<ProjectionPolicy> {
-    // The constructor read only warms the configured RPC path. Completion
-    // always refreshes policy so a pre-cutover response cannot select the
-    // projection after the administrator changes on-chain configuration.
-    return this.readProjectionPolicy(connection);
+    if (this.pinnedProjectionPolicyPromise) {
+      return this.pinnedProjectionPolicyPromise;
+    }
+
+    const attempt = (async () => {
+      const policy = await this.readProjectionPolicy(connection);
+      if (
+        this.studyContext &&
+        (this.studyContext.projection_version !== policy.current ||
+          this.studyContext.feature_schema_version !==
+            getProjectionDefinition(policy.current).featureSchemaVersion)
+      ) {
+        throw new Error("Study projection does not match the active projection policy");
+      }
+      return policy;
+    })();
+    this.pinnedProjectionPolicyPromise = attempt;
+    void attempt.catch(() => {
+      if (this.pinnedProjectionPolicyPromise === attempt) {
+        this.pinnedProjectionPolicyPromise = null;
+      }
+    });
+    return attempt;
+  }
+
+  private async projectionPolicyForCompletion(
+    connection?: ProjectionPolicyConnection,
+  ): Promise<ProjectionPolicy> {
+    const pinned = await this.pinProjectionPolicy(connection);
+    const active = await this.readProjectionPolicy(connection);
+    if (
+      active.current !== pinned.current ||
+      pinned.current < active.minimum
+    ) {
+      throw new ProjectionPolicyChangedError(
+        "Projection policy changed during capture. Start a new verification.",
+      );
+    }
+    return pinned;
   }
 
   // --- Audio ---
@@ -1529,8 +1610,8 @@ export class PulseSession {
     // Acquire microphone permission within the user gesture context.
     // Awaited so the caller knows audio is ready before proceeding.
     // State transitions happen AFTER permission succeeds to avoid zombie state.
-    const prefetchedPolicy = await this.projectionPolicyPromise;
-    const captureProjectionVersion = prefetchedPolicy?.current ?? 0;
+    const projectionPolicy = await this.pinProjectionPolicy();
+    const captureProjectionVersion = projectionPolicy.current;
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: audioCaptureConstraints(captureProjectionVersion),
     });
@@ -1670,6 +1751,8 @@ export class PulseSession {
       return;
     }
 
+    await this.pinProjectionPolicy();
+
     this.motionStageState = "capturing";
     this.motionController = new AbortController();
     this.motionPromise = captureMotion({
@@ -1703,20 +1786,46 @@ export class PulseSession {
 
   // --- Touch ---
 
-  async startTouch(): Promise<void> {
+  async startTouch(options: TouchStartOptions = {}): Promise<void> {
     if (this.touchStageState !== "idle")
       throw new Error(
         "Touch capture already in progress. Call stopTouch() before starting a new capture.",
       );
-    if (!this.touchElement)
+    const eventTarget =
+      options.eventTarget ?? this.touchElement ?? options.coordinateSurface;
+    if (!eventTarget)
       throw new Error(
         "No touch element provided to session. Pass an HTMLElement to createSession() to enable touch capture.",
       );
+    const projectionPolicy = await this.pinProjectionPolicy();
+    const coordinateSurface = options.coordinateSurface ?? eventTarget;
+    const controller = new AbortController();
+    let capture: Promise<TouchSample[]>;
+    try {
+      capture = captureTouch(eventTarget, {
+        signal: controller.signal,
+        projectionVersion: projectionPolicy.current,
+        coordinateSurface,
+      }).catch((error: unknown) => {
+        if (
+          getProjectionDefinition(projectionPolicy.current).featurePipeline ===
+          "normalized-touch"
+        ) {
+          const captureError =
+            error instanceof Error ? error : new Error(String(error));
+          this.touchCaptureError = captureError;
+          return [];
+        }
+        return [];
+      });
+    } catch (error) {
+      controller.abort();
+      throw error;
+    }
+    this.touchCaptureError = null;
+    this.touchController = controller;
+    this.touchPromise = capture;
     this.touchStageState = "capturing";
-    this.touchController = new AbortController();
-    this.touchPromise = captureTouch(this.touchElement, {
-      signal: this.touchController.signal,
-    }).catch(() => []);
   }
 
   async stopTouch(): Promise<TouchSample[]> {
@@ -1725,9 +1834,24 @@ export class PulseSession {
         "No active touch capture to stop. Call startTouch() first.",
       );
     this.touchController!.abort();
-    this.touchData = await this.touchPromise!;
-    this.touchStageState = "captured";
-    return this.touchData;
+    try {
+      this.touchData = await this.touchPromise!;
+      if (this.touchCaptureError) throw this.touchCaptureError;
+      this.touchCaptureError = null;
+      this.touchStageState = "captured";
+      return this.touchData;
+    } catch (error) {
+      const captureError =
+        error instanceof Error ? error : new Error(String(error));
+      this.touchData = [];
+      this.touchCaptureError = captureError;
+      this.touchStageState = "failed";
+      sdkWarn(`[Entros SDK] Touch capture failed: ${captureError.message}`);
+      throw captureError;
+    } finally {
+      this.touchController = null;
+      this.touchPromise = null;
+    }
   }
 
   skipTouch(): void {
@@ -1809,6 +1933,15 @@ export class PulseSession {
         `Cannot complete: stages still capturing: ${active.join(", ")}`
       );
     }
+    if (this.touchStageState === "failed" || this.touchCaptureError) {
+      return {
+        success: false,
+        commitment: new Uint8Array(32),
+        isFirstVerification: true,
+        error: "Touch capture was interrupted. Start this verification again.",
+        failedAt: "capture",
+      };
+    }
 
     const sensorData: SensorData = {
       audio: this.audioData,
@@ -1824,14 +1957,15 @@ export class PulseSession {
 
     let projectionPolicy: ProjectionPolicy;
     try {
-      projectionPolicy = await this.resolveProjectionPolicy(connection);
+      projectionPolicy = await this.projectionPolicyForCompletion(connection);
     } catch (err) {
       return {
         success: false,
         commitment: new Uint8Array(32),
         isFirstVerification: true,
         error: err instanceof Error ? err.message : String(err),
-        failedAt: "submission",
+        failedAt:
+          err instanceof ProjectionPolicyChangedError ? "capture" : "submission",
       };
     }
 
@@ -1872,6 +2006,15 @@ export class PulseSession {
         `Cannot complete reset: stages still capturing: ${active.join(", ")}`
       );
     }
+    if (this.touchStageState === "failed" || this.touchCaptureError) {
+      return {
+        success: false,
+        commitment: new Uint8Array(32),
+        isFirstVerification: true,
+        error: "Touch capture was interrupted. Start this verification again.",
+        failedAt: "capture",
+      };
+    }
 
     if (!wallet || !connection) {
       return {
@@ -1898,14 +2041,15 @@ export class PulseSession {
 
     let projectionPolicy: ProjectionPolicy;
     try {
-      projectionPolicy = await this.resolveProjectionPolicy(connection);
+      projectionPolicy = await this.projectionPolicyForCompletion(connection);
     } catch (err) {
       return {
         success: false,
         commitment: new Uint8Array(32),
         isFirstVerification: true,
         error: err instanceof Error ? err.message : String(err),
-        failedAt: "submission",
+        failedAt:
+          err instanceof ProjectionPolicyChangedError ? "capture" : "submission",
       };
     }
 

@@ -1,3 +1,5 @@
+import { getProjectionDefinition } from "./projection";
+
 export type StudyCaptureClass =
   | "web-mobile"
   | "web-desktop"
@@ -28,9 +30,7 @@ export interface StudyGrant {
 export function featureSchemaVersionForProjection(
   projectionVersion: number,
 ): number {
-  if (projectionVersion === 0) return 3;
-  if (projectionVersion === 1) return 4;
-  throw new Error(`Unsupported projection version ${projectionVersion}`);
+  return getProjectionDefinition(projectionVersion).featureSchemaVersion;
 }
 
 export function createStudyContext(

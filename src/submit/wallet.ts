@@ -28,6 +28,7 @@ import { sdkLog, sdkWarn } from "../log";
 import { entrosAnchorIdl, entrosVerifierIdl } from "../protocol/idl";
 import { buildEd25519ReceiptIx, receiptMatchesBinding } from "./receipt";
 import { ENCRYPTED_BASELINE_BLOB_BYTES } from "../identity/baseline";
+import { getProjectionDefinition } from "../projection";
 import {
   chainRevertError,
   errToString,
@@ -919,7 +920,7 @@ export async function submitResetViaWallet(
     );
     const projectionVersion = options.projectionVersion ?? 0;
     let receiptIx: import("@solana/web3.js").TransactionInstruction | undefined;
-    if (projectionVersion >= 1) {
+    if (getProjectionDefinition(projectionVersion).authenticatedTransitions) {
       if (
         !options.signedReceipt ||
         !receiptMatchesBinding(options.signedReceipt, {
@@ -955,7 +956,7 @@ export async function submitResetViaWallet(
         treasury: treasuryPda,
         systemProgram: SystemProgram.programId,
       });
-    if (projectionVersion >= 1) {
+    if (getProjectionDefinition(projectionVersion).authenticatedTransitions) {
       resetBuilder = resetBuilder.remainingAccounts([
         {
           pubkey: SYSVAR_INSTRUCTIONS_PUBKEY,
