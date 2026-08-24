@@ -31,6 +31,7 @@
     "test:internal": "IAM_INTERNAL_TEST=1 vitest run test/internal-test-hooks.test.ts test/validate-payload.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "measure:touch-scale": "tsx scripts/measure-touch-scale.ts",
     "verify-publish-contents": "node scripts/verify-publish-contents.mjs",
     "prepublishOnly": "npm run verify-publish-contents && npm run build"
   },
