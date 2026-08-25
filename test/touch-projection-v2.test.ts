@@ -488,6 +488,60 @@ describe("projection 2 browser touch capture", () => {
     expect(target.listenerCount()).toBe(0);
   });
 
+  it("rejects pointer capture loss before contact ends", async () => {
+    vi.useFakeTimers();
+    const target = new FakeElement();
+    const surface = new FakeElement();
+    const controller = new AbortController();
+    const setPointerCapture = vi.fn();
+    Object.assign(target, { setPointerCapture });
+    const capture = captureTouch(target as unknown as HTMLElement, {
+      signal: controller.signal,
+      minDurationMs: 0,
+      maxDurationMs: 1_000,
+      projectionVersion: 2,
+      coordinateSurface: surface as unknown as HTMLElement,
+    });
+    const rejected = expect(capture).rejects.toThrow("lost pointer capture");
+
+    target.emit("pointerdown", event({ pointerId: 7 }));
+    await vi.advanceTimersByTimeAsync(400);
+    target.emit("lostpointercapture", event({ pointerId: 7 }));
+    controller.abort();
+    await vi.runAllTimersAsync();
+
+    await rejected;
+    expect(setPointerCapture).toHaveBeenCalledWith(7);
+    expect(target.listenerCount()).toBe(0);
+  });
+
+  it("accepts pointer capture loss after a clean contact end", async () => {
+    vi.useFakeTimers();
+    const target = new FakeElement();
+    const surface = new FakeElement();
+    const controller = new AbortController();
+    const setPointerCapture = vi.fn();
+    Object.assign(target, { setPointerCapture });
+    const capture = captureTouch(target as unknown as HTMLElement, {
+      signal: controller.signal,
+      minDurationMs: 0,
+      maxDurationMs: 1_000,
+      projectionVersion: 2,
+      coordinateSurface: surface as unknown as HTMLElement,
+    });
+
+    target.emit("pointerdown", event({ pointerId: 7 }));
+    await vi.advanceTimersByTimeAsync(400);
+    target.emit("pointerup", event({ pointerId: 7 }));
+    target.emit("lostpointercapture", event({ pointerId: 7 }));
+    controller.abort();
+    await vi.runAllTimersAsync();
+
+    await expect(capture).resolves.toHaveLength(13);
+    expect(setPointerCapture).toHaveBeenCalledWith(7);
+    expect(target.listenerCount()).toBe(0);
+  });
+
   it("does not treat lifted contact as continued touch evidence", async () => {
     vi.useFakeTimers();
     const target = new FakeElement();

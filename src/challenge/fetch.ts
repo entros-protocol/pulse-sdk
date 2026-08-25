@@ -93,7 +93,13 @@ export async function fetchChallenge(
     };
   };
 
-  if (!Array.isArray(body.nonce) || body.nonce.length !== 32) {
+  if (
+    !Array.isArray(body.nonce) ||
+    body.nonce.length !== 32 ||
+    !body.nonce.every(
+      (value) => Number.isInteger(value) && value >= 0 && value <= 255,
+    )
+  ) {
     throw new Error("Executor returned malformed nonce; expected 32-byte array");
   }
   if (typeof body.phrase !== "string" || body.phrase.trim().length === 0) {

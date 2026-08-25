@@ -26,7 +26,7 @@ describe("fetchChallenge", () => {
       "So11111111111111111111111111111111111111112",
     );
 
-    expect(result.nonce.length).toBe(32);
+    expect(result.nonce).toEqual(Uint8Array.from(NONCE_BYTES));
     expect(result.phrase).toBe("bada lita mupe ruso poto");
     expect(result.expiresIn).toBe(60);
     expect(result.expiresAtMs).toBe(61_234);
@@ -98,6 +98,26 @@ describe("fetchChallenge", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({ nonce: [1, 2, 3], expires_in: 60, phrase: "ba" }),
+      } as Response),
+    );
+
+    await expect(
+      fetchChallenge("https://executor.example.com", "wallet"),
+    ).rejects.toThrow(/malformed nonce/);
+  });
+
+  it.each([
+    ["fractional", 1.5],
+    ["negative", -1],
+    ["oversized", 256],
+  ])("throws when a nonce byte is %s", async (_label, invalidByte) => {
+    const nonce = [...NONCE_BYTES];
+    nonce[10] = invalidByte;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ nonce, expires_in: 60, phrase: "ba" }),
       } as Response),
     );
 
