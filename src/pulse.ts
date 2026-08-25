@@ -164,6 +164,7 @@ interface BoundValidationChallenge {
 const VALIDATION_CHALLENGE_MARGIN_MS = 1_000;
 
 class ProjectionPolicyChangedError extends Error {}
+class ValidationChallengeExpiredError extends Error {}
 
 /**
  * Extract features from sensor data. Returns both raw (physical units)
@@ -339,7 +340,9 @@ function remainingValidationChallengeMs(
     challenge.expiresAtMs - performance.now() - VALIDATION_CHALLENGE_MARGIN_MS,
   );
   if (remainingMs <= 0) {
-    throw new Error("The validation challenge expired. Start a new capture.");
+    throw new ValidationChallengeExpiredError(
+      "The validation challenge expired. Start a new capture.",
+    );
   }
   return remainingMs;
 }
@@ -836,6 +839,14 @@ async function extractFingerprintAndValidate(
       // A timeout says something different from an unreachable host, and the
       // user can act on the difference.
       const msg = err instanceof Error ? err.message : String(err);
+      if (err instanceof ValidationChallengeExpiredError) {
+        return {
+          ok: false,
+          error:
+            "The validation challenge expired before the request completed. Start a new capture.",
+          failedAt: "validation",
+        };
+      }
       if (err instanceof TransportError && (err.kind === "stalled" || err.kind === "deadline")) {
         if (err.kind === "deadline" && validationChallenge) {
           return {

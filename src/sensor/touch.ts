@@ -283,6 +283,11 @@ function captureNormalizedTouch(
   const { signal, minDurationMs, maxDurationMs, projectionVersion } = options;
   validateNormalizedCaptureDuration(minDurationMs, maxDurationMs);
   const frozenRect = readValidRect(coordinateSurface);
+  if (typeof eventTarget.setPointerCapture !== "function") {
+    throw new Error(
+      "Normalized touch capture requires pointer capture support",
+    );
+  }
   const samples: TouchSample[] = [];
   const compatibilitySamples: TouchSample[] = [];
   const startTime = performance.now();
@@ -399,18 +404,16 @@ function captureNormalizedTouch(
       }
       if (!updateLatest(event)) return;
       activePointerId = event.pointerId;
-      if (typeof eventTarget.setPointerCapture === "function") {
-        try {
-          eventTarget.setPointerCapture(event.pointerId);
-          capturedPointerId = event.pointerId;
-        } catch {
-          activePointerId = null;
-          latest = null;
-          captureError = new Error(
-            "Normalized touch capture could not capture the pointer",
-          );
-          return;
-        }
+      try {
+        eventTarget.setPointerCapture(event.pointerId);
+        capturedPointerId = event.pointerId;
+      } catch {
+        activePointerId = null;
+        latest = null;
+        captureError = new Error(
+          "Normalized touch capture could not capture the pointer",
+        );
+        return;
       }
       appendCompatibilitySample(event);
       appendLatest(performance.now());

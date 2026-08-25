@@ -30,6 +30,10 @@ class FakeElement {
     this.listeners.get(type)?.delete(listener as PointerListener);
   }
 
+  setPointerCapture(_pointerId: number): void {}
+
+  releasePointerCapture(_pointerId: number): void {}
+
   getBoundingClientRect(): DOMRect {
     this.rectReads += 1;
     return this.rect as DOMRect;
@@ -485,6 +489,22 @@ describe("projection 2 browser touch capture", () => {
     await expect(capture).resolves.toHaveLength(13);
 
     expect(removeListener).toHaveBeenCalledWith("abort", expect.any(Function));
+    expect(target.listenerCount()).toBe(0);
+  });
+
+  it("fails before normalized capture when pointer capture is unavailable", () => {
+    const target = new FakeElement();
+    const surface = new FakeElement();
+    Object.assign(target, { setPointerCapture: undefined });
+
+    expect(() =>
+      captureTouch(target as unknown as HTMLElement, {
+        minDurationMs: 0,
+        maxDurationMs: 1_000,
+        projectionVersion: 2,
+        coordinateSurface: surface as unknown as HTMLElement,
+      }),
+    ).toThrow("requires pointer capture support");
     expect(target.listenerCount()).toBe(0);
   });
 

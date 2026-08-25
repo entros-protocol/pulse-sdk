@@ -743,6 +743,41 @@ describe("/validate-features body - projection 2 authorization", () => {
   );
 
   it.skipIf(!isInternalTestBuild)(
+    "reports a projection 2 challenge that expires after wallet signing",
+    async () => {
+      const session = newSession();
+      session.__injectSensorData({
+        audio: validAudio(),
+        motion: validMotion(),
+        touch: validNormalizedTouch(),
+        compatibilityTouch: validTouch(),
+      });
+      const now = vi.spyOn(performance, "now").mockReturnValue(1_000);
+      session.bindValidationChallenge(new Uint8Array(32).fill(0x4a), 5_000);
+      const signMessage = vi.fn(async (message: Uint8Array) => {
+        const signature = await projectionTwoWallet.signMessage(message);
+        now.mockReturnValue(4_001);
+        return signature;
+      });
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+      const result = await session.complete(
+        { publicKey: projectionTwoWallet.publicKey, signMessage },
+        versionTwoConnection,
+      );
+
+      expect(result).toMatchObject({
+        success: false,
+        failedAt: "validation",
+      });
+      expect(result.error).toMatch(/challenge expired/i);
+      expect(result).not.toHaveProperty("reason", "validation_unavailable");
+      expect(signMessage).toHaveBeenCalledOnce();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    },
+  );
+
+  it.skipIf(!isInternalTestBuild)(
     "bounds validation transport by the remaining projection 2 challenge lifetime",
     async () => {
       const session = newSession();
