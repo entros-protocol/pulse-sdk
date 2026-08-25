@@ -627,6 +627,7 @@ async function extractFingerprintAndValidate(
   // (~16k samples), which is the next synchronous chunk on the main thread.
   await yieldToMainThread();
   if (config.relayerUrl && walletAddress) {
+    let validationDeadlineSource: "validation" | "challenge" = "validation";
     try {
       const baseUrl = new URL(config.relayerUrl);
       const validateUrl = `${baseUrl.origin}/validate-features`;
@@ -742,18 +743,23 @@ async function extractFingerprintAndValidate(
         onProgress?.("Validating...");
       }
 
+      let validationDeadlineMs = VALIDATE_DEADLINE_MS;
+      if (validationChallenge) {
+        const challengeDeadlineMs =
+          remainingValidationChallengeMs(validationChallenge);
+        if (challengeDeadlineMs < validationDeadlineMs) {
+          validationDeadlineMs = challengeDeadlineMs;
+          validationDeadlineSource = "challenge";
+        }
+      }
+
       const validateResponse = await postJson(
         validateUrl,
         requestBody,
         {
           headers: validateHeaders,
           stallMs: VALIDATE_UPLOAD_STALL_MS,
-          deadlineMs: validationChallenge
-            ? Math.min(
-                VALIDATE_DEADLINE_MS,
-                remainingValidationChallengeMs(validationChallenge),
-              )
-            : VALIDATE_DEADLINE_MS,
+          deadlineMs: validationDeadlineMs,
           onUploadProgress: (loaded, total) => {
             // Same stage label as before. `popup-content.tsx` matches on
             // these strings to drive the embed wire protocol's heartbeat, so
@@ -848,7 +854,7 @@ async function extractFingerprintAndValidate(
         };
       }
       if (err instanceof TransportError && (err.kind === "stalled" || err.kind === "deadline")) {
-        if (err.kind === "deadline" && validationChallenge) {
+        if (err.kind === "deadline" && validationDeadlineSource === "challenge") {
           return {
             ok: false,
             error:

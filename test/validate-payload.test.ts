@@ -3,7 +3,7 @@ import { ed25519 } from "@noble/curves/ed25519";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { createHash } from "node:crypto";
 import { PulseSDK } from "../src/pulse";
-import { PROGRAM_IDS } from "../src/config";
+import { PROGRAM_IDS, VALIDATE_DEADLINE_MS } from "../src/config";
 import { resampleCurveTrace } from "../src/sensor/curve";
 import {
   extractMotionFeatures,
@@ -226,7 +226,34 @@ function stubFetchCapturing(): () => Record<string, unknown> | undefined {
   };
 }
 
+function stubFetchPendingUntilAbort(): Promise<void> {
+  let markStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener(
+            "abort",
+            () => {
+              const error = new Error("aborted");
+              error.name = "AbortError";
+              reject(error);
+            },
+            { once: true },
+          );
+          markStarted();
+        }),
+    ),
+  );
+  return started;
+}
+
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -780,6 +807,7 @@ describe("/validate-features body - projection 2 authorization", () => {
   it.skipIf(!isInternalTestBuild)(
     "bounds validation transport by the remaining projection 2 challenge lifetime",
     async () => {
+      vi.useFakeTimers();
       const session = newSession();
       session.__injectSensorData({
         audio: validAudio(),
@@ -787,40 +815,60 @@ describe("/validate-features body - projection 2 authorization", () => {
         touch: validNormalizedTouch(),
         compatibilityTouch: validTouch(),
       });
-      const now = vi.spyOn(performance, "now").mockReturnValue(1_000);
-      session.bindValidationChallenge(new Uint8Array(32).fill(0x4a), 31_000);
-      const wallet = {
-        publicKey: projectionTwoWallet.publicKey,
-        signMessage: async (message: Uint8Array) => {
-          now.mockReturnValue(29_500);
-          return projectionTwoWallet.signMessage(message);
-        },
-      };
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockImplementation(
-          (_url: string, init: RequestInit) =>
-            new Promise((_resolve, reject) => {
-              init.signal?.addEventListener(
-                "abort",
-                () => {
-                  const error = new Error("aborted");
-                  error.name = "AbortError";
-                  reject(error);
-                },
-                { once: true },
-              );
-            }),
-        ),
+      session.bindValidationChallenge(
+        new Uint8Array(32).fill(0x4a),
+        performance.now() + 5_000,
       );
+      const requestStarted = stubFetchPendingUntilAbort();
 
-      const result = await session.complete(wallet, versionTwoConnection);
+      const completion = session.complete(
+        projectionTwoWallet,
+        versionTwoConnection,
+      );
+      await requestStarted;
+      await vi.advanceTimersByTimeAsync(4_000);
+      const result = await completion;
 
       expect(result).toMatchObject({
         success: false,
         failedAt: "validation",
       });
       expect(result.error).toMatch(/challenge expired/i);
+      expect(result).not.toHaveProperty("reason", "validation_timeout");
+    },
+  );
+
+  it.skipIf(!isInternalTestBuild)(
+    "reports the ordinary timeout when it bounds projection 2 validation",
+    async () => {
+      vi.useFakeTimers();
+      const session = newSession();
+      session.__injectSensorData({
+        audio: validAudio(),
+        motion: validMotion(),
+        touch: validNormalizedTouch(),
+        compatibilityTouch: validTouch(),
+      });
+      session.bindValidationChallenge(
+        new Uint8Array(32).fill(0x4b),
+        performance.now() + VALIDATE_DEADLINE_MS + 60_000,
+      );
+      const requestStarted = stubFetchPendingUntilAbort();
+
+      const completion = session.complete(
+        projectionTwoWallet,
+        versionTwoConnection,
+      );
+      await requestStarted;
+      await vi.advanceTimersByTimeAsync(VALIDATE_DEADLINE_MS);
+      const result = await completion;
+
+      expect(result).toMatchObject({
+        success: false,
+        failedAt: "validation",
+        reason: "validation_timeout",
+      });
+      expect(result.error).not.toMatch(/challenge expired/i);
     },
   );
 
