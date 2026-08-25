@@ -175,6 +175,20 @@ export function captureTouch(
   element: HTMLElement,
   options: CaptureOptions = {}
 ): Promise<TouchSample[]> {
+  return captureTouchWithCompatibility(element, options).then(
+    (capture) => capture.samples,
+  );
+}
+
+export interface TouchCaptureResult {
+  samples: TouchSample[];
+  compatibilitySamples?: TouchSample[];
+}
+
+export function captureTouchWithCompatibility(
+  element: HTMLElement,
+  options: CaptureOptions = {},
+): Promise<TouchCaptureResult> {
   const {
     signal,
     minDurationMs = MIN_CAPTURE_MS,
@@ -228,7 +242,7 @@ export function captureTouch(
       element.removeEventListener("pointermove", handler);
       element.removeEventListener("pointerdown", handler);
       sdkLog(`[Entros SDK] Touch capture stopped: ${samples.length} samples collected`);
-      resolve(samples);
+      resolve({ samples });
     }
 
     element.addEventListener("pointermove", handler);
@@ -265,23 +279,33 @@ function captureNormalizedTouch(
     >
   > &
     Pick<CaptureOptions, "signal">,
-): Promise<TouchSample[]> {
+): Promise<TouchCaptureResult> {
   const { signal, minDurationMs, maxDurationMs, projectionVersion } = options;
   validateNormalizedCaptureDuration(minDurationMs, maxDurationMs);
   const frozenRect = readValidRect(coordinateSurface);
+  if (typeof eventTarget.setPointerCapture !== "function") {
+    throw new Error(
+      "Normalized touch capture requires pointer capture support",
+    );
+  }
   const samples: TouchSample[] = [];
+  const compatibilitySamples: TouchSample[] = [];
   const startTime = performance.now();
   const sourceSampleLimit =
     Math.ceil((maxDurationMs * TOUCH_CAPTURE_RATE_HZ) / 1_000) + 2;
+  const compatibilitySampleLimit = sourceSampleLimit * 4;
 
   return new Promise((resolve, reject) => {
     let stopped = false;
     let captureError: Error | null = null;
     let activePointerId: number | null = null;
+    let capturedPointerId: number | null = null;
     let contactEnded = false;
     let latest: Omit<TouchSample, "timestamp"> | null = null;
     let abortTimer: ReturnType<typeof setTimeout> | null = null;
     let abortListener: (() => void) | null = null;
+    let compatibilityEventCount = 0;
+    let compatibilityStride = 1;
 
     const appendLatest = (timestamp: number): void => {
       if (!latest || captureError) return;
@@ -328,6 +352,48 @@ function captureNormalizedTouch(
       return true;
     };
 
+    const appendCompatibilitySample = (event: PointerEvent): void => {
+      if (
+        ![
+          event.clientX,
+          event.clientY,
+          event.pressure,
+          event.width,
+          event.height,
+        ].every(Number.isFinite)
+      ) {
+        captureError = new Error(
+          "Normalized touch capture contains invalid compatibility data",
+        );
+        return;
+      }
+      compatibilityEventCount += 1;
+      if (compatibilityEventCount % compatibilityStride !== 0) return;
+      if (compatibilitySamples.length >= compatibilitySampleLimit) {
+        // Preserve the capture span while bounding high-rate pointer streams.
+        let writeIndex = 1;
+        for (
+          let readIndex = 2;
+          readIndex < compatibilitySamples.length;
+          readIndex += 2
+        ) {
+          compatibilitySamples[writeIndex] = compatibilitySamples[readIndex]!;
+          writeIndex += 1;
+        }
+        compatibilitySamples.length = writeIndex;
+        compatibilityStride *= 2;
+        if (compatibilityEventCount % compatibilityStride !== 0) return;
+      }
+      compatibilitySamples.push({
+        timestamp: performance.now(),
+        x: event.clientX,
+        y: event.clientY,
+        pressure: event.pressure,
+        width: event.width,
+        height: event.height,
+      });
+    };
+
     const onPointerDown = (event: PointerEvent) => {
       if (activePointerId !== null) return;
       if (contactEnded) {
@@ -338,6 +404,18 @@ function captureNormalizedTouch(
       }
       if (!updateLatest(event)) return;
       activePointerId = event.pointerId;
+      try {
+        eventTarget.setPointerCapture(event.pointerId);
+        capturedPointerId = event.pointerId;
+      } catch {
+        activePointerId = null;
+        latest = null;
+        captureError = new Error(
+          "Normalized touch capture could not capture the pointer",
+        );
+        return;
+      }
+      appendCompatibilitySample(event);
       appendLatest(performance.now());
     };
     const onPointerMove = (event: PointerEvent) => {
@@ -346,6 +424,8 @@ function captureNormalizedTouch(
         captureError = new Error(
           "Normalized touch capture left the coordinate surface",
         );
+      } else {
+        appendCompatibilitySample(event);
       }
     };
     const onPointerEnd = (event: PointerEvent) => {
@@ -358,15 +438,27 @@ function captureNormalizedTouch(
         );
       }
       activePointerId = null;
+      capturedPointerId = null;
       contactEnded = true;
       latest = null;
     };
     const onPointerCancel = (event: PointerEvent) => {
       if (event.pointerId !== activePointerId) return;
       activePointerId = null;
+      capturedPointerId = null;
       contactEnded = true;
       latest = null;
       captureError = new Error("Normalized touch capture was interrupted");
+    };
+    const onLostPointerCapture = (event: PointerEvent) => {
+      if (event.pointerId !== activePointerId) return;
+      activePointerId = null;
+      capturedPointerId = null;
+      contactEnded = true;
+      latest = null;
+      captureError = new Error(
+        "Normalized touch capture lost pointer capture",
+      );
     };
 
     const sampleTimer = setInterval(() => {
@@ -394,6 +486,10 @@ function captureNormalizedTouch(
       eventTarget.removeEventListener("pointermove", onPointerMove);
       eventTarget.removeEventListener("pointerup", onPointerEnd);
       eventTarget.removeEventListener("pointercancel", onPointerCancel);
+      eventTarget.removeEventListener(
+        "lostpointercapture",
+        onLostPointerCapture,
+      );
       if (signal && abortListener) {
         signal.removeEventListener("abort", abortListener);
         abortListener = null;
@@ -407,6 +503,16 @@ function captureNormalizedTouch(
       clearInterval(sampleTimer);
       if (abortTimer !== null) clearTimeout(abortTimer);
       removeListeners();
+      if (
+        capturedPointerId !== null &&
+        typeof eventTarget.releasePointerCapture === "function"
+      ) {
+        const pointerId = capturedPointerId;
+        capturedPointerId = null;
+        try {
+          eventTarget.releasePointerCapture(pointerId);
+        } catch {}
+      }
 
       if (captureError) {
         reject(captureError);
@@ -432,7 +538,10 @@ function captureNormalizedTouch(
         `[Entros SDK] Normalized touch capture stopped: ${samples.length} source samples collected`,
       );
       try {
-        resolve(canonicalizeTouchSamples(samples, projectionVersion));
+        resolve({
+          samples: canonicalizeTouchSamples(samples, projectionVersion),
+          compatibilitySamples,
+        });
       } catch (error) {
         reject(error);
       }
@@ -442,6 +551,10 @@ function captureNormalizedTouch(
     eventTarget.addEventListener("pointermove", onPointerMove);
     eventTarget.addEventListener("pointerup", onPointerEnd);
     eventTarget.addEventListener("pointercancel", onPointerCancel);
+    eventTarget.addEventListener(
+      "lostpointercapture",
+      onLostPointerCapture,
+    );
     sdkLog(
       `[Entros SDK] Normalized touch capture started on <${eventTarget.tagName}>`,
     );

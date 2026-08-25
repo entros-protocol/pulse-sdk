@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   canonicalizeTouchSamples,
   captureTouch,
+  captureTouchWithCompatibility,
 } from "../src/sensor/touch";
 import type { TouchSample } from "../src/sensor/types";
 import { PulseSDK } from "../src/pulse";
@@ -28,6 +29,10 @@ class FakeElement {
     if (typeof listener !== "function") return;
     this.listeners.get(type)?.delete(listener as PointerListener);
   }
+
+  setPointerCapture(_pointerId: number): void {}
+
+  releasePointerCapture(_pointerId: number): void {}
 
   getBoundingClientRect(): DOMRect {
     this.rectReads += 1;
@@ -200,6 +205,63 @@ describe("projection 2 touch grid", () => {
 });
 
 describe("projection 2 browser touch capture", () => {
+  it("retains the raw pointer scale only for on-device compatibility extraction", async () => {
+    vi.useFakeTimers();
+    const target = new FakeElement();
+    const surface = new FakeElement({ left: 50, top: 100, width: 400, height: 200 });
+    const controller = new AbortController();
+    const capture = captureTouchWithCompatibility(
+      target as unknown as HTMLElement,
+      {
+        signal: controller.signal,
+        minDurationMs: 0,
+        maxDurationMs: 1_000,
+        projectionVersion: 2,
+        coordinateSurface: surface as unknown as HTMLElement,
+      },
+    );
+
+    target.emit(
+      "pointerdown",
+      event({ clientX: 150, clientY: 150, width: 20, height: 10 }),
+    );
+    for (let index = 1; index <= 16; index += 1) {
+      target.emit(
+        "pointermove",
+        event({
+          clientX: 150 + index * 10,
+          clientY: 150 + index * 5,
+          width: 20 + index,
+          height: 10 + index,
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(20);
+    }
+    controller.abort();
+    await vi.runAllTimersAsync();
+
+    const result = await capture;
+    expect(result.samples[0]).toMatchObject({
+      x: 0.25,
+      y: 0.25,
+      width: 1,
+      height: 1,
+    });
+    expect(result.compatibilitySamples).toHaveLength(17);
+    expect(result.compatibilitySamples![0]).toMatchObject({
+      x: 150,
+      y: 150,
+      width: 20,
+      height: 10,
+    });
+    expect(result.compatibilitySamples!.at(-1)).toMatchObject({
+      x: 310,
+      y: 230,
+      width: 36,
+      height: 26,
+    });
+  });
+
   it("separates the event target from the unit coordinate surface", async () => {
     vi.useFakeTimers();
     const target = new FakeElement();
@@ -430,6 +492,76 @@ describe("projection 2 browser touch capture", () => {
     expect(target.listenerCount()).toBe(0);
   });
 
+  it("fails before normalized capture when pointer capture is unavailable", () => {
+    const target = new FakeElement();
+    const surface = new FakeElement();
+    Object.assign(target, { setPointerCapture: undefined });
+
+    expect(() =>
+      captureTouch(target as unknown as HTMLElement, {
+        minDurationMs: 0,
+        maxDurationMs: 1_000,
+        projectionVersion: 2,
+        coordinateSurface: surface as unknown as HTMLElement,
+      }),
+    ).toThrow("requires pointer capture support");
+    expect(target.listenerCount()).toBe(0);
+  });
+
+  it("rejects pointer capture loss before contact ends", async () => {
+    vi.useFakeTimers();
+    const target = new FakeElement();
+    const surface = new FakeElement();
+    const controller = new AbortController();
+    const setPointerCapture = vi.fn();
+    Object.assign(target, { setPointerCapture });
+    const capture = captureTouch(target as unknown as HTMLElement, {
+      signal: controller.signal,
+      minDurationMs: 0,
+      maxDurationMs: 1_000,
+      projectionVersion: 2,
+      coordinateSurface: surface as unknown as HTMLElement,
+    });
+    const rejected = expect(capture).rejects.toThrow("lost pointer capture");
+
+    target.emit("pointerdown", event({ pointerId: 7 }));
+    await vi.advanceTimersByTimeAsync(400);
+    target.emit("lostpointercapture", event({ pointerId: 7 }));
+    controller.abort();
+    await vi.runAllTimersAsync();
+
+    await rejected;
+    expect(setPointerCapture).toHaveBeenCalledWith(7);
+    expect(target.listenerCount()).toBe(0);
+  });
+
+  it("accepts pointer capture loss after a clean contact end", async () => {
+    vi.useFakeTimers();
+    const target = new FakeElement();
+    const surface = new FakeElement();
+    const controller = new AbortController();
+    const setPointerCapture = vi.fn();
+    Object.assign(target, { setPointerCapture });
+    const capture = captureTouch(target as unknown as HTMLElement, {
+      signal: controller.signal,
+      minDurationMs: 0,
+      maxDurationMs: 1_000,
+      projectionVersion: 2,
+      coordinateSurface: surface as unknown as HTMLElement,
+    });
+
+    target.emit("pointerdown", event({ pointerId: 7 }));
+    await vi.advanceTimersByTimeAsync(400);
+    target.emit("pointerup", event({ pointerId: 7 }));
+    target.emit("lostpointercapture", event({ pointerId: 7 }));
+    controller.abort();
+    await vi.runAllTimersAsync();
+
+    await expect(capture).resolves.toHaveLength(13);
+    expect(setPointerCapture).toHaveBeenCalledWith(7);
+    expect(target.listenerCount()).toBe(0);
+  });
+
   it("does not treat lifted contact as continued touch evidence", async () => {
     vi.useFakeTimers();
     const target = new FakeElement();
@@ -545,13 +677,16 @@ describe("projection 2 browser touch capture", () => {
     const target = new FakeElement();
     const surface = new FakeElement();
     const controller = new AbortController();
-    const capture = captureTouch(target as unknown as HTMLElement, {
-      signal: controller.signal,
-      minDurationMs: 0,
-      maxDurationMs: 1_000,
-      projectionVersion: 2,
-      coordinateSurface: surface as unknown as HTMLElement,
-    });
+    const capture = captureTouchWithCompatibility(
+      target as unknown as HTMLElement,
+      {
+        signal: controller.signal,
+        minDurationMs: 0,
+        maxDurationMs: 1_000,
+        projectionVersion: 2,
+        coordinateSurface: surface as unknown as HTMLElement,
+      },
+    );
 
     target.emit("pointerdown", event());
     const readsBeforeStorm = surface.rectReads;
@@ -569,9 +704,59 @@ describe("projection 2 browser touch capture", () => {
     controller.abort();
     await vi.runAllTimersAsync();
 
-    await expect(capture).resolves.toHaveLength(13);
+    const result = await capture;
+    expect(result.samples).toHaveLength(13);
+    expect(result.compatibilitySamples!.length).toBeGreaterThanOrEqual(10);
+    expect(result.compatibilitySamples!.length).toBeLessThanOrEqual(248);
+    expect(
+      result.compatibilitySamples!.every((sample) =>
+        [
+          sample.timestamp,
+          sample.x,
+          sample.y,
+          sample.pressure,
+          sample.width,
+          sample.height,
+        ].every(Number.isFinite),
+      ),
+    ).toBe(true);
     expect(surface.rectReads).toBeLessThanOrEqual(30);
     expect(target.listenerCount()).toBe(0);
+  });
 
+  it("bounds a maximum-duration capture under high-rate pointer pressure", async () => {
+    vi.useFakeTimers();
+    const target = new FakeElement();
+    const surface = new FakeElement();
+    const controller = new AbortController();
+    const capture = captureTouchWithCompatibility(
+      target as unknown as HTMLElement,
+      {
+        signal: controller.signal,
+        minDurationMs: 0,
+        maxDurationMs: 60_000,
+        projectionVersion: 2,
+        coordinateSurface: surface as unknown as HTMLElement,
+      },
+    );
+
+    target.emit("pointerdown", event());
+    for (let index = 0; index < 100_000; index += 1) {
+      target.emit(
+        "pointermove",
+        event({
+          clientX: 20 + (index % 160),
+          clientY: 20 + (index % 60),
+        }),
+      );
+    }
+    await vi.advanceTimersByTimeAsync(400);
+    controller.abort();
+    await vi.runAllTimersAsync();
+
+    const result = await capture;
+    expect(result.samples).toHaveLength(13);
+    expect(result.compatibilitySamples!.length).toBeLessThanOrEqual(14_408);
+    expect(target.listenerCount()).toBe(0);
   });
 });

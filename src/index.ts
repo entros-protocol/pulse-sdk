@@ -1,6 +1,6 @@
 // Main SDK
 export { PulseSDK, PulseSession, MIN_AUDIO_SAMPLES, MIN_MOTION_SAMPLES, MIN_TOUCH_SAMPLES } from "./pulse";
-export type { TouchStartOptions } from "./pulse";
+export type { TouchStartOptions, ValidationChallengeOptions } from "./pulse";
 
 // Configuration
 export type { PulseConfig } from "./config";
@@ -109,7 +109,10 @@ export { generatePhrase, generatePhraseSequence } from "./challenge/phrase";
 export { randomLissajousParams, generateLissajousPoints, generateLissajousSequence } from "./challenge/lissajous";
 export type { LissajousParams, Point2D } from "./challenge/lissajous";
 export { fetchChallenge } from "./challenge/fetch";
-export type { ChallengeResponse } from "./challenge/fetch";
+export type {
+  ChallengeResponse,
+  ChallengeWithDeadline,
+} from "./challenge/fetch";
 
 // Audio encoding helper (transmits captured PCM to the validation service
 // for server-side verification).

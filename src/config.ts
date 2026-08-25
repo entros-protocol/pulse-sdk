@@ -165,8 +165,8 @@ export const MAX_VERIFICATION_MS =
   UNCLOCKED_WORK_MS;
 
 /**
- * Feature-projection generation this SDK build produces fingerprints in.
- * The client routes older identities through an authenticated rebaseline.
+ * Highest feature-projection generation this SDK build supports.
+ * The active on-chain policy selects the generation used for capture.
  */
 export { HIGHEST_SUPPORTED_PROJECTION_VERSION as CLIENT_PROJECTION_VERSION } from "./projection";
 

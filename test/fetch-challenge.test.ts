@@ -5,10 +5,12 @@ const NONCE_BYTES = Array.from({ length: 32 }, (_, i) => i);
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("fetchChallenge", () => {
-  it("returns nonce, phrase, expiresIn on 200", async () => {
+  it("returns a conservative challenge deadline on 200", async () => {
+    vi.spyOn(performance, "now").mockReturnValue(1_234);
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -24,9 +26,10 @@ describe("fetchChallenge", () => {
       "So11111111111111111111111111111111111111112",
     );
 
-    expect(result.nonce.length).toBe(32);
+    expect(result.nonce).toEqual(Uint8Array.from(NONCE_BYTES));
     expect(result.phrase).toBe("bada lita mupe ruso poto");
     expect(result.expiresIn).toBe(60);
+    expect(result.expiresAtMs).toBe(61_234);
 
     const url = mockFetch.mock.calls[0]![0] as string;
     expect(url).toContain("/challenge?wallet=");
@@ -103,6 +106,26 @@ describe("fetchChallenge", () => {
     ).rejects.toThrow(/malformed nonce/);
   });
 
+  it.each([
+    ["fractional", 1.5],
+    ["negative", -1],
+    ["oversized", 256],
+  ])("throws when a nonce byte is %s", async (_label, invalidByte) => {
+    const nonce = [...NONCE_BYTES];
+    nonce[10] = invalidByte;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ nonce, expires_in: 60, phrase: "ba" }),
+      } as Response),
+    );
+
+    await expect(
+      fetchChallenge("https://executor.example.com", "wallet"),
+    ).rejects.toThrow(/malformed nonce/);
+  });
+
   it("throws when phrase is empty", async () => {
     vi.stubGlobal(
       "fetch",
@@ -115,6 +138,20 @@ describe("fetchChallenge", () => {
     await expect(
       fetchChallenge("https://executor.example.com", "wallet"),
     ).rejects.toThrow(/empty challenge phrase/);
+  });
+
+  it("throws when the challenge lifetime is malformed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ nonce: NONCE_BYTES, expires_in: 0, phrase: "ba" }),
+      } as Response),
+    );
+
+    await expect(
+      fetchChallenge("https://executor.example.com", "wallet"),
+    ).rejects.toThrow(/malformed challenge lifetime/);
   });
 
   it("surfaces network errors with context", async () => {

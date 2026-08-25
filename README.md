@@ -7,9 +7,13 @@ Client SDK for Entros capture, feature extraction, fingerprinting, proof generat
 
 The SDK derives 308 features from phrase audio, motion, and touch. It generates a 256-bit SimHash fingerprint and Poseidon commitment. Re-verification also generates a Groth16 proof.
 
-Raw motion and full-resolution touch streams stay in client memory. Phrase audio leaves transiently for private validation.
+Raw motion and full-resolution touch streams stay on device. Projection 2 discards its raw compatibility touch after completion. Phrase audio leaves transiently for private validation.
 
 Validation also receives the feature summary, F0 contour, acceleration magnitude, wallet, client signals, curve outline, timing, and commitment fields.
+
+Projection 2 sends projection 1 compatibility features only for mint, rebaseline, and reset. It never sends raw compatibility touch.
+
+Each projection 2 validation request includes authorization bound to the challenge nonce, request digest, projection, and connected wallet.
 
 The SDK stores the fingerprint, salt, commitment, and timestamp as a baseline. Wallet flows can store an encrypted baseline blob on-chain.
 
@@ -43,6 +47,34 @@ if (result.success) {
   console.log('Verified:', result.txSignature);
 }
 ```
+
+### Projection 2 compatibility
+
+The on-chain policy controls projection 2 activation. `CLIENT_PROJECTION_VERSION` reports client support and does not activate policy.
+
+Projection 2 validation requires the server challenge that selected the phrase and touch curve. Present both challenge artifacts during the same capture.
+
+Pass the deadline returned by `fetchChallenge`. Do not recalculate it from `expiresIn` after the request completes.
+
+```typescript
+import { fetchChallenge, PulseSDK } from '@entros/pulse-sdk';
+
+const executorUrl = 'https://api.entros.io/relay';
+const pulse = new PulseSDK({ cluster: 'devnet', relayerUrl: executorUrl });
+const challenge = await fetchChallenge(
+  executorUrl,
+  walletAdapter.publicKey.toBase58(),
+);
+
+const result = await pulse.verify(touchElement, walletAdapter, connection, {
+  validationChallengeNonce: challenge.nonce,
+  validationChallengeExpiresAtMs: challenge.expiresAtMs,
+});
+```
+
+For staged capture, call `session.bindValidationChallenge(challenge.nonce, challenge.expiresAtMs)` before `complete()`.
+
+The touch element defines the projection 2 coordinate surface by default. Use `startTouch({ eventTarget, coordinateSurface })` when those elements differ.
 
 ### Walletless (liveness-check tier)
 

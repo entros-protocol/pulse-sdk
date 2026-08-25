@@ -1,7 +1,26 @@
+import { ed25519 } from "@noble/curves/ed25519";
+
 import type { PulseConfig } from "./config";
-import { DEFAULT_THRESHOLD, DEFAULT_MIN_DISTANCE, DEFAULT_CAPTURE_MS, AUDIO_READY_TIMEOUT_MS, PROGRAM_IDS, VALIDATE_UPLOAD_STALL_MS, VALIDATE_DEADLINE_MS } from "./config";
+import {
+  AUDIO_READY_TIMEOUT_MS,
+  DEFAULT_CAPTURE_MS,
+  DEFAULT_MIN_DISTANCE,
+  DEFAULT_THRESHOLD,
+  PROGRAM_IDS,
+  SIGNATURE_TIMEOUT_MS,
+  VALIDATE_DEADLINE_MS,
+  VALIDATE_UPLOAD_STALL_MS,
+} from "./config";
 import { setDebug, sdkLog, sdkWarn } from "./log";
-import type { SensorData, AudioCapture, MotionSample, TouchSample, StageState, CurveTracePoint } from "./sensor/types";
+import type {
+  AudioCapture,
+  CurveTraceOutline,
+  CurveTracePoint,
+  MotionSample,
+  SensorData,
+  StageState,
+  TouchSample,
+} from "./sensor/types";
 import type { TBH } from "./hashing/types";
 import type { SolanaProof } from "./proof/types";
 import type { SignedReceiptDto, VerificationResult, ProgressCallback } from "./submit/types";
@@ -16,7 +35,11 @@ import { audioCaptureConstraints, captureAudio, analyzeAcousticRealism } from ".
 import { encodeAudioAsBase64 } from "./sensor/encode";
 import { resampleCurveTrace } from "./sensor/curve";
 import { captureMotion, requestMotionPermission } from "./sensor/motion";
-import { canonicalizeTouchSamples, captureTouch } from "./sensor/touch";
+import {
+  canonicalizeTouchSamples,
+  captureTouchWithCompatibility,
+  type TouchCaptureResult,
+} from "./sensor/touch";
 import { extractSpeakerFeaturesDetailed, SPEAKER_FEATURE_COUNT } from "./extraction/speaker";
 import {
   extractMotionFeatures,
@@ -54,6 +77,7 @@ import {
 } from "./submit/wallet";
 import { submitViaRelayer } from "./submit/relayer";
 import { bytesToHex } from "./submit/receipt";
+import { errToString, withTimeout } from "./submit/errors";
 import {
   storeVerificationData,
   loadVerificationData,
@@ -66,6 +90,14 @@ import {
 import type { ProjectionPolicy } from "./identity/anchor";
 import type { ProjectionPolicyConnection } from "./identity/anchor";
 import { getProjectionDefinition } from "./projection";
+import type { ClientSignals } from "./client-signals/automation";
+import {
+  buildValidationAuthorizationMessage,
+  buildValidationRequestDigest,
+  type ProjectionCompatibilityEvidence,
+  type ValidationDigestRequest,
+  type WalletAuthorization,
+} from "./validation/authorization";
 import {
   BaselineWallet,
   deriveEncryptedBaselinePda,
@@ -82,6 +114,11 @@ declare const __IAM_INTERNAL_TEST__: boolean;
 
 type ResolvedConfig = Required<Pick<PulseConfig, "cluster" | "threshold">> &
   PulseConfig;
+
+interface PipelineSensorData extends SensorData {
+  /** Raw touch stays on-device and becomes projection 1 summary features. */
+  compatibilityTouch?: TouchSample[];
+}
 
 interface ExtractedFeatures {
   /** Raw features in physical units (Hz, ratios, dB, px/frame). For server-side validation. */
@@ -107,7 +144,27 @@ interface ExtractedFeatures {
   captureTiming?: CaptureTiming;
 }
 
+interface ValidateFeaturesRequestBody extends ValidationDigestRequest {
+  wallet_id: string;
+  projection_version: number;
+  wallet_authorization?: WalletAuthorization;
+  commitment_new_hex: string;
+  request_receipt: boolean;
+  receipt_purpose?: "mint" | "rebaseline" | "reset";
+  client_signals: ClientSignals;
+  curve_trace?: CurveTraceOutline;
+  capture_timing?: CaptureTiming;
+}
+
+interface BoundValidationChallenge {
+  nonce: Uint8Array;
+  expiresAtMs: number;
+}
+
+const VALIDATION_CHALLENGE_MARGIN_MS = 1_000;
+
 class ProjectionPolicyChangedError extends Error {}
+class ValidationChallengeExpiredError extends Error {}
 
 /**
  * Extract features from sensor data. Returns both raw (physical units)
@@ -184,6 +241,110 @@ async function extractFeatures(
           )
         : undefined,
   };
+}
+
+async function extractProjectionOneCompatibilityFeatures(
+  data: PipelineSensorData,
+  primaryFeatures: number[],
+): Promise<number[]> {
+  const touchSamples = data.compatibilityTouch;
+  if (!touchSamples || touchSamples.length < MIN_TOUCH_SAMPLES) {
+    throw new Error(
+      "Projection 2 baseline changes require projection 1 compatibility capture",
+    );
+  }
+
+  const motionFeatures =
+    data.motion.length >= MIN_MOTION_SAMPLES
+      ? extractMotionFeatures(data.motion, 1)
+      : extractMouseDynamics(touchSamples, 1);
+  await yieldToMainThread();
+  const touchFeatures = extractTouchFeatures(touchSamples, 1);
+  await yieldToMainThread();
+
+  return fuseRawFeatures(
+    primaryFeatures.slice(0, SPEAKER_FEATURE_COUNT),
+    motionFeatures,
+    touchFeatures,
+  );
+}
+
+async function authorizeValidationRequest(
+  request: ValidateFeaturesRequestBody,
+  wallet: BaselineWallet | null,
+  challenge: BoundValidationChallenge | undefined,
+): Promise<WalletAuthorization> {
+  if (!wallet) {
+    throw new Error(
+      "Projection 2 validation requires a wallet that supports message signing",
+    );
+  }
+  if (!challenge || challenge.nonce.length !== 32) {
+    throw new Error(
+      "Projection 2 validation requires the 32-byte server challenge nonce",
+    );
+  }
+  const walletAddress = wallet.publicKey.toBase58();
+  if (walletAddress !== request.wallet_id) {
+    throw new Error("Validation wallet does not match the connected wallet");
+  }
+
+  const digest = buildValidationRequestDigest(request);
+  const messageBytes = new TextEncoder().encode(
+    buildValidationAuthorizationMessage(
+      walletAddress,
+      challenge.nonce,
+      request.projection_version,
+      digest,
+    ),
+  );
+  const remainingMs = remainingValidationChallengeMs(challenge);
+  const signatureTimeoutMs = Math.min(SIGNATURE_TIMEOUT_MS, remainingMs);
+  const signature = await withTimeout(
+    wallet.signMessage(messageBytes),
+    signatureTimeoutMs,
+    signatureTimeoutMs < SIGNATURE_TIMEOUT_MS
+      ? "The validation challenge expired while waiting for your wallet. Start a new capture."
+      : "Your wallet did not respond to the validation signature request. Open your wallet and try again.",
+  );
+  if (!(signature instanceof Uint8Array) || signature.length !== 64) {
+    throw new Error("Wallet returned an invalid validation signature");
+  }
+
+  let signatureValid = false;
+  try {
+    signatureValid = ed25519.verify(
+      signature,
+      messageBytes,
+      wallet.publicKey.toBytes(),
+    );
+  } catch {
+    signatureValid = false;
+  }
+  if (!signatureValid) {
+    throw new Error(
+      `Validation signature did not match the connected wallet ${walletAddress}`,
+    );
+  }
+
+  return {
+    nonce: Array.from(challenge.nonce),
+    signature_hex: bytesToHex(signature),
+  };
+}
+
+function remainingValidationChallengeMs(
+  challenge: BoundValidationChallenge,
+): number {
+  const remainingMs = Math.floor(
+    challenge.expiresAtMs - performance.now() - VALIDATION_CHALLENGE_MARGIN_MS,
+  );
+  if (remainingMs <= 0) {
+    throw new ValidationChallengeExpiredError(
+      "The validation challenge expired. Start a new capture.",
+    );
+  }
+  return remainingMs;
 }
 
 /**
@@ -376,9 +537,11 @@ function parseStudyRecordStatus(value: unknown): StudyRecordStatus | undefined {
  * `undefined` for walletless mode to skip server validation.
  */
 async function extractFingerprintAndValidate(
-  sensorData: SensorData,
+  sensorData: PipelineSensorData,
   config: ResolvedConfig,
   walletAddress: string | undefined,
+  validationWallet: BaselineWallet | null,
+  validationChallenge: BoundValidationChallenge | undefined,
   onProgress?: ProgressCallback,
   studyContext?: StudyContext,
   projectionVersion = 0,
@@ -396,8 +559,19 @@ async function extractFingerprintAndValidate(
   // with no phase, no reason and nothing to route on. Turning it into a
   // result keeps every failure on one typed surface.
   let extracted: ExtractedFeatures;
+  let compatibilityEvidence: ProjectionCompatibilityEvidence | undefined;
   try {
     extracted = await extractFeatures(sensorData, projectionVersion);
+    if (projectionVersion === 2 && receiptPurpose !== undefined) {
+      compatibilityEvidence = {
+        projection_version: 1,
+        feature_schema_version: getProjectionDefinition(1).featureSchemaVersion,
+        features: await extractProjectionOneCompatibilityFeatures(
+          sensorData,
+          extracted.raw,
+        ),
+      };
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     sdkWarn(`[Entros SDK] Feature extraction failed: ${msg}`);
@@ -453,6 +627,7 @@ async function extractFingerprintAndValidate(
   // (~16k samples), which is the next synchronous chunk on the main thread.
   await yieldToMainThread();
   if (config.relayerUrl && walletAddress) {
+    let validationDeadlineSource: "validation" | "challenge" = "validation";
     try {
       const baseUrl = new URL(config.relayerUrl);
       const validateUrl = `${baseUrl.origin}/validate-features`;
@@ -516,43 +691,75 @@ async function extractFingerprintAndValidate(
         };
       }
 
+      const requestBody: ValidateFeaturesRequestBody = {
+        features,
+        projection_version: projectionVersion,
+        f0_contour: f0Contour,
+        accel_magnitude: accelMagnitude,
+        wallet_id: walletAddress,
+        audio_samples_b64: audioSamplesB64,
+        audio_sample_rate_hz: audioSampleRateHz,
+        commitment_new_hex: commitmentNewHex,
+        // Explicit mint-intent signal. New validators sign a receipt over a
+        // commitment THEY derive from `features`; `commitment_new_hex` is
+        // still sent so older validators (which trust it) keep working.
+        request_receipt: receiptPurpose !== undefined,
+        receipt_purpose: receiptPurpose,
+        baseline_reset: receiptPurpose === "reset",
+        // Observe-only automation-detection signal. Optional and
+        // additive — the executor logs it; older executors ignore the
+        // unknown field. Never affects the verification decision.
+        client_signals: clientSignals,
+        // Observe-only touch content-binding signal (curve-trace outline).
+        // Optional + additive; older executors ignore it. `undefined` when no
+        // outline was captured, and JSON.stringify then omits it entirely.
+        curve_trace: curveTrace,
+        // Observe-only capture-timing summary: how the motion stream sat
+        // against the audio window `accel_magnitude` was resampled onto.
+        // Optional and additive. Older validators ignore the unknown field.
+        // Logged for calibration, never read by a check. See
+        // `describeCaptureTiming`.
+        capture_timing: captureTiming,
+        study: studyContext,
+      };
+      if (compatibilityEvidence) {
+        requestBody.compatibility_evidence = compatibilityEvidence;
+      }
+      if (projectionVersion === 2) {
+        onProgress?.("Authorizing validation...");
+        try {
+          requestBody.wallet_authorization = await authorizeValidationRequest(
+            requestBody,
+            validationWallet,
+            validationChallenge,
+          );
+        } catch (error) {
+          return {
+            ok: false,
+            error: errToString(error),
+            failedAt: "signing",
+          };
+        }
+        onProgress?.("Validating...");
+      }
+
+      let validationDeadlineMs = VALIDATE_DEADLINE_MS;
+      if (validationChallenge) {
+        const challengeDeadlineMs =
+          remainingValidationChallengeMs(validationChallenge);
+        if (challengeDeadlineMs < validationDeadlineMs) {
+          validationDeadlineMs = challengeDeadlineMs;
+          validationDeadlineSource = "challenge";
+        }
+      }
+
       const validateResponse = await postJson(
         validateUrl,
-        {
-          features,
-          projection_version: projectionVersion,
-          f0_contour: f0Contour,
-          accel_magnitude: accelMagnitude,
-          wallet_id: walletAddress,
-          audio_samples_b64: audioSamplesB64,
-          audio_sample_rate_hz: audioSampleRateHz,
-          commitment_new_hex: commitmentNewHex,
-          // Explicit mint-intent signal. New validators sign a receipt over a
-          // commitment THEY derive from `features`; `commitment_new_hex` is
-          // still sent so older validators (which trust it) keep working.
-          request_receipt: receiptPurpose !== undefined,
-          receipt_purpose: receiptPurpose,
-          baseline_reset: receiptPurpose === "reset",
-          // Observe-only automation-detection signal. Optional and
-          // additive — the executor logs it; older executors ignore the
-          // unknown field. Never affects the verification decision.
-          client_signals: clientSignals,
-          // Observe-only touch content-binding signal (curve-trace outline).
-          // Optional + additive; older executors ignore it. `undefined` when no
-          // outline was captured, and JSON.stringify then omits it entirely.
-          curve_trace: curveTrace,
-          // Observe-only capture-timing summary: how the motion stream sat
-          // against the audio window `accel_magnitude` was resampled onto.
-          // Optional and additive. Older validators ignore the unknown field.
-          // Logged for calibration, never read by a check. See
-          // `describeCaptureTiming`.
-          capture_timing: captureTiming,
-          study: studyContext,
-        },
+        requestBody,
         {
           headers: validateHeaders,
           stallMs: VALIDATE_UPLOAD_STALL_MS,
-          deadlineMs: VALIDATE_DEADLINE_MS,
+          deadlineMs: validationDeadlineMs,
           onUploadProgress: (loaded, total) => {
             // Same stage label as before. `popup-content.tsx` matches on
             // these strings to drive the embed wire protocol's heartbeat, so
@@ -638,7 +845,23 @@ async function extractFingerprintAndValidate(
       // A timeout says something different from an unreachable host, and the
       // user can act on the difference.
       const msg = err instanceof Error ? err.message : String(err);
+      if (err instanceof ValidationChallengeExpiredError) {
+        return {
+          ok: false,
+          error:
+            "The validation challenge expired before the request completed. Start a new capture.",
+          failedAt: "validation",
+        };
+      }
       if (err instanceof TransportError && (err.kind === "stalled" || err.kind === "deadline")) {
+        if (err.kind === "deadline" && validationDeadlineSource === "challenge") {
+          return {
+            ok: false,
+            error:
+              "The validation challenge expired before the request completed. Start a new capture.",
+            failedAt: "validation",
+          };
+        }
         sdkWarn(`[Entros SDK] Feature validation timed out: ${msg}`);
         return {
           ok: false,
@@ -775,7 +998,7 @@ function baselineFailureMessage(
 }
 
 async function processSensorData(
-  sensorData: SensorData,
+  sensorData: PipelineSensorData,
   config: ResolvedConfig,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Solana types are optional peer deps
   wallet?: any,
@@ -783,6 +1006,7 @@ async function processSensorData(
   onProgress?: ProgressCallback,
   studyContext?: StudyContext,
   projectionPolicy: ProjectionPolicy = { current: 0, minimum: 0 },
+  validationChallenge?: BoundValidationChallenge,
 ): Promise<VerificationResult> {
   // Data quality gate: reject if insufficient behavioral data captured
   const audioSamples = sensorData.audio?.samples.length ?? 0;
@@ -917,6 +1141,8 @@ async function processSensorData(
     sensorData,
     config,
     walletAddress,
+    resolveBaselineWallet(wallet),
+    validationChallenge,
     onProgress,
     studyContext,
     projectionPolicy.current,
@@ -1317,12 +1543,13 @@ async function processSensorData(
  * normal verify flow.
  */
 async function processResetSensorData(
-  sensorData: SensorData,
+  sensorData: PipelineSensorData,
   config: ResolvedConfig,
   wallet: any,
   connection: any,
   onProgress?: ProgressCallback,
   projectionPolicy: ProjectionPolicy = { current: 0, minimum: 0 },
+  validationChallenge?: BoundValidationChallenge,
 ): Promise<VerificationResult> {
   const audioSamples = sensorData.audio?.samples.length ?? 0;
   const motionSamples = sensorData.motion.length;
@@ -1384,6 +1611,8 @@ async function processResetSensorData(
     sensorData,
     config,
     walletAddress,
+    resolveBaselineWallet(wallet),
+    validationChallenge,
     onProgress,
     undefined,
     projectionPolicy.current,
@@ -1490,6 +1719,13 @@ export interface TouchStartOptions {
   coordinateSurface?: HTMLElement;
 }
 
+export interface ValidationChallengeOptions {
+  /** The 32-byte nonce returned with the phrase and touch-curve challenge. */
+  validationChallengeNonce: Uint8Array;
+  /** Use the monotonic `expiresAtMs` returned by `fetchChallenge()`. */
+  validationChallengeExpiresAtMs: number;
+}
+
 type SessionStageState = StageState | "failed";
 
 /**
@@ -1497,6 +1733,7 @@ type SessionStageState = StageState | "failed";
  *
  * Gives the caller control over when each sensor stage starts and stops.
  * After all stages complete, call complete() to run the processing pipeline.
+ * Bind the `fetchChallenge()` nonce and deadline when projection 2 is active.
  *
  * Usage:
  *   const session = pulse.createSession(touchElement);
@@ -1528,13 +1765,16 @@ export class PulseSession {
 
   private audioPromise: Promise<AudioCapture | null> | null = null;
   private motionPromise: Promise<MotionSample[]> | null = null;
-  private touchPromise: Promise<TouchSample[]> | null = null;
+  private touchPromise: Promise<TouchCaptureResult> | null = null;
 
   private audioData: AudioCapture | null = null;
   private motionData: MotionSample[] = [];
   private touchData: TouchSample[] = [];
+  private compatibilityTouchData: TouchSample[] = [];
   private touchCaptureError: Error | null = null;
   private pinnedProjectionPolicyPromise: Promise<ProjectionPolicy> | null = null;
+  private validationChallenge: BoundValidationChallenge | null = null;
+  private validationChallengeWasBound = false;
 
   constructor(config: ResolvedConfig, touchElement?: HTMLElement, studyContext?: StudyContext) {
     this.config = config;
@@ -1597,6 +1837,42 @@ export class PulseSession {
       );
     }
     return pinned;
+  }
+
+  /** Bind this session to the nonce that selected its phrase and touch curve. */
+  bindValidationChallenge(nonce: Uint8Array, expiresAtMs: number): void {
+    if (!(nonce instanceof Uint8Array) || nonce.length !== 32) {
+      throw new Error("Validation challenge nonce must be a 32-byte array");
+    }
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= performance.now()) {
+      throw new Error(
+        "Validation challenge deadline must be a future monotonic timestamp",
+      );
+    }
+    if (this.validationChallengeWasBound) {
+      throw new Error("Validation challenge is already bound to this session");
+    }
+    this.validationChallenge = {
+      nonce: new Uint8Array(nonce),
+      expiresAtMs,
+    };
+    this.validationChallengeWasBound = true;
+  }
+
+  private consumeValidationChallenge(): BoundValidationChallenge | undefined {
+    const challenge = this.validationChallenge;
+    this.validationChallenge = null;
+    return challenge ?? undefined;
+  }
+
+  private async discardCompatibilityTouchAfter(
+    operation: () => Promise<VerificationResult>,
+  ): Promise<VerificationResult> {
+    try {
+      return await operation();
+    } finally {
+      this.compatibilityTouchData = [];
+    }
   }
 
   // --- Audio ---
@@ -1800,9 +2076,9 @@ export class PulseSession {
     const projectionPolicy = await this.pinProjectionPolicy();
     const coordinateSurface = options.coordinateSurface ?? eventTarget;
     const controller = new AbortController();
-    let capture: Promise<TouchSample[]>;
+    let capture: Promise<TouchCaptureResult>;
     try {
-      capture = captureTouch(eventTarget, {
+      capture = captureTouchWithCompatibility(eventTarget, {
         signal: controller.signal,
         projectionVersion: projectionPolicy.current,
         coordinateSurface,
@@ -1814,9 +2090,9 @@ export class PulseSession {
           const captureError =
             error instanceof Error ? error : new Error(String(error));
           this.touchCaptureError = captureError;
-          return [];
+          return { samples: [] };
         }
-        return [];
+        return { samples: [] };
       });
     } catch (error) {
       controller.abort();
@@ -1835,7 +2111,9 @@ export class PulseSession {
       );
     this.touchController!.abort();
     try {
-      this.touchData = await this.touchPromise!;
+      const capture = await this.touchPromise!;
+      this.touchData = capture.samples;
+      this.compatibilityTouchData = capture.compatibilitySamples ?? [];
       if (this.touchCaptureError) throw this.touchCaptureError;
       this.touchCaptureError = null;
       this.touchStageState = "captured";
@@ -1844,6 +2122,7 @@ export class PulseSession {
       const captureError =
         error instanceof Error ? error : new Error(String(error));
       this.touchData = [];
+      this.compatibilityTouchData = [];
       this.touchCaptureError = captureError;
       this.touchStageState = "failed";
       sdkWarn(`[Entros SDK] Touch capture failed: ${captureError.message}`);
@@ -1876,6 +2155,7 @@ export class PulseSession {
     audio: AudioCapture;
     motion: MotionSample[];
     touch: TouchSample[];
+    compatibilityTouch?: TouchSample[];
   }): void {
     // typeof guard tolerates the constant being undeclared at runtime (e.g.
     // direct ts-node/tsx execution that bypasses tsup/vitest `define`).
@@ -1915,6 +2195,7 @@ export class PulseSession {
     this.audioData = data.audio;
     this.motionData = data.motion;
     this.touchData = data.touch;
+    this.compatibilityTouchData = data.compatibilityTouch ?? [];
     this.audioStageState = "captured";
     this.motionStageState = "captured";
     this.touchStageState = "captured";
@@ -1933,51 +2214,60 @@ export class PulseSession {
         `Cannot complete: stages still capturing: ${active.join(", ")}`
       );
     }
-    if (this.touchStageState === "failed" || this.touchCaptureError) {
-      return {
-        success: false,
-        commitment: new Uint8Array(32),
-        isFirstVerification: true,
-        error: "Touch capture was interrupted. Start this verification again.",
-        failedAt: "capture",
+    return this.discardCompatibilityTouchAfter(async () => {
+      if (this.touchStageState === "failed" || this.touchCaptureError) {
+        return {
+          success: false,
+          commitment: new Uint8Array(32),
+          isFirstVerification: true,
+          error: "Touch capture was interrupted. Start this verification again.",
+          failedAt: "capture",
+        };
+      }
+
+      const sensorData: PipelineSensorData = {
+        audio: this.audioData,
+        motion: this.motionData,
+        touch: this.touchData,
+        compatibilityTouch:
+          this.compatibilityTouchData.length > 0
+            ? this.compatibilityTouchData
+            : undefined,
+        curveTrace: outline,
+        modalities: {
+          audio: this.audioData !== null,
+          motion: this.motionData.length > 0,
+          touch: this.touchData.length > 0,
+        },
       };
-    }
 
-    const sensorData: SensorData = {
-      audio: this.audioData,
-      motion: this.motionData,
-      touch: this.touchData,
-      curveTrace: outline,
-      modalities: {
-        audio: this.audioData !== null,
-        motion: this.motionData.length > 0,
-        touch: this.touchData.length > 0,
-      },
-    };
+      let projectionPolicy: ProjectionPolicy;
+      try {
+        projectionPolicy = await this.projectionPolicyForCompletion(connection);
+      } catch (err) {
+        return {
+          success: false,
+          commitment: new Uint8Array(32),
+          isFirstVerification: true,
+          error: err instanceof Error ? err.message : String(err),
+          failedAt:
+            err instanceof ProjectionPolicyChangedError ? "capture" : "submission",
+        };
+      }
 
-    let projectionPolicy: ProjectionPolicy;
-    try {
-      projectionPolicy = await this.projectionPolicyForCompletion(connection);
-    } catch (err) {
-      return {
-        success: false,
-        commitment: new Uint8Array(32),
-        isFirstVerification: true,
-        error: err instanceof Error ? err.message : String(err),
-        failedAt:
-          err instanceof ProjectionPolicyChangedError ? "capture" : "submission",
-      };
-    }
-
-    return processSensorData(
-      sensorData,
-      this.config,
-      wallet,
-      connection,
-      onProgress,
-      this.studyContext,
-      projectionPolicy,
-    );
+      return processSensorData(
+        sensorData,
+        this.config,
+        wallet,
+        connection,
+        onProgress,
+        this.studyContext,
+        projectionPolicy,
+        projectionPolicy.current === 2
+          ? this.consumeValidationChallenge()
+          : undefined,
+      );
+    });
   }
 
   /**
@@ -2006,61 +2296,70 @@ export class PulseSession {
         `Cannot complete reset: stages still capturing: ${active.join(", ")}`
       );
     }
-    if (this.touchStageState === "failed" || this.touchCaptureError) {
-      return {
-        success: false,
-        commitment: new Uint8Array(32),
-        isFirstVerification: true,
-        error: "Touch capture was interrupted. Start this verification again.",
-        failedAt: "capture",
+    return this.discardCompatibilityTouchAfter(async () => {
+      if (this.touchStageState === "failed" || this.touchCaptureError) {
+        return {
+          success: false,
+          commitment: new Uint8Array(32),
+          isFirstVerification: true,
+          error: "Touch capture was interrupted. Start this verification again.",
+          failedAt: "capture",
+        };
+      }
+
+      if (!wallet || !connection) {
+        return {
+          success: false,
+          commitment: new Uint8Array(32),
+          isFirstVerification: true,
+          error:
+            "Baseline reset requires a connected wallet and Solana connection. " +
+            "Reset cannot be performed in walletless mode.",
+          failedAt: "submission",
+        };
+      }
+
+      const sensorData: PipelineSensorData = {
+        audio: this.audioData,
+        motion: this.motionData,
+        touch: this.touchData,
+        compatibilityTouch:
+          this.compatibilityTouchData.length > 0
+            ? this.compatibilityTouchData
+            : undefined,
+        modalities: {
+          audio: this.audioData !== null,
+          motion: this.motionData.length > 0,
+          touch: this.touchData.length > 0,
+        },
       };
-    }
 
-    if (!wallet || !connection) {
-      return {
-        success: false,
-        commitment: new Uint8Array(32),
-        isFirstVerification: true,
-        error:
-          "Baseline reset requires a connected wallet and Solana connection. " +
-          "Reset cannot be performed in walletless mode.",
-        failedAt: "submission",
-      };
-    }
+      let projectionPolicy: ProjectionPolicy;
+      try {
+        projectionPolicy = await this.projectionPolicyForCompletion(connection);
+      } catch (err) {
+        return {
+          success: false,
+          commitment: new Uint8Array(32),
+          isFirstVerification: true,
+          error: err instanceof Error ? err.message : String(err),
+          failedAt:
+            err instanceof ProjectionPolicyChangedError ? "capture" : "submission",
+        };
+      }
 
-    const sensorData: SensorData = {
-      audio: this.audioData,
-      motion: this.motionData,
-      touch: this.touchData,
-      modalities: {
-        audio: this.audioData !== null,
-        motion: this.motionData.length > 0,
-        touch: this.touchData.length > 0,
-      },
-    };
-
-    let projectionPolicy: ProjectionPolicy;
-    try {
-      projectionPolicy = await this.projectionPolicyForCompletion(connection);
-    } catch (err) {
-      return {
-        success: false,
-        commitment: new Uint8Array(32),
-        isFirstVerification: true,
-        error: err instanceof Error ? err.message : String(err),
-        failedAt:
-          err instanceof ProjectionPolicyChangedError ? "capture" : "submission",
-      };
-    }
-
-    return processResetSensorData(
-      sensorData,
-      this.config,
-      wallet,
-      connection,
-      onProgress,
-      projectionPolicy,
-    );
+      return processResetSensorData(
+        sensorData,
+        this.config,
+        wallet,
+        connection,
+        onProgress,
+        projectionPolicy,
+        projectionPolicy.current === 2
+          ? this.consumeValidationChallenge()
+          : undefined,
+      );
+    });
   }
 }
 
@@ -2095,14 +2394,22 @@ export class PulseSDK {
   /**
    * Run a full verification with automatic timed capture (backward-compatible).
    * Captures all sensors in parallel for DEFAULT_CAPTURE_MS, then processes.
+   * Pass the `fetchChallenge()` nonce and deadline when projection 2 is active.
    */
   async verify(
     touchElement?: HTMLElement,
     wallet?: any,
-    connection?: any
+    connection?: any,
+    options?: ValidationChallengeOptions,
   ): Promise<VerificationResult> {
     try {
       const session = this.createSession(touchElement);
+      if (options) {
+        session.bindValidationChallenge(
+          options.validationChallengeNonce,
+          options.validationChallengeExpiresAtMs,
+        );
+      }
       const stopPromises: Promise<void>[] = [];
 
       // Motion first — requires user gesture on iOS (gesture expires after getUserMedia)
@@ -2176,17 +2483,24 @@ export class PulseSDK {
    * encrypted baseline is unrecoverable.
    *
    * For fine-grained control, call `createSession()` and `completeReset()`
-   * directly — the session API exposes per-stage start/stop hooks that
-   * this convenience wrapper trades away for simplicity.
+   * directly. The session API exposes per-stage start and stop hooks.
+   * Pass the `fetchChallenge()` nonce and deadline when projection 2 is active.
    */
   async resetBaseline(
     touchElement: HTMLElement | undefined,
     wallet: any,
     connection: any,
-    onProgress?: ProgressCallback
+    onProgress?: ProgressCallback,
+    options?: ValidationChallengeOptions,
   ): Promise<VerificationResult> {
     try {
       const session = this.createSession(touchElement);
+      if (options) {
+        session.bindValidationChallenge(
+          options.validationChallengeNonce,
+          options.validationChallengeExpiresAtMs,
+        );
+      }
       const stopPromises: Promise<void>[] = [];
 
       try {
