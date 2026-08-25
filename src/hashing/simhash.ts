@@ -61,9 +61,9 @@ function getHyperplanes(dimension: number, projectionVersion: number): Float64Ar
  * Uses deterministic random hyperplanes seeded from the protocol constant.
  * Similar feature vectors produce fingerprints with low Hamming distance.
  */
-// Both supported feature schemas contain the same per-modality counts.
-// Projection 0 uses schema 3 extraction semantics. Projection 1 uses schema 4
-// corrections and authenticated rebaseline when an existing identity moves.
+// All supported feature schemas contain the same per-modality counts.
+// Projection 0 uses schema 3 legacy extraction. Projection 1 uses schema 4
+// corrected extraction. Projection 2 uses schema 5 normalized touch capture.
 //   - Speaker: 44 legacy + 72 MFCC (12×4 + 12×2, MFCC[0] dropped)
 //     + 24 LPC + 16 formant trajectories + 9 voice quality
 //     + 5 pitch DCT = 170.

@@ -20,7 +20,7 @@ import type { LissajousParams } from "./lissajous";
  * Server-issued challenge artifacts. Returned by `fetchChallenge`.
  */
 export interface ChallengeResponse {
-  /** 32-byte nonce used for on-chain `create_challenge` and the `/attest` handshake. */
+  /** 32-byte nonce used for projection 2 validation, `create_challenge`, and `/attest`. */
   nonce: Uint8Array;
   /** Server-issued 5-word challenge phrase (drawn from a curated English-word dictionary) the user must speak aloud. */
   phrase: string;
@@ -36,8 +36,8 @@ export interface ChallengeWithDeadline extends ChallengeResponse {
 }
 
 /**
- * Fetch a fresh nonce + phrase from the executor. Throws on network error or
- * non-2xx response so the caller can surface a retry UX.
+ * Fetch a fresh server challenge and conservative monotonic deadline.
+ * Throws on network error or non-2xx response so the caller can surface a retry UX.
  *
  * @param executorUrl - Base URL of the executor (e.g. `https://executor.entros.io`).
  * @param walletAddress - Base58-encoded wallet public key.

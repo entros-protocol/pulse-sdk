@@ -1722,7 +1722,7 @@ export interface TouchStartOptions {
 export interface ValidationChallengeOptions {
   /** The 32-byte nonce returned with the phrase and touch-curve challenge. */
   validationChallengeNonce: Uint8Array;
-  /** Conservative monotonic deadline derived when challenge fetch begins. */
+  /** Use the monotonic `expiresAtMs` returned by `fetchChallenge()`. */
   validationChallengeExpiresAtMs: number;
 }
 
@@ -1733,6 +1733,7 @@ type SessionStageState = StageState | "failed";
  *
  * Gives the caller control over when each sensor stage starts and stops.
  * After all stages complete, call complete() to run the processing pipeline.
+ * Bind the `fetchChallenge()` nonce and deadline when projection 2 is active.
  *
  * Usage:
  *   const session = pulse.createSession(touchElement);
@@ -2393,6 +2394,7 @@ export class PulseSDK {
   /**
    * Run a full verification with automatic timed capture (backward-compatible).
    * Captures all sensors in parallel for DEFAULT_CAPTURE_MS, then processes.
+   * Pass the `fetchChallenge()` nonce and deadline when projection 2 is active.
    */
   async verify(
     touchElement?: HTMLElement,
@@ -2481,8 +2483,8 @@ export class PulseSDK {
    * encrypted baseline is unrecoverable.
    *
    * For fine-grained control, call `createSession()` and `completeReset()`
-   * directly — the session API exposes per-stage start/stop hooks that
-   * this convenience wrapper trades away for simplicity.
+   * directly. The session API exposes per-stage start and stop hooks.
+   * Pass the `fetchChallenge()` nonce and deadline when projection 2 is active.
    */
   async resetBaseline(
     touchElement: HTMLElement | undefined,
