@@ -20,7 +20,7 @@ import type { LissajousParams } from "./lissajous";
  * Server-issued challenge artifacts. Returned by `fetchChallenge`.
  */
 export interface ChallengeResponse {
-  /** 32-byte nonce used for on-chain `create_challenge` and the `/attest` handshake. */
+  /** 32-byte nonce used for projection 2 validation, `create_challenge`, and `/attest`. */
   nonce: Uint8Array;
   /** Server-issued 5-word challenge phrase (drawn from a curated English-word dictionary) the user must speak aloud. */
   phrase: string;
@@ -30,9 +30,14 @@ export interface ChallengeResponse {
   curve?: LissajousParams;
 }
 
+export interface ChallengeWithDeadline extends ChallengeResponse {
+  /** Conservative monotonic deadline measured from the request start. */
+  expiresAtMs: number;
+}
+
 /**
- * Fetch a fresh nonce + phrase from the executor. Throws on network error or
- * non-2xx response so the caller can surface a retry UX.
+ * Fetch a fresh server challenge and conservative monotonic deadline.
+ * Throws on network error or non-2xx response so the caller can surface a retry UX.
  *
  * @param executorUrl - Base URL of the executor (e.g. `https://executor.entros.io`).
  * @param walletAddress - Base58-encoded wallet public key.
@@ -42,7 +47,7 @@ export async function fetchChallenge(
   executorUrl: string,
   walletAddress: string,
   apiKey?: string,
-): Promise<ChallengeResponse> {
+): Promise<ChallengeWithDeadline> {
   const base = new URL(executorUrl);
   const url = new URL("/challenge", base.origin);
   url.searchParams.set("wallet", walletAddress);
@@ -52,6 +57,7 @@ export async function fetchChallenge(
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5_000);
+  const requestedAtMs = performance.now();
   let response: Response;
   try {
     response = await fetch(url.toString(), {
@@ -87,11 +93,21 @@ export async function fetchChallenge(
     };
   };
 
-  if (!Array.isArray(body.nonce) || body.nonce.length !== 32) {
+  if (
+    !Array.isArray(body.nonce) ||
+    body.nonce.length !== 32 ||
+    !body.nonce.every(
+      (value) => Number.isInteger(value) && value >= 0 && value <= 255,
+    )
+  ) {
     throw new Error("Executor returned malformed nonce; expected 32-byte array");
   }
   if (typeof body.phrase !== "string" || body.phrase.trim().length === 0) {
     throw new Error("Executor returned empty challenge phrase");
+  }
+  const expiresIn = body.expires_in ?? 60;
+  if (!Number.isSafeInteger(expiresIn) || expiresIn <= 0) {
+    throw new Error("Executor returned malformed challenge lifetime");
   }
 
   const curve: LissajousParams | undefined = body.curve
@@ -108,7 +124,8 @@ export async function fetchChallenge(
   return {
     nonce: Uint8Array.from(body.nonce),
     phrase: body.phrase,
-    expiresIn: body.expires_in ?? 60,
+    expiresIn,
+    expiresAtMs: requestedAtMs + expiresIn * 1_000,
     curve,
   };
 }

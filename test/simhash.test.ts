@@ -66,6 +66,25 @@ describe("simhash", () => {
     ]);
   });
 
+  it("matches the frozen version 2 transcript", () => {
+    expect(
+      Array.from(
+        generateProjectionWords(
+          PUBLIC_SEED,
+          PROJECTION_PURPOSE.public,
+          2,
+          308,
+          16,
+        ),
+      ),
+    ).toEqual([
+      1816424877, 506286799, 3660086786, 1922004990,
+      2305849189, 3430870315, 2837000082, 2235419823,
+      2664381067, 3011143810, 321828308, 1387177461,
+      4283390990, 3992665251, 2080844329, 3658837953,
+    ]);
+  });
+
   it("matches the independent version 1 fingerprint golden", () => {
     const features = Array.from(
       { length: 308 },
@@ -73,6 +92,19 @@ describe("simhash", () => {
     );
     expect(fingerprintHex(simhash(features, 1))).toBe(
       "730c7022878f3334cfe021f5d28b5d6a3ab7ac06d751843e1a4bfca4409c4dec"
+    );
+  });
+
+  it("pins legacy and normalized-touch fingerprint goldens", () => {
+    const features = Array.from(
+      { length: 308 },
+      (_, index) => (((index * 37) % 211) - 105) / 64,
+    );
+    expect(fingerprintHex(simhash(features, 0))).toBe(
+      "cb3a4b3db19d79f3fb1e22525fb909b180eae199b74654bdc6674f5e87c46534",
+    );
+    expect(fingerprintHex(simhash(features, 2))).toBe(
+      "e8e89c699a9a91b4d47f13188d0099c4130e6dcfa0e6d1a30f9fac2f7d56a741",
     );
   });
 
@@ -85,17 +117,22 @@ describe("simhash", () => {
     expect(simhash(versionedFeatures)).not.toEqual(simhash(versionedFeatures, 1));
   });
 
-  it.each([0, 307, 309])(
-    "rejects a %i-value feature vector under projection version 1",
-    (dimension) => {
-      expect(() => simhash(new Array(dimension).fill(0), 1)).toThrow(
-        "Projection version 1 requires exactly 308 features"
-      );
-    }
+  it.each([1, 2])(
+    "requires exactly 308 features under projection version %i",
+    (projectionVersion) => {
+      for (const dimension of [0, 307, 309]) {
+        expect(() =>
+          simhash(new Array(dimension).fill(0), projectionVersion),
+        ).toThrow(
+          `Projection version ${projectionVersion} requires exactly 308 features`,
+        );
+      }
+    },
   );
 
   it("accepts exactly 308 features under projection version 1", () => {
     expect(simhash(new Array(308).fill(0), 1)).toHaveLength(FINGERPRINT_BITS);
+    expect(simhash(new Array(308).fill(0), 2)).toHaveLength(FINGERPRINT_BITS);
   });
 
   it("bounds the exported projection word stream", () => {

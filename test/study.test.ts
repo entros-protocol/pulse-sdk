@@ -32,7 +32,7 @@ describe("study context", () => {
     ).toThrow("Study feature schema version is malformed");
   });
 
-  it("binds projection version 1 to feature schema version 4", () => {
+  it("binds projections to their feature schemas", () => {
     const context = createStudyContext(
       {
         token: "A".repeat(43),
@@ -46,6 +46,18 @@ describe("study context", () => {
     expect(context.projection_version).toBe(1);
     expect(exportedFeatureSchemaVersion(0)).toBe(3);
     expect(exportedFeatureSchemaVersion(1)).toBe(4);
+    expect(exportedFeatureSchemaVersion(2)).toBe(5);
+
+    const normalizedTouch = createStudyContext(
+      {
+        token: "B".repeat(43),
+        feature_schema_version: 5,
+        projection_version: 2,
+      },
+      "native-ios",
+    );
+    expect(normalizedTouch.feature_schema_version).toBe(5);
+    expect(normalizedTouch.projection_version).toBe(2);
   });
 
   it("rejects a feature schema from another projection", () => {
@@ -55,6 +67,16 @@ describe("study context", () => {
           token: "A".repeat(43),
           feature_schema_version: 3,
           projection_version: 1,
+        },
+        "web-mobile",
+      ),
+    ).toThrow("does not match projection");
+    expect(() =>
+      createStudyContext(
+        {
+          token: "A".repeat(43),
+          feature_schema_version: 4,
+          projection_version: 2,
         },
         "web-mobile",
       ),

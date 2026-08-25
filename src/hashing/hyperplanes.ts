@@ -1,8 +1,5 @@
 import { sha256 } from "@noble/hashes/sha2.js";
-import {
-  CLIENT_PROJECTION_VERSION,
-  SIMHASH_PUBLIC_SEED_HEX,
-} from "../config";
+import { SIMHASH_PUBLIC_SEED_HEX } from "../config";
 
 const DOMAIN = Uint8Array.from(
   "entros-simhash-hyperplanes-v1\0",
@@ -127,11 +124,14 @@ export function projectionCoefficients(
   return Float64Array.from(words, (word) => (word / WORD_SCALE) * 2 - 1);
 }
 
-export function publicProjectionCoefficients(dimension: number): Float64Array {
+export function publicProjectionCoefficients(
+  dimension: number,
+  projectionVersion = 1,
+): Float64Array {
   return projectionCoefficients(
     hexToBytes(SIMHASH_PUBLIC_SEED_HEX),
     PROJECTION_PURPOSE.public,
-    CLIENT_PROJECTION_VERSION,
+    projectionVersion,
     dimension,
     256 * dimension
   );

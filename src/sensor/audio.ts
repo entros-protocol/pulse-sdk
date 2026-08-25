@@ -3,6 +3,7 @@ import { MIN_CAPTURE_MS, MAX_CAPTURE_MS, MAX_TRANSMITTED_CAPTURE_MS } from "../c
 import { realFFT } from "../extraction/fft";
 import { sdkWarn } from "../log";
 import { CANONICAL_SAMPLE_RATE, toCanonicalCapture } from "./resample";
+import { getProjectionDefinition } from "../projection";
 
 /**
  * Target RMS level the captured audio is normalized to before being
@@ -54,10 +55,7 @@ const LEGACY_AUDIO_CAPTURE_CONSTRAINTS: VoiceIsolationConstraints = {
 export function audioCaptureConstraints(
   projectionVersion = 0,
 ): VoiceIsolationConstraints {
-  if (projectionVersion !== 0 && projectionVersion !== 1) {
-    throw new Error(`Unsupported projection version ${projectionVersion}`);
-  }
-  return projectionVersion === 1
+  return getProjectionDefinition(projectionVersion).featurePipeline !== "legacy"
     ? { ...LEGACY_AUDIO_CAPTURE_CONSTRAINTS, voiceIsolation: true }
     : LEGACY_AUDIO_CAPTURE_CONSTRAINTS;
 }

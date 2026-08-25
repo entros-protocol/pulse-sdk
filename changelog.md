@@ -9,6 +9,18 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+## [4.9.0] - 2026-08-25
+
+### Added
+- Projection 2 requests include wallet authorization bound to the challenge nonce, projection version, and validation digest.
+- Mint, rebaseline, and reset requests include projection 1 compatibility evidence during the migration window.
+- Projection 2 touch capture uses normalized coordinates sampled at 30 Hz.
+
+### Changed
+- Projection 0 and projection 1 retain their existing request and feature behavior.
+- Challenge and pointer capture enforce bounded lifetimes and event limits.
+- The SDK clears transient compatibility arrays after validation.
+
 ## [4.8.0] - 2026-08-23
 
 ### Added

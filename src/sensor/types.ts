@@ -64,11 +64,16 @@ export interface MotionSample {
 
 /** Single touch reading */
 export interface TouchSample {
+  /** `performance.now()` timestamp in milliseconds. */
   timestamp: number;
+  /** Viewport CSS pixels for projections 0-1. Unit-surface coordinates for projection 2. */
   x: number;
+  /** Viewport CSS pixels for projections 0-1. Unit-surface coordinates for projection 2. */
   y: number;
   pressure: number;
+  /** CSS pixels for projections 0-1. Neutral value 1 for projection 2. */
   width: number;
+  /** CSS pixels for projections 0-1. Neutral value 1 for projection 2. */
   height: number;
 }
 
@@ -140,6 +145,8 @@ export interface CaptureOptions {
   stream?: MediaStream;
   /** Selects capture semantics that match the active on-chain projection. */
   projectionVersion?: number;
+  /** Defines the coordinate frame when normalized touch capture is active. */
+  coordinateSurface?: HTMLElement;
   /** If true, captureMotion skips requestMotionPermission (already acquired). */
   permissionGranted?: boolean;
 }

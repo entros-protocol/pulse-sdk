@@ -8,9 +8,13 @@ import {
 } from "../src/sensor/audio";
 
 describe("projection-aware audio capture", () => {
-  it("preserves version 0 constraints and requests voice isolation in version 1", () => {
+  it("preserves legacy constraints and requests voice isolation after version 0", () => {
     expect(audioCaptureConstraints(0)).not.toHaveProperty("voiceIsolation");
     expect(audioCaptureConstraints(1)).toMatchObject({ voiceIsolation: true });
+    expect(audioCaptureConstraints(2)).toEqual(audioCaptureConstraints(1));
+    expect(() => audioCaptureConstraints(3)).toThrow(
+      "Unsupported projection version 3",
+    );
   });
 });
 

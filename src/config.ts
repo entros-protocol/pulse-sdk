@@ -1,3 +1,5 @@
+import { HIGHEST_SUPPORTED_PROJECTION_VERSION } from "./projection";
+
 // BN254 base field prime (for G1 point negation in proof_a)
 export const BN254_BASE_FIELD = BigInt(
   "21888242871839275222246405745257275088696311157297823662689037894645226208583"
@@ -20,7 +22,7 @@ export const PROOF_B_SIZE = 128;
 export const PROOF_C_SIZE = 64;
 export const TOTAL_PROOF_SIZE = 256;
 
-/** Public seed for projection version 1. */
+/** Public seed for version-bound projection transcripts. */
 export const SIMHASH_PUBLIC_SEED_HEX =
   "9ee9c02f3fc6a2abce703010e64378d4531f8bcb110f0bc4c177c36a60c75bb5";
 
@@ -163,13 +165,13 @@ export const MAX_VERIFICATION_MS =
   UNCLOCKED_WORK_MS;
 
 /**
- * Feature-projection generation this SDK build produces fingerprints in.
- * The client routes older identities through an authenticated rebaseline.
+ * Highest feature-projection generation this SDK build supports.
+ * The active on-chain policy selects the generation used for capture.
  */
-export const CLIENT_PROJECTION_VERSION = 1;
+export { HIGHEST_SUPPORTED_PROJECTION_VERSION as CLIENT_PROJECTION_VERSION } from "./projection";
 
 /** @deprecated Use `CLIENT_PROJECTION_VERSION`. */
-export const PROJECTION_VERSION = CLIENT_PROJECTION_VERSION;
+export const PROJECTION_VERSION = HIGHEST_SUPPORTED_PROJECTION_VERSION;
 
 export const PROGRAM_IDS = {
   entrosAnchor: "GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2",
