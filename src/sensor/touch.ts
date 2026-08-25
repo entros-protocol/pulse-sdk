@@ -175,6 +175,20 @@ export function captureTouch(
   element: HTMLElement,
   options: CaptureOptions = {}
 ): Promise<TouchSample[]> {
+  return captureTouchWithCompatibility(element, options).then(
+    (capture) => capture.samples,
+  );
+}
+
+export interface TouchCaptureResult {
+  samples: TouchSample[];
+  compatibilitySamples?: TouchSample[];
+}
+
+export function captureTouchWithCompatibility(
+  element: HTMLElement,
+  options: CaptureOptions = {},
+): Promise<TouchCaptureResult> {
   const {
     signal,
     minDurationMs = MIN_CAPTURE_MS,
@@ -228,7 +242,7 @@ export function captureTouch(
       element.removeEventListener("pointermove", handler);
       element.removeEventListener("pointerdown", handler);
       sdkLog(`[Entros SDK] Touch capture stopped: ${samples.length} samples collected`);
-      resolve(samples);
+      resolve({ samples });
     }
 
     element.addEventListener("pointermove", handler);
@@ -265,14 +279,16 @@ function captureNormalizedTouch(
     >
   > &
     Pick<CaptureOptions, "signal">,
-): Promise<TouchSample[]> {
+): Promise<TouchCaptureResult> {
   const { signal, minDurationMs, maxDurationMs, projectionVersion } = options;
   validateNormalizedCaptureDuration(minDurationMs, maxDurationMs);
   const frozenRect = readValidRect(coordinateSurface);
   const samples: TouchSample[] = [];
+  const compatibilitySamples: TouchSample[] = [];
   const startTime = performance.now();
   const sourceSampleLimit =
     Math.ceil((maxDurationMs * TOUCH_CAPTURE_RATE_HZ) / 1_000) + 2;
+  const compatibilitySampleLimit = sourceSampleLimit * 4;
 
   return new Promise((resolve, reject) => {
     let stopped = false;
@@ -282,6 +298,8 @@ function captureNormalizedTouch(
     let latest: Omit<TouchSample, "timestamp"> | null = null;
     let abortTimer: ReturnType<typeof setTimeout> | null = null;
     let abortListener: (() => void) | null = null;
+    let compatibilityEventCount = 0;
+    let compatibilityStride = 1;
 
     const appendLatest = (timestamp: number): void => {
       if (!latest || captureError) return;
@@ -328,6 +346,48 @@ function captureNormalizedTouch(
       return true;
     };
 
+    const appendCompatibilitySample = (event: PointerEvent): void => {
+      if (
+        ![
+          event.clientX,
+          event.clientY,
+          event.pressure,
+          event.width,
+          event.height,
+        ].every(Number.isFinite)
+      ) {
+        captureError = new Error(
+          "Normalized touch capture contains invalid compatibility data",
+        );
+        return;
+      }
+      compatibilityEventCount += 1;
+      if (compatibilityEventCount % compatibilityStride !== 0) return;
+      if (compatibilitySamples.length >= compatibilitySampleLimit) {
+        // Preserve the capture span while bounding high-rate pointer streams.
+        let writeIndex = 1;
+        for (
+          let readIndex = 2;
+          readIndex < compatibilitySamples.length;
+          readIndex += 2
+        ) {
+          compatibilitySamples[writeIndex] = compatibilitySamples[readIndex]!;
+          writeIndex += 1;
+        }
+        compatibilitySamples.length = writeIndex;
+        compatibilityStride *= 2;
+        if (compatibilityEventCount % compatibilityStride !== 0) return;
+      }
+      compatibilitySamples.push({
+        timestamp: performance.now(),
+        x: event.clientX,
+        y: event.clientY,
+        pressure: event.pressure,
+        width: event.width,
+        height: event.height,
+      });
+    };
+
     const onPointerDown = (event: PointerEvent) => {
       if (activePointerId !== null) return;
       if (contactEnded) {
@@ -338,6 +398,7 @@ function captureNormalizedTouch(
       }
       if (!updateLatest(event)) return;
       activePointerId = event.pointerId;
+      appendCompatibilitySample(event);
       appendLatest(performance.now());
     };
     const onPointerMove = (event: PointerEvent) => {
@@ -346,6 +407,8 @@ function captureNormalizedTouch(
         captureError = new Error(
           "Normalized touch capture left the coordinate surface",
         );
+      } else {
+        appendCompatibilitySample(event);
       }
     };
     const onPointerEnd = (event: PointerEvent) => {
@@ -432,7 +495,10 @@ function captureNormalizedTouch(
         `[Entros SDK] Normalized touch capture stopped: ${samples.length} source samples collected`,
       );
       try {
-        resolve(canonicalizeTouchSamples(samples, projectionVersion));
+        resolve({
+          samples: canonicalizeTouchSamples(samples, projectionVersion),
+          compatibilitySamples,
+        });
       } catch (error) {
         reject(error);
       }

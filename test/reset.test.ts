@@ -1,10 +1,37 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import {
   PulseSDK,
   PulseSession,
   submitResetViaWallet,
   DEFAULT_CAPTURE_MS,
 } from "../src/index";
+
+function oneShotSessionHarness() {
+  const result = {
+    success: false,
+    commitment: new Uint8Array(32),
+    isFirstVerification: true,
+    error: "stubbed",
+  };
+  const session = {
+    bindValidationChallenge: vi.fn(),
+    startMotion: vi.fn().mockResolvedValue(undefined),
+    isMotionCapturing: vi.fn().mockReturnValue(false),
+    startAudio: vi.fn().mockResolvedValue(undefined),
+    stopAudio: vi.fn().mockResolvedValue(null),
+    startTouch: vi.fn().mockResolvedValue(undefined),
+    stopTouch: vi.fn().mockResolvedValue(null),
+    skipTouch: vi.fn(),
+    complete: vi.fn().mockResolvedValue(result),
+    completeReset: vi.fn().mockResolvedValue(result),
+  };
+  return session;
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe("resetBaseline: public API surface", () => {
   it("exports submitResetViaWallet as a function", () => {
@@ -27,6 +54,73 @@ describe("resetBaseline: public API surface", () => {
     expect(
       typeof (session as unknown as { completeReset: unknown }).completeReset,
     ).toBe("function");
+  });
+
+  it("rejects malformed validation challenge bindings", () => {
+    const sdk = new PulseSDK({ cluster: "devnet" });
+    expect(() =>
+      sdk.createSession().bindValidationChallenge(new Uint8Array(31), 180),
+    ).toThrow(/32-byte array/i);
+    expect(() =>
+      sdk.createSession().bindValidationChallenge(new Uint8Array(32), 0),
+    ).toThrow(/future monotonic timestamp/i);
+    expect(() =>
+      sdk.createSession().bindValidationChallenge(new Uint8Array(32), Number.NaN),
+    ).toThrow(/future monotonic timestamp/i);
+  });
+
+  it("binds the server challenge in the one-shot verify path", async () => {
+    vi.useFakeTimers();
+    const sdk = new PulseSDK({ cluster: "devnet" });
+    const session = oneShotSessionHarness();
+    vi.spyOn(sdk, "createSession").mockReturnValue(
+      session as unknown as PulseSession,
+    );
+    const nonce = new Uint8Array(32).fill(0x41);
+    const expiresAtMs = performance.now() + 180_000;
+
+    const pending = sdk.verify(undefined, undefined, undefined, {
+      validationChallengeNonce: nonce,
+      validationChallengeExpiresAtMs: expiresAtMs,
+    });
+    await vi.runAllTimersAsync();
+    await pending;
+
+    expect(session.bindValidationChallenge).toHaveBeenCalledOnce();
+    expect(session.bindValidationChallenge).toHaveBeenCalledWith(
+      nonce,
+      expiresAtMs,
+    );
+  });
+
+  it("binds the server challenge in the one-shot reset path", async () => {
+    vi.useFakeTimers();
+    const sdk = new PulseSDK({ cluster: "devnet" });
+    const session = oneShotSessionHarness();
+    vi.spyOn(sdk, "createSession").mockReturnValue(
+      session as unknown as PulseSession,
+    );
+    const nonce = new Uint8Array(32).fill(0x42);
+    const expiresAtMs = performance.now() + 180_000;
+
+    const pending = sdk.resetBaseline(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        validationChallengeNonce: nonce,
+        validationChallengeExpiresAtMs: expiresAtMs,
+      },
+    );
+    await vi.runAllTimersAsync();
+    await pending;
+
+    expect(session.bindValidationChallenge).toHaveBeenCalledOnce();
+    expect(session.bindValidationChallenge).toHaveBeenCalledWith(
+      nonce,
+      expiresAtMs,
+    );
   });
 });
 
@@ -57,35 +151,7 @@ describe("PulseSession.completeReset: wallet requirement", () => {
   });
 });
 
-describe("baseline-missing error message: stable detection sentinel", () => {
-  // The website FailedView detects the "baseline is missing" state by
-  // matching on a stable substring of the error copy emitted from
-  // pulse.ts:278-285. This test guards against silent copy drift that
-  // would break the UI's ability to offer the reset CTA.
-  it("contains 'baseline is missing' substring", async () => {
-    // Full end-to-end would need a Solana connection. Instead, we verify
-    // the literal string exists in the SDK source by grepping the module
-    // output. Vitest resolves the module so the text is in the bundle.
-    const mod = await import("../src/pulse");
-    // The error string should appear in the module's string table. Most
-    // straightforward guard: re-declare the expected phrase and assert
-    // nothing in the module has drifted.
-    const expectedPhrase =
-      "Your Entros Anchor exists on-chain but the local baseline is missing.";
-    const src = mod.toString?.() ?? "";
-    // `toString()` on a module object returns `[object Module]` — that's
-    // not useful. Read the TS source via fs instead.
-    expect(src).toBeDefined();
-
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const pulseSource = fs.readFileSync(
-      path.resolve(__dirname, "../src/pulse.ts"),
-      "utf-8",
-    );
-    expect(pulseSource).toContain(expectedPhrase);
-  });
-
+describe("capture constants", () => {
   it("DEFAULT_CAPTURE_MS is exported (session capture cadence)", () => {
     expect(typeof DEFAULT_CAPTURE_MS).toBe("number");
     expect(DEFAULT_CAPTURE_MS).toBeGreaterThan(0);

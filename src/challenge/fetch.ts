@@ -30,6 +30,11 @@ export interface ChallengeResponse {
   curve?: LissajousParams;
 }
 
+export interface ChallengeWithDeadline extends ChallengeResponse {
+  /** Conservative monotonic deadline measured from the request start. */
+  expiresAtMs: number;
+}
+
 /**
  * Fetch a fresh nonce + phrase from the executor. Throws on network error or
  * non-2xx response so the caller can surface a retry UX.
@@ -42,7 +47,7 @@ export async function fetchChallenge(
   executorUrl: string,
   walletAddress: string,
   apiKey?: string,
-): Promise<ChallengeResponse> {
+): Promise<ChallengeWithDeadline> {
   const base = new URL(executorUrl);
   const url = new URL("/challenge", base.origin);
   url.searchParams.set("wallet", walletAddress);
@@ -52,6 +57,7 @@ export async function fetchChallenge(
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5_000);
+  const requestedAtMs = performance.now();
   let response: Response;
   try {
     response = await fetch(url.toString(), {
@@ -93,6 +99,10 @@ export async function fetchChallenge(
   if (typeof body.phrase !== "string" || body.phrase.trim().length === 0) {
     throw new Error("Executor returned empty challenge phrase");
   }
+  const expiresIn = body.expires_in ?? 60;
+  if (!Number.isSafeInteger(expiresIn) || expiresIn <= 0) {
+    throw new Error("Executor returned malformed challenge lifetime");
+  }
 
   const curve: LissajousParams | undefined = body.curve
     ? {
@@ -108,7 +118,8 @@ export async function fetchChallenge(
   return {
     nonce: Uint8Array.from(body.nonce),
     phrase: body.phrase,
-    expiresIn: body.expires_in ?? 60,
+    expiresIn,
+    expiresAtMs: requestedAtMs + expiresIn * 1_000,
     curve,
   };
 }
