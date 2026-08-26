@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { yieldToMainThread } from "../src/yield";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("yieldToMainThread", () => {
   it("returns a Promise that resolves to undefined", async () => {
@@ -31,4 +35,12 @@ describe("yieldToMainThread", () => {
     expect(calls).toHaveLength(3);
     for (const value of calls) expect(value).toBeUndefined();
   });
+
+  it.runIf(typeof MessageChannel !== "undefined")(
+    "resolves while fake timers are active",
+    async () => {
+      vi.useFakeTimers();
+      await expect(yieldToMainThread()).resolves.toBeUndefined();
+    },
+  );
 });
