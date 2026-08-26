@@ -17,13 +17,7 @@
  */
 export function yieldToMainThread(): Promise<void> {
   return new Promise<void>((resolve) => {
-    const nodeProcess = (
-      globalThis as typeof globalThis & {
-        process?: { versions?: { node?: string } };
-      }
-    ).process;
-    const runningInNode = typeof nodeProcess?.versions?.node === "string";
-    if (!runningInNode && typeof MessageChannel !== "undefined") {
+    if (typeof MessageChannel !== "undefined") {
       const channel = new MessageChannel();
       channel.port1.onmessage = () => {
         channel.port1.close();
