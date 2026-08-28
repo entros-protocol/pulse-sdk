@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import {
+  DEFAULT_MIN_DISTANCE,
+  DEFAULT_THRESHOLD,
+  MAX_THRESHOLD,
+  MIN_DISTANCE_FLOOR,
+} from "../src/config";
 
 /**
  * The bundled IDL must match the one `anchor build` produces in protocol-core.
@@ -33,12 +39,18 @@ interface IdlError {
   code: number;
   name: string;
 }
+interface IdlConstant {
+  name: string;
+  type: string;
+  value: string;
+}
 interface Idl {
   address?: string;
   instructions: IdlInstruction[];
   accounts?: { name: string }[];
   types?: { name: string; type?: { fields?: { name: string }[] } }[];
   errors?: IdlError[];
+  constants?: IdlConstant[];
 }
 
 function load(path: string): Idl {
@@ -182,5 +194,27 @@ describe("the reset instruction carries a projection version", () => {
       "treasury",
       "system_program",
     ]);
+  });
+});
+
+describe("Hamming bounds follow the verifier IDL", () => {
+  const constants = new Map(
+    (load(SDK_VERIFIER_IDL).constants ?? []).map((entry) => [entry.name, entry]),
+  );
+
+  const readU16 = (name: string): number => {
+    const entry = constants.get(name);
+    expect(entry, `${name} is missing from the verifier IDL`).toBeDefined();
+    expect(entry?.type).toBe("u16");
+    const value = Number(entry?.value);
+    expect(Number.isSafeInteger(value)).toBe(true);
+    return value;
+  };
+
+  it("keeps exported defaults equal to the program ceiling and floor", () => {
+    expect(MAX_THRESHOLD).toBe(readU16("MAX_THRESHOLD"));
+    expect(MIN_DISTANCE_FLOOR).toBe(readU16("MIN_DISTANCE_FLOOR"));
+    expect(DEFAULT_THRESHOLD).toBe(MAX_THRESHOLD);
+    expect(DEFAULT_MIN_DISTANCE).toBe(MIN_DISTANCE_FLOOR);
   });
 });

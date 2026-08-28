@@ -694,5 +694,25 @@
         ]
       }
     }
+  ],
+  "constants": [
+    {
+      "name": "MAX_THRESHOLD",
+      "docs": [
+        "Highest Hamming threshold input accepted by this program.",
+        "Client defaults do not change this ceiling."
+      ],
+      "type": "u16",
+      "value": "96"
+    },
+    {
+      "name": "MIN_DISTANCE_FLOOR",
+      "docs": [
+        "Lowest minimum-distance input accepted by this program.",
+        "Client defaults do not change this floor."
+      ],
+      "type": "u16",
+      "value": "3"
+    }
   ]
 }

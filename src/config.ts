@@ -11,6 +11,7 @@ export const BN254_SCALAR_FIELD = BigInt(
 );
 
 export const FINGERPRINT_BITS = 256;
+/** These bounds mirror the verifier IDL. The program remains authoritative. */
 export const MAX_THRESHOLD = 96;
 export const MIN_DISTANCE_FLOOR = 3;
 export const DEFAULT_THRESHOLD = MAX_THRESHOLD;
