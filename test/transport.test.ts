@@ -19,6 +19,7 @@ import {
 class FakeXhr {
   static last: FakeXhr | undefined;
   /** Drives the synchronous-throw paths that leaked timers. */
+  static throwOnConstruct: Error | undefined;
   static throwOnSend: Error | undefined;
   static throwOnOpen: Error | undefined;
 
@@ -37,6 +38,10 @@ class FakeXhr {
   onload: (() => void) | null = null;
   onerror: (() => void) | null = null;
   onabort: (() => void) | null = null;
+
+  constructor() {
+    if (FakeXhr.throwOnConstruct) throw FakeXhr.throwOnConstruct;
+  }
 
   open(_method: string, _url: string, _async: boolean): void {
     if (FakeXhr.throwOnOpen) throw FakeXhr.throwOnOpen;
@@ -97,6 +102,9 @@ function installFakeXhr(): void {
 function uninstallFakeXhr(): void {
   delete (globalThis as Record<string, unknown>).XMLHttpRequest;
   FakeXhr.last = undefined;
+  FakeXhr.throwOnConstruct = undefined;
+  FakeXhr.throwOnOpen = undefined;
+  FakeXhr.throwOnSend = undefined;
 }
 
 /** Let the microtask queue drain so `send()` has run and `last` is set. */
@@ -205,6 +213,24 @@ describe("postJson: the slow-versus-stalled distinction", () => {
     }
 
     await expect(pending).rejects.toMatchObject({ kind: "stalled" });
+  });
+
+  it("tracks progress after the native HTTP client restarts an upload", async () => {
+    vi.useFakeTimers();
+    installFakeXhr();
+
+    const pending = postJson("https://example.test/v", { a: 1 }, { stallMs: 1000 });
+    await settled();
+    const xhr = FakeXhr.last!;
+
+    xhr.emitProgress(80, 100);
+    vi.advanceTimersByTime(900);
+    xhr.emitProgress(10, 100);
+    vi.advanceTimersByTime(200);
+    xhr.respond(200, { valid: true });
+
+    await expect(pending).resolves.toMatchObject({ status: 200 });
+    expect(xhr.aborted).toBe(false);
   });
 
   it("still gives up at the deadline", async () => {
@@ -333,6 +359,26 @@ describe("postJson: outcomes", () => {
     await pending;
   });
 
+  it("contains progress observer failures without disrupting the upload", async () => {
+    installFakeXhr();
+    const pending = postJson(
+      "https://example.test/v",
+      {},
+      {
+        onUploadProgress: () => {
+          throw new Error("observer failed");
+        },
+      },
+    );
+    await settled();
+    const xhr = FakeXhr.last!;
+
+    expect(() => xhr.emitProgress(100, 400)).not.toThrow();
+    xhr.respond(200, {});
+
+    await expect(pending).resolves.toMatchObject({ status: 200 });
+  });
+
   it("reports a synchronous send failure as a TransportError and leaks no timers", async () => {
     vi.useFakeTimers();
     installFakeXhr();
@@ -349,6 +395,16 @@ describe("postJson: outcomes", () => {
     // for a real capture is roughly 850 KB, for the whole deadline.
     expect(vi.getTimerCount()).toBe(0);
     FakeXhr.throwOnSend = undefined;
+  });
+
+  it("reports a synchronous constructor failure as a TransportError", async () => {
+    installFakeXhr();
+    FakeXhr.throwOnConstruct = new Error("Constructor failed");
+
+    await expect(postJson("https://example.test/v", {})).rejects.toMatchObject({
+      kind: "network",
+    });
+    FakeXhr.throwOnConstruct = undefined;
   });
 
   it("reports a malformed URL as a TransportError rather than a raw throw", async () => {

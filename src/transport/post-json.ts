@@ -9,9 +9,8 @@
  * was not: their connection was slow, and nothing in the client could tell the
  * difference.
  *
- * That is the distinction this module exists to make. A body that is still
- * moving is never aborted, however slowly it moves. A body that has stopped
- * moving is abandoned quickly. Total elapsed time decides nothing.
+ * That is the distinction this module exists to make. Upload progress resets
+ * the stall clock. The caller deadline still bounds total elapsed time.
  *
  * Telling those apart needs upload progress, and upload progress needs
  * `XMLHttpRequest`. A streaming `fetch` body would do it too, but only with
@@ -118,7 +117,18 @@ function postViaXhr(
   const { headers = {}, onUploadProgress, stallMs, deadlineMs, signal } = options;
 
   return new Promise<PostJsonResponse>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
+    let xhr: XMLHttpRequest;
+    try {
+      xhr = new XMLHttpRequest();
+    } catch (err) {
+      reject(
+        new TransportError(
+          "network",
+          err instanceof Error ? err.message : String(err),
+        ),
+      );
+      return;
+    }
     let stallTimer: ReturnType<typeof setTimeout> | undefined;
     let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
     let settled = false;
@@ -190,7 +200,8 @@ function postViaXhr(
     }
 
     xhr.upload.onprogress = (event: ProgressEvent) => {
-      if (event.loaded > lastLoaded) {
+      // Native HTTP retries can restart the count. Any changed count is progress.
+      if (event.loaded !== lastLoaded) {
         lastLoaded = event.loaded;
         armStallTimer();
       }
@@ -203,7 +214,11 @@ function postViaXhr(
       if (event.lengthComputable && event.total > 0 && event.loaded >= event.total) {
         markUploadComplete();
       }
-      onUploadProgress?.(event.loaded, event.lengthComputable ? event.total : 0);
+      try {
+        onUploadProgress?.(event.loaded, event.lengthComputable ? event.total : 0);
+      } catch {
+        // A progress observer cannot change the request outcome.
+      }
     };
 
     xhr.upload.onload = markUploadComplete;

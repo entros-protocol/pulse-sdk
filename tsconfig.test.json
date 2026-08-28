@@ -20,6 +20,12 @@
     // enforcing is that fixtures match the types they claim to build.
     "noUncheckedIndexedAccess": false
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/measure-touch-scale.ts"],
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "scripts/measure-touch-scale.ts",
+    "scripts/measure-validation-transport.ts",
+    "scripts/support/**/*.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }

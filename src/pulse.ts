@@ -673,13 +673,10 @@ async function extractFingerprintAndValidate(
       // the field for `update_anchor`).
       const commitmentNewHex = bytesToHex(tbh.commitmentBytes);
 
-      // Collect the observe-only client-signals envelope so the
-      // executor can measure the bot-vs-human automation signal on real
-      // traffic. Privacy-first — detects the automation harness driving the
-      // page (Selenium/Puppeteer/Playwright/CDP), never the user; no
-      // fingerprinting. The executor logs it and does NOT feed it into the
-      // pass/fail decision. Non-browser runtimes (React Native) return a clean
-      // marker. Synchronous + exception-safe, so it can never break submission.
+      // Collect client-controlled browser signals. The executor can use
+      // automation labels in its risk decision. Capture-realism fields remain
+      // telemetry only. These fields do not prove sensor provenance.
+      // Non-browser runtimes return a clean marker.
       const clientSignals = collectClientSignals();
       if (sensorData.audio) {
         const acoustic = analyzeAcousticRealism(sensorData.audio.samples, sensorData.audio.sampleRate);
@@ -706,9 +703,8 @@ async function extractFingerprintAndValidate(
         request_receipt: receiptPurpose !== undefined,
         receipt_purpose: receiptPurpose,
         baseline_reset: receiptPurpose === "reset",
-        // Observe-only automation-detection signal. Optional and
-        // additive — the executor logs it; older executors ignore the
-        // unknown field. Never affects the verification decision.
+        // Optional client-controlled signals. Current executors can score
+        // automation labels. Older executors ignore the unknown field.
         client_signals: clientSignals,
         // Observe-only touch content-binding signal (curve-trace outline).
         // Optional + additive; older executors ignore it. `undefined` when no
