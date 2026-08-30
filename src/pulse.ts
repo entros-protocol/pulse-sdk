@@ -167,10 +167,10 @@ class ProjectionPolicyChangedError extends Error {}
 class ValidationChallengeExpiredError extends Error {}
 
 /**
- * Extract features from sensor data. Returns both raw (physical units)
- * and normalized (z-scored) feature vectors.
+ * Run the complete local feature pipeline against captured sensor data.
+ * @internal Source-level parity tests import this function directly.
  */
-async function extractFeatures(
+export async function extractFeatures(
   data: SensorData,
   projectionVersion: number,
 ): Promise<ExtractedFeatures> {

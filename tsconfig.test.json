@@ -23,6 +23,7 @@
   "include": [
     "src/**/*.ts",
     "test/**/*.ts",
+    "scripts/measure-fingerprint-architecture.ts",
     "scripts/measure-touch-scale.ts",
     "scripts/measure-validation-transport.ts",
     "scripts/support/**/*.ts"

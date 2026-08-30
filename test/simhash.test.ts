@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { simhash, hammingDistance } from "../src/hashing/simhash";
+import {
+  simhash,
+  hammingDistance,
+  simhashDotProducts,
+} from "../src/hashing/simhash";
 import { FINGERPRINT_BITS } from "../src/config";
 import {
   generateProjectionWords,
@@ -134,6 +138,21 @@ describe("simhash", () => {
     expect(simhash(new Array(308).fill(0), 1)).toHaveLength(FINGERPRINT_BITS);
     expect(simhash(new Array(308).fill(0), 2)).toHaveLength(FINGERPRINT_BITS);
   });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    "rejects non-finite feature value %s",
+    (invalid) => {
+      const features = new Array(308).fill(0);
+      features[17] = invalid;
+
+      expect(() => simhash(features, 1)).toThrow(
+        "Feature vector contains a non-finite value at 17",
+      );
+      expect(() => simhashDotProducts(features, 1)).toThrow(
+        "Feature vector contains a non-finite value at 17",
+      );
+    },
+  );
 
   it("bounds the exported projection word stream", () => {
     expect(() =>

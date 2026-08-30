@@ -33,11 +33,14 @@ function legacyProjectionCoefficients(dimension: number): Float64Array {
   const random = legacyMulberry32(legacySeed(LEGACY_SIMHASH_SEED));
   return Float64Array.from(
     { length: FINGERPRINT_BITS * dimension },
-    () => random() * 2 - 1
+    () => random() * 2 - 1,
   );
 }
 
-function getHyperplanes(dimension: number, projectionVersion: number): Float64Array {
+function getHyperplanes(
+  dimension: number,
+  projectionVersion: number,
+): Float64Array {
   const cacheKey = `${projectionVersion}:${dimension}`;
   const cached = hyperplaneCache.get(cacheKey);
   if (cached) {
@@ -79,39 +82,91 @@ function getHyperplanes(dimension: number, projectionVersion: number): Float64Ar
 const EXPECTED_FEATURE_DIMENSION =
   SPEAKER_FEATURE_COUNT + MOTION_FEATURE_COUNT + TOUCH_FEATURE_COUNT;
 
-export function simhash(
+function validateFeatureVector(
   features: number[],
-  projectionVersion = 0
-): TemporalFingerprint {
-  if (
-    getProjectionDefinition(projectionVersion).hyperplanes.family === "public" &&
-    features.length !== EXPECTED_FEATURE_DIMENSION
-  ) {
+  projectionVersion: number,
+): void {
+  const invalidIndex = features.findIndex(
+    (feature) => !Number.isFinite(feature),
+  );
+  if (invalidIndex >= 0) {
     throw new Error(
-      `Projection version ${projectionVersion} requires exactly ${EXPECTED_FEATURE_DIMENSION} features`
+      `Feature vector contains a non-finite value at ${invalidIndex}`,
     );
   }
 
+  if (
+    getProjectionDefinition(projectionVersion).hyperplanes.family ===
+      "public" &&
+    features.length !== EXPECTED_FEATURE_DIMENSION
+  ) {
+    throw new Error(
+      `Projection version ${projectionVersion} requires exactly ${EXPECTED_FEATURE_DIMENSION} features`,
+    );
+  }
+
+  if (features.length !== 0 && features.length !== EXPECTED_FEATURE_DIMENSION) {
+    sdkWarn(
+      `[Entros SDK] Feature vector has ${features.length} dimensions, expected ${EXPECTED_FEATURE_DIMENSION}. ` +
+        `Fingerprint quality may be degraded.`,
+    );
+  }
+}
+
+function dotProductForPlane(
+  features: number[],
+  planes: Float64Array,
+  planeIndex: number,
+): number {
+  const planeOffset = planeIndex * features.length;
+  let dot = 0;
+  for (let featureIndex = 0; featureIndex < features.length; featureIndex++) {
+    dot +=
+      (features[featureIndex] ?? 0) * (planes[planeOffset + featureIndex] ?? 0);
+  }
+  return dot;
+}
+
+/**
+ * Return the signed projection value behind each SimHash bit.
+ *
+ * This source-only diagnostic lets parity tests distinguish feature drift from
+ * a bit flip near zero. The package root does not export it.
+ */
+export function simhashDotProducts(
+  features: number[],
+  projectionVersion = 0,
+): number[] {
+  validateFeatureVector(features, projectionVersion);
   if (features.length === 0) {
     return new Array(FINGERPRINT_BITS).fill(0);
   }
 
-  if (features.length !== EXPECTED_FEATURE_DIMENSION) {
-    sdkWarn(
-      `[Entros SDK] Feature vector has ${features.length} dimensions, expected ${EXPECTED_FEATURE_DIMENSION}. ` +
-      `Fingerprint quality may be degraded.`
-    );
+  const planes = getHyperplanes(features.length, projectionVersion);
+  const dotProducts = new Array<number>(FINGERPRINT_BITS);
+
+  for (let i = 0; i < FINGERPRINT_BITS; i++) {
+    dotProducts[i] = dotProductForPlane(features, planes, i);
+  }
+
+  return dotProducts;
+}
+
+export function simhash(
+  features: number[],
+  projectionVersion = 0,
+): TemporalFingerprint {
+  validateFeatureVector(features, projectionVersion);
+
+  if (features.length === 0) {
+    return new Array(FINGERPRINT_BITS).fill(0);
   }
 
   const planes = getHyperplanes(features.length, projectionVersion);
   const fingerprint: TemporalFingerprint = [];
 
   for (let i = 0; i < FINGERPRINT_BITS; i++) {
-    const planeOffset = i * features.length;
-    let dot = 0;
-    for (let j = 0; j < features.length; j++) {
-      dot += (features[j] ?? 0) * (planes[planeOffset + j] ?? 0);
-    }
+    const dot = dotProductForPlane(features, planes, i);
     fingerprint.push(dot >= 0 ? 1 : 0);
   }
 
@@ -123,7 +178,7 @@ export function simhash(
  */
 export function hammingDistance(
   a: TemporalFingerprint,
-  b: TemporalFingerprint
+  b: TemporalFingerprint,
 ): number {
   let distance = 0;
   for (let i = 0; i < a.length; i++) {
