@@ -9,6 +9,17 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+## [4.9.1] - 2026-08-30
+
+### Fixed
+- Cooperative yields close their message channels and remain compatible with fake-timer test environments.
+- Validation uploads reset the stall timer when native retries restart progress counts.
+- Progress callbacks cannot change the request outcome.
+- SimHash rejects non-finite feature values before projection.
+
+### Changed
+- The bundled verifier IDL records the program's existing Hamming ceiling and minimum-distance floor.
+
 ## [4.9.0] - 2026-08-25
 
 ### Added
