@@ -9,6 +9,12 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+## [4.9.2] - 2026-08-31
+
+### Changed
+- First-verification minting now derives Token-2022 associated token accounts locally, without `@solana/spl-token`.
+- The package no longer declares `@solana/spl-token` as an optional peer dependency.
+
 ## [4.9.1] - 2026-08-30
 
 ### Fixed

@@ -5,6 +5,8 @@ import {
   computeCommitment,
   generateTBH,
 } from "../src/hashing/poseidon";
+import { extractTouchFeatures } from "../src/extraction/kinematic";
+import { canonicalizeTouchSamples } from "../src/sensor/touch";
 import type { FingerprintArchitectureManifest } from "./support/fingerprint-architecture-manifest";
 import { buildFingerprintArchitectureManifest } from "./support/fingerprint-architecture-manifest";
 import {
@@ -98,6 +100,33 @@ describe("fingerprint architecture fixture", () => {
       fingerprintArchitectureFixtureDigest(first),
     );
   });
+
+  it.each([0, 1, 2])(
+    "keeps coordinate jitter when contact channels are constant in projection %i",
+    (projectionVersion) => {
+      const fixture = createFingerprintArchitectureFixture();
+      const samples = fixture.touch.map((sample) => ({
+        ...sample,
+        pressure: 1,
+        width: 1,
+        height: 1,
+      }));
+      const canonicalSamples = canonicalizeTouchSamples(
+        samples,
+        projectionVersion,
+      );
+      const features = extractTouchFeatures(
+        canonicalSamples,
+        projectionVersion,
+      );
+
+      expect(features[32]).toBeGreaterThan(0);
+      expect(features[33]).toBeGreaterThan(0);
+      expect(features[34]).toBe(0);
+      expect(features[35]).toBe(0);
+      expect(features[37]).toBe(0);
+    },
+  );
 });
 
 describe("fixed-salt TBH generation", () => {

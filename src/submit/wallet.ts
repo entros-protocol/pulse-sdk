@@ -36,6 +36,11 @@ import {
   isUserRejection,
   withTimeout,
 } from "./errors";
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
+  TOKEN_2022_PROGRAM_ADDRESS,
+  deriveToken2022AssociatedAddress,
+} from "./associated-token";
 
 interface SubmissionConnection {
   getLatestBlockhash(commitment: Commitment): Promise<{
@@ -703,16 +708,14 @@ export async function submitViaWallet(
         registryProgramId
       );
 
-      const TOKEN_2022_PROGRAM_ID = new PublicKey(
-        "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
-      );
-
-      const { getAssociatedTokenAddressSync } = await import("@solana/spl-token");
-      const ata = getAssociatedTokenAddressSync(
+      const ata = deriveToken2022AssociatedAddress(
         mintPda,
         provider.wallet.publicKey,
-        false,
-        TOKEN_2022_PROGRAM_ID
+        PublicKey,
+      );
+      const token2022ProgramId = new PublicKey(TOKEN_2022_PROGRAM_ADDRESS);
+      const associatedTokenProgramId = new PublicKey(
+        ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
       );
 
       const mintAnchorIx = await anchorProgram.methods
@@ -723,10 +726,8 @@ export async function submitViaWallet(
           mint: mintPda,
           mintAuthority,
           tokenAccount: ata,
-          associatedTokenProgram: new PublicKey(
-            "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
-          ),
-          tokenProgram: TOKEN_2022_PROGRAM_ID,
+          associatedTokenProgram: associatedTokenProgramId,
+          tokenProgram: token2022ProgramId,
           systemProgram: SystemProgram.programId,
           protocolConfig: protocolConfigPda,
           treasury: treasuryPda,
