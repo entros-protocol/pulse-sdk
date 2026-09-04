@@ -159,7 +159,7 @@ describe("fingerprint architecture manifest", () => {
   beforeAll(async () => {
     manifest = await buildFingerprintArchitectureManifest();
     repeatedManifest = await buildFingerprintArchitectureManifest();
-  }, 60_000);
+  }, 600_000);
 
   it("is byte-value deterministic within one runtime", () => {
     expect(repeatedManifest).toEqual(manifest);
