@@ -223,6 +223,7 @@ export async function decodeIdentityState(
       // until year 275760.
       lastResetTimestamp: decoded.last_reset_timestamp?.toNumber?.() ?? 0,
       projectionVersion: decoded.projection_version ?? 0,
+      lastRebaselineTimestamp: decoded.last_rebaseline_timestamp?.toNumber?.() ?? 0,
     };
   } catch {
     return null;

@@ -178,3 +178,19 @@ export type {
   TransportFailureKind,
 } from "./transport/post-json";
 export type { ProgressCallback, UploadProgress } from "./submit/types";
+
+export {
+  readIntegratorEvidence,
+  INTEGRATOR_DEVNET_GENESIS_HASH,
+  INTEGRATOR_PROGRAM_IDS,
+} from "./identity/integrator";
+export type {
+  IntegratorEvidence,
+  IntegratorEvidenceConnection,
+  IntegratorEvidenceReadResult,
+  IntegratorEvidenceFailureReason,
+  IntegratorIdentityEvidence,
+  IntegratorTransactionEvidence,
+  IntegratorAttestationEvidence,
+  ReadIntegratorEvidenceInput,
+} from "./identity/integrator-types";

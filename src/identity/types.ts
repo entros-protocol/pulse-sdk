@@ -15,6 +15,8 @@ export interface IdentityState {
   lastResetTimestamp: number;
   /** Projection generation used by `currentCommitment`. */
   projectionVersion: number;
+  /** Latest receipt-authenticated projection migration, if decoded. */
+  lastRebaselineTimestamp?: number;
 }
 
 /** Local storage of previous verification data (needed for re-verification) */

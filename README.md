@@ -21,6 +21,10 @@ A host-approved fallback can store the local baseline without encryption. Integr
 
 > **Looking for a drop-in?** Most integrators want [`@entros/verify`](https://github.com/entros-protocol/entros-verify) — a popup-pattern React component that wraps this SDK and ships verification in five lines of JSX. Use this package directly when you need to own the verification UX (custom capture canvas, branded loading states, mobile-native).
 
+Version `4.10.0` is the prepared source release. npm still serves `4.9.2` as `latest`.
+The strict evidence reader below requires `4.10.0` after publication, or a local build of this source.
+Package publication and the compatible hosted popup release remain pending.
+
 ## Install
 
 ```bash
@@ -47,6 +51,54 @@ if (result.success) {
   console.log('Verified:', result.txSignature);
 }
 ```
+
+### Read evidence for an application policy
+
+`readIntegratorEvidence` reads confirmed devnet transaction and account observations through your configured RPC connection.
+It checks wallet binding, program identities, supported account layouts, and the transaction's relationship to current identity state.
+It also reads the SAS account and reports its status.
+
+Install the chain-reading peers alongside the SDK:
+
+```bash
+npm install @coral-xyz/anchor@^0.32.1 @solana/web3.js@^1.98.0
+```
+
+These peers are optional package dependencies because capture-only consumers do not need chain access.
+The evidence reader requires both peers. It does not require a wallet adapter.
+
+```typescript
+import { Connection } from '@solana/web3.js';
+import { readIntegratorEvidence } from '@entros/pulse-sdk';
+
+async function readEvidence(
+  rpcUrl: string,
+  walletPubkey: string,
+  transactionSignature: string,
+) {
+  const connection = new Connection(rpcUrl, 'confirmed');
+  return readIntegratorEvidence({
+    walletPubkey,
+    transactionSignature,
+    connection,
+    nowSeconds: Math.floor(Date.now() / 1000),
+  });
+}
+```
+
+The result uses `status: "available"`, `"invalid"`, or `"unavailable"`.
+An available result contains identity and transaction evidence, plus a separate attestation status.
+A missing or unavailable SAS account does not prevent the reader from returning available identity evidence.
+Your application decides whether its policy requires an attestation.
+
+Pair the observation with `evaluatePolicy` from `@entros/verify/policy` in the prepared Verify `0.2.0` release.
+The reader does not choose your score floor, freshness requirement, or action authorization.
+For protected actions, your service must authenticate the wallet's action request and read current evidence before settlement.
+Use your service's policy and RPC configuration. Do not accept browser-supplied observations as settlement authority.
+
+The evidence reports `browser_unattested` assurance and `unmeasured` uniqueness.
+These fields do not establish sensor provenance or population uniqueness.
+The reader supports the pinned Entros devnet programs. It does not submit a transaction.
 
 ### Projection 2 compatibility
 
