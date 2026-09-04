@@ -9,6 +9,13 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+## [4.10.0] - 2026-09-05
+
+### Added
+- Add confirmed identity and transaction evidence for application verification policies.
+- Report typed attestation availability and validate issued attestation accounts.
+- Export evidence types and devnet network identifiers.
+
 ## [4.9.2] - 2026-08-31
 
 ### Changed
