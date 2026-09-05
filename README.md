@@ -21,10 +21,6 @@ A host-approved fallback can store the local baseline without encryption. Integr
 
 > **Looking for a drop-in?** Most integrators want [`@entros/verify`](https://github.com/entros-protocol/entros-verify) — a popup-pattern React component that wraps this SDK and ships verification in five lines of JSX. Use this package directly when you need to own the verification UX (custom capture canvas, branded loading states, mobile-native).
 
-Version `4.10.0` is the prepared source release. npm still serves `4.9.2` as `latest`.
-The strict evidence reader below requires `4.10.0` after publication, or a local build of this source.
-Package publication and the compatible hosted popup release remain pending.
-
 ## Install
 
 ```bash
@@ -81,17 +77,23 @@ async function readEvidence(
     walletPubkey,
     transactionSignature,
     connection,
-    nowSeconds: Math.floor(Date.now() / 1000),
+    nowSeconds: () => Math.floor(Date.now() / 1000),
   });
 }
 ```
+
+Supply a clock callback for live reads. A numeric timestamp selects a fixed snapshot comparison and never waits.
+For an otherwise valid attestation slightly ahead of the live clock, the reader can wait up to three seconds before reading evidence again.
+It performs at most one clock catch-up. The existing propagation retry remains bounded separately, for at most three complete reads.
+It never accepts a future timestamp before the supplied clock reaches it. Expiry and all other checks still apply.
+Late timer wakeups can exceed the waiting budget and still cause rejection.
 
 The result uses `status: "available"`, `"invalid"`, or `"unavailable"`.
 An available result contains identity and transaction evidence, plus a separate attestation status.
 A missing or unavailable SAS account does not prevent the reader from returning available identity evidence.
 Your application decides whether its policy requires an attestation.
 
-Pair the observation with `evaluatePolicy` from `@entros/verify/policy` in the prepared Verify `0.2.0` release.
+Pair the observation with `evaluatePolicy` from `@entros/verify/policy` in Verify `0.2.0` or later.
 The reader does not choose your score floor, freshness requirement, or action authorization.
 For protected actions, your service must authenticate the wallet's action request and read current evidence before settlement.
 Use your service's policy and RPC configuration. Do not accept browser-supplied observations as settlement authority.
