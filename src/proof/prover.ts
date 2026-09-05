@@ -4,9 +4,9 @@ import { serializeProof } from "./serializer";
 import { DEFAULT_THRESHOLD, DEFAULT_MIN_DISTANCE } from "../config";
 
 // Use dynamic import for snarkjs (it's a CJS module)
-let snarkjsModule: any = null;
+let snarkjsModule: typeof import("snarkjs") | null = null;
 
-async function getSnarkjs(): Promise<any> {
+async function getSnarkjs(): Promise<typeof import("snarkjs")> {
   if (!snarkjsModule) {
     snarkjsModule = await import("snarkjs");
   }
@@ -69,7 +69,7 @@ type PrioritizedRequestInit = RequestInit & {
 const PREFETCH_TIMEOUT_MS = 60_000;
 
 function prefetchSignal(
-  caller: AbortSignal | undefined
+  caller: AbortSignal | undefined,
 ): AbortSignal | undefined {
   if (
     typeof AbortSignal === "undefined" ||
@@ -86,7 +86,7 @@ function prefetchSignal(
 
 async function fetchArtifact(
   url: string,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
 ): Promise<Uint8Array> {
   const init: PrioritizedRequestInit = {
     // Below the microphone and motion sampler, which are running while this
@@ -131,7 +131,7 @@ async function fetchArtifact(
 export function prefetchCircuitArtifacts(
   wasmUrl: string,
   zkeyUrl: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): void {
   if (typeof fetch !== "function") return;
   if (
@@ -169,7 +169,7 @@ export function prefetchCircuitArtifacts(
  */
 export async function takeCircuitArtifacts(
   wasmUrl: string,
-  zkeyUrl: string
+  zkeyUrl: string,
 ): Promise<CircuitArtifacts | null> {
   const entry = prefetched;
   if (!entry || entry.wasmUrl !== wasmUrl || entry.zkeyUrl !== zkeyUrl) {
@@ -191,7 +191,7 @@ export function prepareCircuitInput(
   current: TBH,
   previous: TBH,
   threshold: number = DEFAULT_THRESHOLD,
-  minDistance: number = DEFAULT_MIN_DISTANCE
+  minDistance: number = DEFAULT_MIN_DISTANCE,
 ): CircuitInput {
   return {
     ft_new: current.fingerprint,
@@ -205,7 +205,10 @@ export function prepareCircuitInput(
   };
 }
 
-export type HammingVerdict = "in_bounds" | "drift_too_high" | "below_min_distance";
+export type HammingVerdict =
+  | "in_bounds"
+  | "drift_too_high"
+  | "below_min_distance";
 
 /**
  * Classify a Hamming distance against the circuit's accept band, mirroring
@@ -223,7 +226,7 @@ export type HammingVerdict = "in_bounds" | "drift_too_high" | "below_min_distanc
 export function classifyHammingDistance(
   distance: number,
   threshold: number,
-  minDistance: number
+  minDistance: number,
 ): HammingVerdict {
   if (distance >= threshold) return "drift_too_high";
   if (distance < minDistance) return "below_min_distance";
@@ -248,13 +251,13 @@ export function classifyHammingDistance(
 export async function generateProof(
   input: CircuitInput,
   wasmPath: string | Uint8Array,
-  zkeyPath: string | Uint8Array
+  zkeyPath: string | Uint8Array,
 ): Promise<ProofResult> {
   const snarkjs = await getSnarkjs();
   const { proof, publicSignals } = await snarkjs.groth16.fullProve(
     input,
     wasmPath,
-    zkeyPath
+    zkeyPath,
   );
   return { proof, publicSignals };
 }
@@ -268,7 +271,7 @@ export async function generateSolanaProof(
   wasmPath: string | Uint8Array,
   zkeyPath: string | Uint8Array,
   threshold?: number,
-  minDistance?: number
+  minDistance?: number,
 ): Promise<SolanaProof> {
   // Low-level primitive: performs NO bounds pre-check. An out-of-band Hamming
   // distance produces an unsatisfiable witness and throws a circuit assert —
@@ -277,7 +280,7 @@ export async function generateSolanaProof(
   const { proof, publicSignals } = await generateProof(
     input,
     wasmPath,
-    zkeyPath
+    zkeyPath,
   );
   return serializeProof(proof, publicSignals);
 }
@@ -287,10 +290,92 @@ export async function generateSolanaProof(
  * Caller is responsible for loading the verification key.
  */
 export async function verifyProofLocally(
-  proof: any,
+  proof: import("./types").RawProof,
   publicSignals: string[],
-  vkey: Record<string, unknown>
+  vkey: Record<string, unknown>,
 ): Promise<boolean> {
   const snarkjs = await getSnarkjs();
   return snarkjs.groth16.verify(vkey, publicSignals, proof);
+}
+
+const verifiedArtifacts = new Map<string, Promise<CircuitArtifacts>>();
+export async function loadRequestBoundArtifacts(
+  manifest: import("./request").RequestBoundManifest,
+): Promise<CircuitArtifacts> {
+  const { validateRequestBoundManifest, bytesHex } = await import("./request");
+  const { sha256 } = await import("@noble/hashes/sha256");
+  validateRequestBoundManifest(manifest);
+  const key = JSON.stringify([
+    manifest.generation,
+    manifest.deploymentDomain,
+    manifest.wasm,
+    manifest.zkey,
+  ]);
+  let ready = verifiedArtifacts.get(key);
+  if (!ready) {
+    ready = Promise.all(
+      [manifest.wasm, manifest.zkey].map(async (artifact) => {
+        const bytes = await fetchArtifact(
+          artifact.url,
+          prefetchSignal(undefined),
+        );
+        if (bytesHex(sha256(bytes)) !== artifact.sha256)
+          throw new Error("Circuit artifact hash mismatch");
+        return bytes;
+      }),
+    ).then(([wasm, zkey]) => ({ wasm: wasm!, zkey: zkey! }));
+    verifiedArtifacts.set(key, ready);
+    ready.catch(() => verifiedArtifacts.delete(key));
+  }
+  const artifacts = await ready;
+  return { wasm: artifacts.wasm.slice(), zkey: artifacts.zkey.slice() };
+}
+
+export async function generateRequestBoundProof(
+  input: CircuitInput,
+  request: import("./request").PreparedProofRequest,
+  manifest: import("./request").RequestBoundManifest,
+): Promise<SolanaProof> {
+  const { assertPreparedProofRequest, assertBoundPublicInputs } =
+    await import("./request");
+  assertPreparedProofRequest(request);
+  if (manifest.deploymentDomain !== request.deploymentDomain)
+    throw new Error("Proof deployment does not match manifest");
+  const { PublicKey } = await import("@solana/web3.js");
+  const { bytesHex } = await import("./request");
+  if (
+    bytesHex(new PublicKey(manifest.verifierProgram).toBytes()) !==
+      request.verifier ||
+    bytesHex(new PublicKey(manifest.consumerProgram).toBytes()) !==
+      request.consumer
+  )
+    throw new Error("Proof programs do not match manifest");
+  const { toBigEndian32 } = await import("./serializer");
+  const boundInput = {
+    ...input,
+    request_digest_hi: request.digestHi,
+    request_digest_lo: request.digestLo,
+  };
+  const expectedSignals = [
+    input.commitment_new,
+    input.commitment_prev,
+    input.threshold,
+    input.min_distance,
+    request.digestHi,
+    request.digestLo,
+  ];
+  assertBoundPublicInputs(request, expectedSignals.map(toBigEndian32));
+  const artifacts = await loadRequestBoundArtifacts(manifest);
+  const result = await generateProof(
+    boundInput,
+    artifacts.wasm,
+    artifacts.zkey,
+  );
+  const proof = serializeProof(
+    result.proof,
+    result.publicSignals,
+    "request-bound-v1",
+  );
+  assertBoundPublicInputs(request, proof.publicInputs);
+  return proof;
 }

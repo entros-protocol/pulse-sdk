@@ -194,3 +194,13 @@ export type {
   IntegratorAttestationEvidence,
   ReadIntegratorEvidenceInput,
 } from "./identity/integrator-types";
+
+export { prepareProofRequest, encodeProofRequest, encodeAnchorUpdateAction } from "./proof/request";
+export type { RequestBoundManifest, PreparedProofRequest, ProofRequestContext, AnchorUpdateAction } from "./proof/request";
+export { generateRequestBoundProof, loadRequestBoundArtifacts } from "./proof/prover";
+
+export { prepareWalletProofRequest } from "./submit/request";
+export type { PrepareWalletProofOptions } from "./submit/request";
+
+export { IdentityLayoutUpgradeRequiredError } from "./submit/request";
+export { upgradeIdentityLayoutViaWallet } from "./submit/wallet";

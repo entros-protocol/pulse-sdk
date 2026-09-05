@@ -7,12 +7,16 @@ import {
   NUM_PUBLIC_INPUTS,
 } from "../config";
 import type { RawProof, SolanaProof } from "./types";
+import { SCALAR_MODULUS } from "./request";
 
 /**
  * Convert a decimal string to a 32-byte big-endian Uint8Array.
  */
 export function toBigEndian32(decStr: string): Uint8Array {
+  if (typeof decStr !== "string" || !/^(0|[1-9][0-9]*)$/.test(decStr))
+    throw new Error("Expected a canonical unsigned decimal integer");
   let n = BigInt(decStr);
+  if (n >= 1n << 256n) throw new Error("Integer exceeds 32 bytes");
   const bytes = new Uint8Array(32);
   for (let i = 31; i >= 0; i--) {
     bytes[i] = Number(n & BigInt(0xff));
@@ -39,12 +43,39 @@ function negateG1Y(yDecStr: string): Uint8Array {
  */
 export function serializeProof(
   proof: RawProof,
-  publicSignals: string[]
+  publicSignals: string[],
+  generation: "legacy" | "request-bound-v1" = "legacy",
 ): SolanaProof {
-  if (publicSignals.length !== NUM_PUBLIC_INPUTS) {
+  const count =
+    generation === "request-bound-v1"
+      ? 6
+      : generation === "legacy"
+        ? NUM_PUBLIC_INPUTS
+        : 0;
+  if (!count || publicSignals.length !== count) {
     throw new Error(
-      `Expected ${NUM_PUBLIC_INPUTS} public signals, got ${publicSignals.length}`
+      `Expected ${count} public signals, got ${publicSignals.length}`,
     );
+  }
+
+  for (const coordinate of [
+    proof.pi_a[0],
+    proof.pi_a[1],
+    ...proof.pi_b.slice(0, 2).flat().slice(0, 4),
+    proof.pi_c[0],
+    proof.pi_c[1],
+  ]) {
+    toBigEndian32(coordinate!);
+    if (BigInt(coordinate!) >= BN254_BASE_FIELD)
+      throw new Error("Noncanonical proof coordinate");
+  }
+  for (const [index, signal] of publicSignals.entries()) {
+    toBigEndian32(signal);
+    if (
+      BigInt(signal) >= SCALAR_MODULUS ||
+      (index >= 4 && BigInt(signal) >= 1n << 128n)
+    )
+      throw new Error("Noncanonical public input");
   }
 
   // proof_a: x (32 bytes) + negated y (32 bytes)

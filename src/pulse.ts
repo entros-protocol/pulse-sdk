@@ -23,6 +23,10 @@ import type {
 } from "./sensor/types";
 import type { TBH } from "./hashing/types";
 import type { SolanaProof } from "./proof/types";
+import type { PreparedProofRequest } from "./proof/request";
+import { validateRequestBoundManifest } from "./proof/request";
+import { prepareWalletProofRequest, IdentityLayoutUpgradeRequiredError } from "./submit/request";
+import { generateRequestBoundProof } from "./proof/prover";
 import type { SignedReceiptDto, VerificationResult, ProgressCallback } from "./submit/types";
 import type { PostJsonResponse } from "./transport/post-json";
 import { postJson, TransportError } from "./transport/post-json";
@@ -74,6 +78,7 @@ import {
   submitRebaselineViaWallet,
   submitResetViaWallet,
   submitViaWallet,
+  upgradeIdentityLayoutViaWallet,
 } from "./submit/wallet";
 import { submitViaRelayer } from "./submit/relayer";
 import { bytesToHex } from "./submit/receipt";
@@ -1263,6 +1268,7 @@ async function processSensorData(
   }
 
   let solanaProof: SolanaProof | null = null;
+  let preparedRequest: PreparedProofRequest | undefined;
 
   if (!isFirstVerification && !needsProjectionMigration && previousData) {
     onProgress?.("Computing proof...");
@@ -1324,7 +1330,7 @@ async function processSensorData(
     const wasmPath = config.wasmUrl;
     const zkeyPath = config.zkeyUrl;
 
-    if (!wasmPath || !zkeyPath) {
+    if ((!wasmPath || !zkeyPath) && !config.requestBoundManifest) {
       return {
         success: false,
         commitment: tbh.commitmentBytes,
@@ -1338,13 +1344,62 @@ async function processSensorData(
       // Collected from the prefetch started at capture start. Null when it was
       // never started, was aborted, or failed, in which case snarkjs fetches
       // the URLs itself exactly as it always has.
-      const artifacts = await takeCircuitArtifacts(wasmPath, zkeyPath);
-      const { proof, publicSignals } = await generateProof(
-        circuitInput,
-        artifacts ? artifacts.wasm : wasmPath,
-        artifacts ? artifacts.zkey : zkeyPath
-      );
-      solanaProof = serializeProof(proof, publicSignals);
+      if (config.requestBoundManifest) {
+        if (!wallet?.publicKey || !connection)
+          throw new Error("Request-bound proofs require a connected wallet");
+        const requestOptions = {
+          commitmentNew: tbh.commitmentBytes,
+          commitmentPrevious: previousTBH.commitmentBytes,
+          threshold,
+          minDistance,
+          relayerUrl: config.relayerUrl,
+          relayerApiKey: config.relayerApiKey,
+        };
+        try {
+          preparedRequest = await prepareWalletProofRequest(
+            connection,
+            wallet.publicKey,
+            config.requestBoundManifest,
+            requestOptions,
+          );
+        } catch (error) {
+          if (!(error instanceof IdentityLayoutUpgradeRequiredError)) throw error;
+          onProgress?.("Updating identity account...");
+          const upgrade = await upgradeIdentityLayoutViaWallet({
+            wallet,
+            connection,
+            requestBoundManifest: config.requestBoundManifest,
+          });
+          if (!upgrade.success)
+            return {
+              success: false,
+              commitment: tbh.commitmentBytes,
+              isFirstVerification: false,
+              error: upgrade.error,
+              failedAt: upgrade.failedAt ?? "submission",
+            };
+          preparedRequest = await prepareWalletProofRequest(
+            connection,
+            wallet.publicKey,
+            config.requestBoundManifest,
+            requestOptions,
+          );
+          onProgress?.("Computing proof...");
+        }
+        solanaProof = await generateRequestBoundProof(
+          circuitInput,
+          preparedRequest,
+          config.requestBoundManifest,
+        );
+      } else {
+        const artifacts = await takeCircuitArtifacts(wasmPath!, zkeyPath!);
+        const { proof, publicSignals } = await generateProof(
+          circuitInput,
+          artifacts ? artifacts.wasm : wasmPath!,
+          artifacts ? artifacts.zkey : zkeyPath!,
+        );
+        solanaProof = serializeProof(proof, publicSignals);
+      }
     } catch (proofErr: any) {
       // Bounds violations (drift / replay floor) are handled by the pre-check
       // above, so reaching here means a genuine proving failure (artifact
@@ -1426,6 +1481,7 @@ async function processSensorData(
         {
           wallet,
           connection,
+          requestBoundManifest: config.requestBoundManifest,
           signedReceipt,
           encryptedBaselineBlob,
         },
@@ -1443,6 +1499,7 @@ async function processSensorData(
           wallet,
           connection,
           isFirstVerification: true,
+          requestBoundManifest: config.requestBoundManifest,
           relayerUrl: config.relayerUrl,
           relayerApiKey: config.relayerApiKey,
           signedReceipt,
@@ -1455,6 +1512,8 @@ async function processSensorData(
         wallet,
         connection,
         isFirstVerification: false,
+        preparedRequest,
+        requestBoundManifest: config.requestBoundManifest,
         relayerUrl: config.relayerUrl,
         relayerApiKey: config.relayerApiKey,
         encryptedBaselineBlob,
@@ -1462,6 +1521,7 @@ async function processSensorData(
       });
     }
   } else if (config.relayerUrl) {
+    if (config.requestBoundManifest) return { success: false, commitment: tbh.commitmentBytes, isFirstVerification, error: "Request-bound proofs require a connected wallet.", failedAt: "submission" };
     submission = await submitViaRelayer(
       solanaProof ?? { proofBytes: new Uint8Array(0), publicInputs: [] },
       tbh.commitmentBytes,
@@ -1650,6 +1710,7 @@ async function processResetSensorData(
     relayerUrl: config.relayerUrl,
     relayerApiKey: config.relayerApiKey,
     projectionVersion: projectionPolicy.current,
+    requestBoundManifest: config.requestBoundManifest,
     signedReceipt,
     encryptedBaselineBlob,
     onProgress: (stage) => onProgress?.(stage),
@@ -2369,12 +2430,15 @@ export class PulseSession {
  *      when each sensor stage starts and stops.
  */
 export class PulseSDK {
+  static readonly supportsRequestBoundProofs = true;
   private config: ResolvedConfig;
 
   constructor(config: PulseConfig) {
+    if (config.requestBoundManifest) validateRequestBoundManifest(config.requestBoundManifest);
     this.config = {
       threshold: DEFAULT_THRESHOLD,
       ...config,
+      ...(config.requestBoundManifest ? { requestBoundManifest: Object.freeze({ ...config.requestBoundManifest, wasm: Object.freeze({ ...config.requestBoundManifest.wasm }), zkey: Object.freeze({ ...config.requestBoundManifest.zkey }) }) } : {}),
     };
     setDebug(config.debug ?? false);
     setPrivacyFallback(config.onPrivacyFallback);

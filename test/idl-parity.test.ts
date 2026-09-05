@@ -16,14 +16,15 @@ import {
  */
 
 const SDK_IDL = resolve(__dirname, "../src/protocol/idl/entros_anchor.json");
-const CORE_IDL = resolve(__dirname, "../../protocol-core/target/idl/entros_anchor.json");
+const CORE_DIRECTORY = process.env.ENTROS_PROTOCOL_IDL_DIR ?? resolve(__dirname, "../../protocol-core/target/idl");
+const CORE_IDL = resolve(CORE_DIRECTORY, "entros_anchor.json");
 const SDK_VERIFIER_IDL = resolve(
   __dirname,
   "../src/protocol/idl/entros_verifier.json",
 );
 const CORE_VERIFIER_IDL = resolve(
-  __dirname,
-  "../../protocol-core/target/idl/entros_verifier.json",
+  CORE_DIRECTORY,
+  "entros_verifier.json",
 );
 
 interface IdlArg {
@@ -68,7 +69,7 @@ function signatures(idl: Idl): Map<string, string[]> {
 }
 
 // Release validation builds protocol-core before relying on this comparison.
-const coreAvailable = existsSync(CORE_IDL);
+const coreAvailable = existsSync(CORE_IDL) || Boolean(process.env.ENTROS_PROTOCOL_IDL_DIR);
 
 describe.skipIf(!coreAvailable)("bundled IDL matches the built program", () => {
   it("declares the same program address", () => {
@@ -148,7 +149,7 @@ describe.skipIf(!coreAvailable)("bundled IDL matches the built program", () => {
   });
 });
 
-describe.skipIf(!existsSync(CORE_VERIFIER_IDL))(
+describe.skipIf(!existsSync(CORE_VERIFIER_IDL) && !process.env.ENTROS_PROTOCOL_IDL_DIR)(
   "bundled verifier IDL matches the built program",
   () => {
     it("matches every generated field", () => {

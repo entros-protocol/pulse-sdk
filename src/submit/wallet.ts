@@ -12,6 +12,8 @@ import type {
   TransactionSignature,
 } from "@solana/web3.js";
 import type { SolanaProof } from "../proof/types";
+import type { PreparedProofRequest, RequestBoundManifest } from "../proof/request";
+import { assertBoundPublicInputs, bytesHex, hexBytes, validateRequestBoundManifest } from "../proof/request";
 import type { SignedReceiptDto, SubmissionResult } from "./types";
 import type { VerificationPhase } from "../phases";
 import {
@@ -25,6 +27,7 @@ import {
   TOTAL_PROOF_SIZE,
 } from "../config";
 import { sdkLog, sdkWarn } from "../log";
+import { fetchSubmissionNonce } from "./nonce";
 import { entrosAnchorIdl, entrosVerifierIdl } from "../protocol/idl";
 import { buildEd25519ReceiptIx, receiptMatchesBinding } from "./receipt";
 import { ENCRYPTED_BASELINE_BLOB_BYTES } from "../identity/baseline";
@@ -43,6 +46,7 @@ import {
 } from "./associated-token";
 
 interface SubmissionConnection {
+  getGenesisHash?(): Promise<string>;
   getLatestBlockhash(commitment: Commitment): Promise<{
     blockhash: string;
     lastValidBlockHeight: number;
@@ -51,6 +55,16 @@ interface SubmissionConnection {
     signature: TransactionSignature,
     commitment: Commitment,
   ): Promise<{ value: { err: unknown | null } }>;
+}
+
+async function checkBoundDeployment(
+  manifest: RequestBoundManifest | undefined,
+  connection: { getGenesisHash?(): Promise<string> },
+): Promise<void> {
+  if (!manifest) return;
+  validateRequestBoundManifest(manifest);
+  if (manifest.verifierProgram !== PROGRAM_IDS.entrosVerifier || manifest.consumerProgram !== PROGRAM_IDS.entrosAnchor) throw new Error("Unsupported request-bound deployment programs");
+  if (!connection.getGenesisHash || await connection.getGenesisHash() !== manifest.genesisHash) throw new Error("Connected chain does not match the proof manifest");
 }
 
 interface SubmissionWallet {
@@ -126,8 +140,8 @@ function decodeU16FieldElement(value: Uint8Array, name: string): number {
   return (bytes[30]! << 8) | bytes[31]!;
 }
 
-function compactProofArguments(proof: SolanaProof): CompactProofArguments {
-  if (proof.publicInputs.length !== NUM_PUBLIC_INPUTS) {
+function compactProofArguments(proof: SolanaProof, bound = false): CompactProofArguments {
+  if (proof.publicInputs.length !== (bound ? 6 : NUM_PUBLIC_INPUTS)) {
     throw new Error(
       `proof must contain ${NUM_PUBLIC_INPUTS} public inputs, got ${proof.publicInputs.length}`,
     );
@@ -163,22 +177,6 @@ function compactProofArguments(proof: SolanaProof): CompactProofArguments {
     threshold,
     minDistance,
   };
-}
-
-function randomNonce(): number[] {
-  const nonce = crypto.getRandomValues(new Uint8Array(32));
-  if (!nonce.some((byte) => byte !== 0)) {
-    nonce[31] = 1;
-  }
-  return Array.from(nonce);
-}
-
-function validatedServerNonce(value: unknown): number[] | null {
-  try {
-    return nonZeroFixedBytes(value, 32, "server nonce");
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -442,6 +440,8 @@ export async function submitViaWallet(
     wallet: any;
     connection: any;
     isFirstVerification: boolean;
+    preparedRequest?: PreparedProofRequest;
+    requestBoundManifest?: RequestBoundManifest;
     relayerUrl?: string;
     relayerApiKey?: string;
     /**
@@ -482,6 +482,7 @@ export async function submitViaWallet(
   }
 
   try {
+    await checkBoundDeployment(options.requestBoundManifest, options.connection);
     const anchor = await import("@coral-xyz/anchor");
     const {
       PublicKey,
@@ -504,7 +505,14 @@ export async function submitViaWallet(
     let nonce: number[] = [];
 
     if (!options.isFirstVerification) {
-      const compactProof = compactProofArguments(proof);
+      const request = options.preparedRequest;
+      if (Boolean(request) !== Boolean(options.requestBoundManifest)) throw new Error("Request-bound submission requires its manifest and prepared request");
+      if (request) {
+        validateRequestBoundManifest(options.requestBoundManifest!);
+        assertBoundPublicInputs(request, proof.publicInputs);
+        if (request.wallet !== bytesHex(provider.wallet.publicKey.toBytes()) || request.consumer !== bytesHex(new PublicKey(PROGRAM_IDS.entrosAnchor).toBytes()) || request.verifier !== bytesHex(new PublicKey(PROGRAM_IDS.entrosVerifier).toBytes()) || request.deploymentDomain !== options.requestBoundManifest!.deploymentDomain) throw new Error("Submission context does not match the prepared request");
+      }
+      const compactProof = compactProofArguments(proof, Boolean(request));
       const expectedCommitment = fixedBytes(commitment, 32, "commitment");
       if (
         expectedCommitment.some(
@@ -518,43 +526,13 @@ export async function submitViaWallet(
       // identity update in one transaction.
       const verifierProgramId = new PublicKey(PROGRAM_IDS.entrosVerifier);
 
-      // Fetch server-generated nonce (prevents pre-computation attacks).
-      // Falls back to client-generated nonce if executor is unreachable.
-      if (options.relayerUrl) {
-        try {
-          const baseUrl = new URL(options.relayerUrl);
-          const challengeHeaders: Record<string, string> = {};
-          if (options.relayerApiKey) {
-            challengeHeaders["X-API-Key"] = options.relayerApiKey;
-          }
-          const challengeController = new AbortController();
-          const challengeTimer = setTimeout(() => challengeController.abort(), 5_000);
-          const challengeRes = await fetch(
-            `${baseUrl.origin}/challenge?wallet=${provider.wallet.publicKey.toBase58()}`,
-            { headers: challengeHeaders, signal: challengeController.signal }
-          );
-          clearTimeout(challengeTimer);
-          if (challengeRes.ok) {
-            const challengeData = (await challengeRes.json()) as { nonce?: unknown };
-            const validatedNonce = validatedServerNonce(challengeData.nonce);
-            if (validatedNonce) {
-              nonce = validatedNonce;
-              serverNonce = true;
-              sdkLog("Using server-generated challenge nonce");
-            } else {
-              nonce = randomNonce();
-              sdkWarn("Server returned invalid nonce, using client-generated");
-            }
-          } else {
-            nonce = randomNonce();
-            sdkWarn("Challenge endpoint returned error, using client-generated nonce");
-          }
-        } catch {
-          nonce = randomNonce();
-          sdkWarn("Challenge fetch failed, using client-generated nonce");
-        }
+      if (request) {
+        nonce = Array.from(hexBytes(request.nonce));
+        serverNonce = request.nonceSource === "executor";
       } else {
-        nonce = randomNonce();
+        const preparedNonce = await fetchSubmissionNonce(provider.wallet.publicKey.toBase58(), options.relayerUrl, options.relayerApiKey);
+        nonce = Array.from(preparedNonce.bytes);
+        serverNonce = preparedNonce.source === "executor";
       }
 
       const [challengePda] = PublicKey.findProgramAddressSync(
@@ -568,7 +546,7 @@ export async function submitViaWallet(
 
       const [verificationPda] = PublicKey.findProgramAddressSync(
         [
-          new TextEncoder().encode("verification"),
+          new TextEncoder().encode(request ? "verification_bound" : "verification"),
           provider.wallet.publicKey.toBuffer(),
           new Uint8Array(nonce),
         ],
@@ -609,7 +587,14 @@ export async function submitViaWallet(
         })
         .instruction();
 
-      const verifyProofIx = await verifierProgram.methods
+      const [requestStatePda] = PublicKey.findProgramAddressSync(
+        [new TextEncoder().encode("proof_request_state"), provider.wallet.publicKey.toBytes()], anchorProgramId,
+      );
+      if (request && request.action.identity !== bytesHex(identityPda.toBytes())) throw new Error("Prepared identity does not match the wallet");
+      const prepareIx = request ? await anchorProgram.methods.prepareProofRequest().accounts({ authority: provider.wallet.publicKey, proofRequestState: requestStatePda, systemProgram: SystemProgram.programId }).instruction() : null;
+      const verifyProofIx = request ? await verifierProgram.methods.verifyProofBound(
+        nonce, compactProof.proofBytes, compactProof.commitmentNew, compactProof.commitmentPrev, compactProof.threshold, compactProof.minDistance, new anchor.BN(request.action.validUntil.toString()),
+      ).accounts({ verifier: provider.wallet.publicKey, challenge: challengePda, verificationResult: verificationPda, identityState: identityPda, proofRequestState: requestStatePda, systemProgram: SystemProgram.programId }).instruction() : await verifierProgram.methods
         .verifyProofCompact(
           nonce,
           compactProof.proofBytes,
@@ -626,7 +611,9 @@ export async function submitViaWallet(
         })
         .instruction();
 
-      const updateAnchorIx = await anchorProgram.methods
+      const updateAnchorIx = request ? await anchorProgram.methods.updateAnchorBound(nonce).accounts({
+        authority: provider.wallet.publicKey, identityState: identityPda, proofRequestState: requestStatePda, verificationResult: verificationPda, protocolConfig: protocolConfigPda, treasury: treasuryPda, systemProgram: SystemProgram.programId,
+      }).instruction() : await anchorProgram.methods
         .updateAnchorCompact(nonce)
         .accounts({
           authority: provider.wallet.publicKey,
@@ -643,6 +630,7 @@ export async function submitViaWallet(
       const tx = new Transaction();
       const computeUnitLimit = options.encryptedBaselineBlob ? 300_000 : 250_000;
       tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnitLimit }));
+      if (prepareIx) tx.add(prepareIx);
       tx.add(createChallengeIx);
       tx.add(verifyProofIx);
       tx.add(updateAnchorIx);
@@ -734,6 +722,12 @@ export async function submitViaWallet(
           instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
         })
         .instruction();
+
+      if (options.requestBoundManifest) {
+        validateRequestBoundManifest(options.requestBoundManifest);
+        const [state] = PublicKey.findProgramAddressSync([new TextEncoder().encode("proof_request_state"), provider.wallet.publicKey.toBytes()], anchorProgramId);
+        mintAnchorIx.keys.push({ pubkey: state, isSigner: false, isWritable: true });
+      }
 
       // Decode the receipt up front so we can hard-fail if the validator
       // returned malformed bytes. Silently falling back to a no-receipt
@@ -861,6 +855,7 @@ export async function submitResetViaWallet(
     relayerApiKey?: string;
     /** Version asserted against the active on-chain projection policy. */
     projectionVersion?: number;
+    requestBoundManifest?: RequestBoundManifest;
     /** Validator receipt required by reset transitions on projection version 1 and later. */
     signedReceipt?: SignedReceiptDto;
     /**
@@ -883,6 +878,7 @@ export async function submitResetViaWallet(
   }
 ): Promise<SubmissionResult> {
   try {
+    await checkBoundDeployment(options.requestBoundManifest, options.connection);
     const anchor = await import("@coral-xyz/anchor");
     const {
       PublicKey,
@@ -967,6 +963,11 @@ export async function submitResetViaWallet(
       ]);
     }
     const resetIx = await resetBuilder.instruction();
+    if (options.requestBoundManifest) {
+      validateRequestBoundManifest(options.requestBoundManifest);
+      const [state] = PublicKey.findProgramAddressSync([new TextEncoder().encode("proof_request_state"), provider.wallet.publicKey.toBytes()], anchorProgramId);
+      resetIx.keys.push({ pubkey: state, isSigner: false, isWritable: true });
+    }
 
     // Reset does no ZK verification; budget is well under the 200K default
     // even with the encrypted-baseline ix bundled (~30K reset + ~17K init).
@@ -1044,11 +1045,13 @@ export async function submitRebaselineViaWallet(
   options: {
     wallet: SubmissionWallet;
     connection: SubmissionConnection;
+    requestBoundManifest?: RequestBoundManifest;
     signedReceipt: SignedReceiptDto;
     encryptedBaselineBlob: Uint8Array;
   },
 ): Promise<SubmissionResult> {
   try {
+    await checkBoundDeployment(options.requestBoundManifest, options.connection);
     const anchor = await import("@coral-xyz/anchor");
     const {
       ComputeBudgetProgram,
@@ -1114,6 +1117,11 @@ export async function submitRebaselineViaWallet(
         systemProgram: SystemProgram.programId,
       })
       .instruction();
+    if (options.requestBoundManifest) {
+      validateRequestBoundManifest(options.requestBoundManifest);
+      const [state] = PublicKey.findProgramAddressSync([new TextEncoder().encode("proof_request_state"), provider.wallet.publicKey.toBytes()], anchorProgramId);
+      rebaselineIx.keys.push({ pubkey: state, isSigner: false, isWritable: true });
+    }
     const setBaselineIx = await buildSetEncryptedBaselineIx(
       anchorProgram,
       provider.wallet.publicKey,
@@ -1136,5 +1144,68 @@ export async function submitRebaselineViaWallet(
       : { success: false, error: sent.error, failedAt: sent.failedAt };
   } catch (err) {
     return { success: false, error: errToString(err), failedAt: "submission" };
+  }
+}
+
+
+export async function upgradeIdentityLayoutViaWallet(options: {
+  wallet: SubmissionWallet;
+  connection: SubmissionConnection;
+  requestBoundManifest: RequestBoundManifest;
+}): Promise<SubmissionResult> {
+  try {
+    await checkBoundDeployment(
+      options.requestBoundManifest,
+      options.connection,
+    );
+    const anchor = await import("@coral-xyz/anchor");
+    const { PublicKey, SystemProgram, Transaction } =
+      await import("@solana/web3.js");
+    const provider = new anchor.AnchorProvider(
+      options.connection as ConstructorParameters<
+        typeof anchor.AnchorProvider
+      >[0],
+      options.wallet as unknown as Wallet,
+      { commitment: "confirmed" },
+    );
+    const program = new anchor.Program(entrosAnchorIdl as Idl, provider);
+    const [identity] = PublicKey.findProgramAddressSync(
+      [
+        new TextEncoder().encode("identity"),
+        options.wallet.publicKey.toBytes(),
+      ],
+      new PublicKey(PROGRAM_IDS.entrosAnchor),
+    );
+    const method = program.methods.upgradeIdentityLayout;
+    if (!method)
+      throw new Error(
+        "The bundled program interface does not support identity layout upgrades",
+      );
+    const instruction = await method()
+      .accounts({
+        authority: options.wallet.publicKey,
+        identityState: identity,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+    const transaction = new Transaction().add(instruction);
+    transaction.feePayer = options.wallet.publicKey;
+    transaction.recentBlockhash = (
+      await options.connection.getLatestBlockhash("confirmed")
+    ).blockhash;
+    const sent = await sendAndConfirm(
+      options.wallet,
+      options.connection,
+      transaction,
+    );
+    return sent.ok
+      ? { success: true, txSignature: sent.txSig }
+      : { success: false, error: sent.error, failedAt: sent.failedAt };
+  } catch (error) {
+    return {
+      success: false,
+      error: errToString(error),
+      failedAt: "submission",
+    };
   }
 }

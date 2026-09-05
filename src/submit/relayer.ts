@@ -19,6 +19,8 @@ export async function submitViaRelayer(
   }
 ): Promise<SubmissionResult> {
   try {
+    if (proof.publicInputs.length === 6) throw new Error("Request-bound proofs require a connected wallet and cannot use the legacy relayer");
+    if (!options.isFirstVerification && proof.publicInputs.length !== 4) throw new Error("Unsupported proof generation for the relayer");
     const body = {
       proof_bytes: Array.from(proof.proofBytes),
       public_inputs: proof.publicInputs.map((pi) => Array.from(pi)),
