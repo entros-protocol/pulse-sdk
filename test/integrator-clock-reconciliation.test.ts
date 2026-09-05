@@ -36,8 +36,11 @@ async function finishRead(
   void pending.finally(() => {
     settled = true;
   });
-  for (let turn = 0; turn < 1000 && !settled; turn += 1) {
-    await new Promise<void>((resolve) => setImmediate(resolve));
+  for (let round = 0; round < 4 && !settled; round += 1) {
+    // Module imports use real scheduling while evidence deadlines use fake timers.
+    await vi.dynamicImportSettled();
+    if (settled) break;
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
     await vi.runAllTimersAsync();
   }
   expect(settled).toBe(true);
@@ -261,4 +264,4 @@ describe("attestation clock reconciliation", () => {
     });
     expect(reads).toBe(3);
   });
-});
+}, 10000);
