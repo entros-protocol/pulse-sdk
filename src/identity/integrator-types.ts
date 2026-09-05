@@ -79,5 +79,6 @@ export interface ReadIntegratorEvidenceInput {
   walletPubkey: string;
   transactionSignature: string;
   connection: IntegratorEvidenceConnection;
-  nowSeconds: number;
+  /** Supply a clock for live reads, or a fixed timestamp for deterministic snapshots. */
+  nowSeconds: number | (() => number);
 }
