@@ -122,6 +122,7 @@ async function strictAttestation(
   address: PublicKey,
   slot: number,
   now: number,
+  onFutureAttestation: (verifiedAt: number) => void,
 ): Promise<IntegratorAttestationEvidence> {
   if (!account) return { status: "missing" };
   const invalid = { status: "invalid" } as const;
@@ -161,11 +162,15 @@ async function strictAttestation(
   if (!mode.every((byte, index) => raw[116 + index] === byte)) return invalid;
   const verifiedAt = Number(view.getBigInt64(104, true));
   const expiry = Number(view.getBigInt64(133 + length, true));
-  if (!integer(verifiedAt, 1, now) || !integer(expiry)) return invalid;
+  if (!integer(verifiedAt, 1) || !integer(expiry)) return invalid;
   if (expiry !== 0 && (expiry <= now || expiry <= verifiedAt)) return invalid;
   if (raw.subarray(101 + length, 133 + length).every((byte) => byte === 0))
     return invalid;
   if (!raw.subarray(141 + length).every((byte) => byte === 0)) return invalid;
+  if (verifiedAt > now) {
+    onFutureAttestation(verifiedAt);
+    return invalid;
+  }
   return {
     status: "present",
     address: address.toBase58(),
@@ -177,6 +182,7 @@ async function strictAttestation(
 async function readOnce(
   input: ReadIntegratorEvidenceInput,
   readNow: () => number | null,
+  onFutureAttestation: (verifiedAt: number) => void,
 ): Promise<IntegratorEvidenceReadResult> {
   const { PublicKey } = await import("@solana/web3.js");
   const { connection, transactionSignature: signature } = input;
@@ -308,6 +314,7 @@ async function readOnce(
           attestationPda,
           account.context.slot,
           now,
+          onFutureAttestation,
         )
       : { status: "unavailable" };
   } catch {
@@ -331,6 +338,27 @@ async function readOnce(
   };
 }
 
+async function waitForAttestationClock(
+  verifiedAt: number,
+  readNow: () => number | null,
+): Promise<"ready" | "timeout" | "invalid"> {
+  const budgetMs = 3000;
+  const startedAt = performance.now();
+  while (true) {
+    const now = readNow();
+    if (now === null) return "invalid";
+    const elapsedMs = performance.now() - startedAt;
+    if (elapsedMs > budgetMs || verifiedAt - now > budgetMs / 1000)
+      return "timeout";
+    if (now >= verifiedAt) return "ready";
+    const remainingMs = budgetMs - elapsedMs;
+    if (remainingMs <= 0) return "timeout";
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, Math.min(remainingMs, (verifiedAt - now) * 1000));
+    });
+  }
+}
+
 /** Read confirmed application evidence without submitting a transaction or changing protocol policy. */
 export async function readIntegratorEvidence(
   input: ReadIntegratorEvidenceInput,
@@ -349,10 +377,32 @@ export async function readIntegratorEvidence(
       return null;
     }
   };
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  let propagationRetried = false;
+  let clockReconciled = false;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const result = await readOnce(input, readNow);
-      if (result.status !== "unavailable" || attempt === 1) return result;
+      const pending: { verifiedAt: number | null } = { verifiedAt: null };
+      const result = await readOnce(input, readNow, (verifiedAt) => {
+        pending.verifiedAt = verifiedAt;
+      });
+      if (result.status === "invalid") return result;
+      if (
+        pending.verifiedAt !== null &&
+        typeof input.nowSeconds === "function" &&
+        !clockReconciled
+      ) {
+        clockReconciled = true;
+        const clock = await waitForAttestationClock(
+          pending.verifiedAt,
+          readNow,
+        );
+        if (clock === "invalid")
+          return { status: "invalid", reason: "invalid_request" };
+        if (clock === "ready") continue;
+        return result;
+      }
+      if (result.status !== "unavailable" || propagationRetried) return result;
+      propagationRetried = true;
     } catch {
       return { status: "unavailable", reason: "rpc_unavailable" };
     }
