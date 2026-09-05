@@ -176,14 +176,12 @@ async function strictAttestation(
 
 async function readOnce(
   input: ReadIntegratorEvidenceInput,
+  readNow: () => number | null,
 ): Promise<IntegratorEvidenceReadResult> {
   const { PublicKey } = await import("@solana/web3.js");
-  const {
-    connection,
-    nowSeconds: now,
-    transactionSignature: signature,
-  } = input;
-  if (!integer(now, 1) || !/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(signature))
+  const { connection, transactionSignature: signature } = input;
+  let now = readNow();
+  if (now === null || !/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(signature))
     return { status: "invalid", reason: "invalid_request" };
   let wallet: PublicKey;
   try {
@@ -214,6 +212,8 @@ async function readOnce(
       }),
     ),
   ]);
+  now = readNow();
+  if (now === null) return { status: "invalid", reason: "invalid_request" };
   if (genesisHash !== INTEGRATOR_DEVNET_GENESIS_HASH)
     return { status: "invalid", reason: "wrong_cluster" };
   const status = statuses.value[0];
@@ -248,6 +248,8 @@ async function readOnce(
       minContextSlot: transaction.slot,
     }),
   );
+  now = readNow();
+  if (now === null) return { status: "invalid", reason: "invalid_request" };
   if (!integer(snapshot.context.slot, transaction.slot))
     return { status: "unavailable", reason: "snapshot_unavailable" };
   if (!snapshot.value) return { status: "invalid", reason: "identity_missing" };
@@ -297,6 +299,8 @@ async function readOnce(
         minContextSlot: snapshot.context.slot,
       }),
     );
+    now = readNow();
+    if (now === null) return { status: "invalid", reason: "invalid_request" };
     attestation = integer(account.context.slot, snapshot.context.slot)
       ? await strictAttestation(
           account.value,
@@ -309,6 +313,8 @@ async function readOnce(
   } catch {
     attestation = { status: "unavailable" };
   }
+  if (readNow() === null)
+    return { status: "invalid", reason: "invalid_request" };
   return {
     status: "available",
     evidence: {
@@ -329,9 +335,23 @@ async function readOnce(
 export async function readIntegratorEvidence(
   input: ReadIntegratorEvidenceInput,
 ): Promise<IntegratorEvidenceReadResult> {
+  let previousNow = 0;
+  const readNow = (): number | null => {
+    try {
+      const now =
+        typeof input.nowSeconds === "function"
+          ? input.nowSeconds()
+          : input.nowSeconds;
+      if (!integer(now, 1) || now < previousNow) return null;
+      previousNow = now;
+      return now;
+    } catch {
+      return null;
+    }
+  };
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const result = await readOnce(input);
+      const result = await readOnce(input, readNow);
       if (result.status !== "unavailable" || attempt === 1) return result;
     } catch {
       return { status: "unavailable", reason: "rpc_unavailable" };

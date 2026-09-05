@@ -558,4 +558,202 @@ describe("strict integrator evidence", () => {
     );
     expect(results.every((result) => result.status === "available")).toBe(true);
   });
+
+  it("checks an attestation against its response time without additional RPC reads", async () => {
+    const fixture = await createEvidenceFixture();
+    const startedAt = fixture.input.nowSeconds;
+    let now = startedAt;
+    fixture.sasAccount.data.writeBigInt64LE(BigInt(startedAt + 2), 104);
+    const getAccount = fixture.connection.getAccountInfoAndContext;
+    fixture.connection.getAccountInfoAndContext = async (...args) => {
+      const account = await getAccount(...args);
+      if (args[0].equals(fixture.attestationPda)) now = startedAt + 3;
+      return account;
+    };
+    const result = await readIntegratorEvidence({
+      ...fixture.input,
+      nowSeconds: () => now,
+    });
+    expect(result.status).toBe("available");
+    if (result.status === "available")
+      expect(result.evidence.attestation.status).toBe("present");
+    expect(fixture.calls).toEqual([
+      "genesis",
+      "status",
+      "transaction",
+      "identity",
+      "attestation",
+    ]);
+    const fixed = await readIntegratorEvidence(fixture.input);
+    expect(fixed.status).toBe("available");
+    if (fixed.status === "available")
+      expect(fixed.evidence.attestation.status).toBe("invalid");
+  });
+
+  it.each(["future", "expired"] as const)(
+    "rejects an attestation that is %s at response time",
+    async (condition) => {
+      const fixture = await createEvidenceFixture();
+      const startedAt = fixture.input.nowSeconds;
+      let now = startedAt;
+      if (condition === "future")
+        fixture.sasAccount.data.writeBigInt64LE(BigInt(startedAt + 4), 104);
+      else fixture.sasAccount.data.writeBigInt64LE(BigInt(startedAt + 3), 164);
+      const getAccount = fixture.connection.getAccountInfoAndContext;
+      fixture.connection.getAccountInfoAndContext = async (...args) => {
+        const account = await getAccount(...args);
+        if (args[0].equals(fixture.attestationPda)) now = startedAt + 3;
+        return account;
+      };
+      const result = await readIntegratorEvidence({
+        ...fixture.input,
+        nowSeconds: () => now,
+      });
+      expect(result.status).toBe("available");
+      if (result.status === "available")
+        expect(result.evidence.attestation.status).toBe("invalid");
+      expect(fixture.calls).toHaveLength(5);
+    },
+  );
+
+  it("refreshes the clock after transaction and identity responses", async () => {
+    const startedAt = 1_800_000_000;
+    const fixture = await createEvidenceFixture({
+      nowSeconds: startedAt,
+      blockTime: startedAt + 1,
+      lastVerificationTimestamp: startedAt + 2,
+    });
+    let now = startedAt;
+    const getTransaction = fixture.connection.getParsedTransaction;
+    fixture.connection.getParsedTransaction = async (...args) => {
+      const transaction = await getTransaction(...args);
+      now = startedAt + 1;
+      return transaction;
+    };
+    const getAccount = fixture.connection.getAccountInfoAndContext;
+    fixture.connection.getAccountInfoAndContext = async (...args) => {
+      const account = await getAccount(...args);
+      now = startedAt + 2;
+      return account;
+    };
+    const result = await readIntegratorEvidence({
+      ...fixture.input,
+      nowSeconds: () => now,
+    });
+    expect(result.status).toBe("available");
+    expect(fixture.calls).toHaveLength(5);
+  });
+
+  it("refreshes the clock on the existing propagation retry", async () => {
+    const startedAt = 1_800_000_000;
+    const fixture = await createEvidenceFixture({
+      nowSeconds: startedAt,
+      blockTime: startedAt + 2,
+    });
+    let now = startedAt;
+    let attempts = 0;
+    const getTransaction = fixture.connection.getParsedTransaction;
+    fixture.connection.getParsedTransaction = async (...args) => {
+      const transaction = await getTransaction(...args);
+      attempts += 1;
+      if (attempts === 1) return null;
+      now = startedAt + 2;
+      return transaction;
+    };
+    const result = await readIntegratorEvidence({
+      ...fixture.input,
+      nowSeconds: () => now,
+    });
+    expect(result.status).toBe("available");
+    expect(fixture.calls).toEqual([
+      "genesis",
+      "status",
+      "transaction",
+      "genesis",
+      "status",
+      "transaction",
+      "identity",
+      "attestation",
+    ]);
+  });
+
+  it.each([NaN, Infinity, -1, 0, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects invalid initial clock value %s without RPC reads",
+    async (now) => {
+      const fixture = await createEvidenceFixture();
+      expect(
+        await readIntegratorEvidence({
+          ...fixture.input,
+          nowSeconds: () => now,
+        }),
+      ).toEqual({ status: "invalid", reason: "invalid_request" });
+      expect(fixture.calls).toHaveLength(0);
+    },
+  );
+
+  it.each([
+    "transaction",
+    "identity",
+    "attestation",
+    "attestation_error",
+  ] as const)(
+    "fails closed when the clock throws after the %s response",
+    async (stage) => {
+      const fixture = await createEvidenceFixture();
+      let clockFailed = false;
+      const getTransaction = fixture.connection.getParsedTransaction;
+      fixture.connection.getParsedTransaction = async (...args) => {
+        const transaction = await getTransaction(...args);
+        if (stage === "transaction") clockFailed = true;
+        return transaction;
+      };
+      const getAccount = fixture.connection.getAccountInfoAndContext;
+      fixture.connection.getAccountInfoAndContext = async (...args) => {
+        const account = await getAccount(...args);
+        const identity = args[0].equals(fixture.identityPda);
+        if (
+          (identity && stage === "identity") ||
+          (!identity &&
+            (stage === "attestation" || stage === "attestation_error"))
+        )
+          clockFailed = true;
+        if (!identity && stage === "attestation_error")
+          throw new Error("Synthetic account failure");
+        return account;
+      };
+      expect(
+        await readIntegratorEvidence({
+          ...fixture.input,
+          nowSeconds: () => {
+            if (clockFailed) throw new Error("Synthetic clock failure");
+            return fixture.input.nowSeconds;
+          },
+        }),
+      ).toEqual({ status: "invalid", reason: "invalid_request" });
+      expect(
+        fixture.calls.filter((call) => call === "transaction"),
+      ).toHaveLength(1);
+      expect(fixture.calls).toHaveLength(
+        stage === "transaction" ? 3 : stage === "identity" ? 4 : 5,
+      );
+    },
+  );
+
+  it("rejects a clock that moves backwards across RPC responses", async () => {
+    const fixture = await createEvidenceFixture();
+    let now = fixture.input.nowSeconds;
+    const getTransaction = fixture.connection.getParsedTransaction;
+    fixture.connection.getParsedTransaction = async (...args) => {
+      const transaction = await getTransaction(...args);
+      now -= 1;
+      return transaction;
+    };
+    expect(
+      await readIntegratorEvidence({
+        ...fixture.input,
+        nowSeconds: () => now,
+      }),
+    ).toEqual({ status: "invalid", reason: "invalid_request" });
+    expect(fixture.calls).toHaveLength(3);
+  });
 });

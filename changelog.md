@@ -9,6 +9,11 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+## [4.10.1] - 2026-09-05
+
+- Support a live clock when reading verification evidence after network responses.
+- Preserve fixed timestamps for deterministic evidence snapshots.
+
 ## [4.10.0] - 2026-09-05
 
 ### Added
