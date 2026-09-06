@@ -46,6 +46,29 @@ export function serializeProof(
   publicSignals: string[],
   generation: "legacy" | "request-bound-v1" = "legacy",
 ): SolanaProof {
+  if (proof.protocol !== "groth16" || proof.curve !== "bn128") {
+    throw new Error("Unsupported proof protocol or curve");
+  }
+  for (const point of [proof.pi_a, proof.pi_c]) {
+    if (
+      !Array.isArray(point) ||
+      (point.length !== 2 && point.length !== 3) ||
+      (point.length === 3 && point[2] !== "1")
+    ) {
+      throw new Error("Expected an affine G1 proof point");
+    }
+  }
+  if (
+    !Array.isArray(proof.pi_b) ||
+    (proof.pi_b.length !== 2 && proof.pi_b.length !== 3) ||
+    proof.pi_b.some(
+      (coordinate) => !Array.isArray(coordinate) || coordinate.length !== 2,
+    ) ||
+    (proof.pi_b.length === 3 &&
+      (proof.pi_b[2]![0] !== "1" || proof.pi_b[2]![1] !== "0"))
+  ) {
+    throw new Error("Expected an affine G2 proof point");
+  }
   const count =
     generation === "request-bound-v1"
       ? 6

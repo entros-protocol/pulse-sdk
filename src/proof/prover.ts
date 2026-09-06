@@ -2,6 +2,14 @@ import type { TBH } from "../hashing/types";
 import type { CircuitInput, ProofResult, SolanaProof } from "./types";
 import { serializeProof } from "./serializer";
 import { DEFAULT_THRESHOLD, DEFAULT_MIN_DISTANCE } from "../config";
+import {
+  bytesHex,
+  assertPreparedProofRequest,
+  assertBoundPublicInputs,
+  validateRequestBoundManifest,
+  type RequestBoundManifest,
+} from "./request";
+import { sha256 } from "@noble/hashes/sha256";
 
 // Use dynamic import for snarkjs (it's a CJS module)
 let snarkjsModule: typeof import("snarkjs") | null = null;
@@ -299,22 +307,35 @@ export async function verifyProofLocally(
 }
 
 const verifiedArtifacts = new Map<string, Promise<CircuitArtifacts>>();
+// Retain the current pair and its replacement during a deployment change.
+const VERIFIED_ARTIFACT_CACHE_LIMIT = 2;
+function snapshotManifest(manifest: RequestBoundManifest): RequestBoundManifest {
+  const snapshot = {
+    ...manifest,
+    wasm: { ...manifest.wasm },
+    zkey: { ...manifest.zkey },
+  };
+  validateRequestBoundManifest(snapshot);
+  return snapshot;
+}
+
 export async function loadRequestBoundArtifacts(
-  manifest: import("./request").RequestBoundManifest,
+  manifest: RequestBoundManifest,
 ): Promise<CircuitArtifacts> {
-  const { validateRequestBoundManifest, bytesHex } = await import("./request");
-  const { sha256 } = await import("@noble/hashes/sha256");
-  validateRequestBoundManifest(manifest);
+  const checked = snapshotManifest(manifest);
   const key = JSON.stringify([
-    manifest.generation,
-    manifest.deploymentDomain,
-    manifest.wasm,
-    manifest.zkey,
+    checked.generation,
+    checked.deploymentDomain,
+    checked.wasm,
+    checked.zkey,
   ]);
   let ready = verifiedArtifacts.get(key);
-  if (!ready) {
+  if (ready) {
+    verifiedArtifacts.delete(key);
+    verifiedArtifacts.set(key, ready);
+  } else {
     ready = Promise.all(
-      [manifest.wasm, manifest.zkey].map(async (artifact) => {
+      [checked.wasm, checked.zkey].map(async (artifact) => {
         const bytes = await fetchArtifact(
           artifact.url,
           prefetchSignal(undefined),
@@ -325,7 +346,13 @@ export async function loadRequestBoundArtifacts(
       }),
     ).then(([wasm, zkey]) => ({ wasm: wasm!, zkey: zkey! }));
     verifiedArtifacts.set(key, ready);
-    ready.catch(() => verifiedArtifacts.delete(key));
+    if (verifiedArtifacts.size > VERIFIED_ARTIFACT_CACHE_LIMIT) {
+      const oldest = verifiedArtifacts.keys().next().value;
+      if (oldest !== undefined) verifiedArtifacts.delete(oldest);
+    }
+    ready.catch(() => {
+      if (verifiedArtifacts.get(key) === ready) verifiedArtifacts.delete(key);
+    });
   }
   const artifacts = await ready;
   return { wasm: artifacts.wasm.slice(), zkey: artifacts.zkey.slice() };
@@ -334,38 +361,42 @@ export async function loadRequestBoundArtifacts(
 export async function generateRequestBoundProof(
   input: CircuitInput,
   request: import("./request").PreparedProofRequest,
-  manifest: import("./request").RequestBoundManifest,
+  manifest: RequestBoundManifest,
 ): Promise<SolanaProof> {
-  const { assertPreparedProofRequest, assertBoundPublicInputs } =
-    await import("./request");
-  assertPreparedProofRequest(request);
-  if (manifest.deploymentDomain !== request.deploymentDomain)
+  const checked = snapshotManifest(manifest);
+  const prepared = { ...request, action: { ...request.action } };
+  const circuitInput = {
+    ...input,
+    ft_new: [...input.ft_new],
+    ft_prev: [...input.ft_prev],
+  };
+  assertPreparedProofRequest(prepared);
+  if (checked.deploymentDomain !== prepared.deploymentDomain)
     throw new Error("Proof deployment does not match manifest");
   const { PublicKey } = await import("@solana/web3.js");
-  const { bytesHex } = await import("./request");
   if (
-    bytesHex(new PublicKey(manifest.verifierProgram).toBytes()) !==
-      request.verifier ||
-    bytesHex(new PublicKey(manifest.consumerProgram).toBytes()) !==
-      request.consumer
+    bytesHex(new PublicKey(checked.verifierProgram).toBytes()) !==
+      prepared.verifier ||
+    bytesHex(new PublicKey(checked.consumerProgram).toBytes()) !==
+      prepared.consumer
   )
     throw new Error("Proof programs do not match manifest");
   const { toBigEndian32 } = await import("./serializer");
   const boundInput = {
-    ...input,
-    request_digest_hi: request.digestHi,
-    request_digest_lo: request.digestLo,
+    ...circuitInput,
+    request_digest_hi: prepared.digestHi,
+    request_digest_lo: prepared.digestLo,
   };
   const expectedSignals = [
-    input.commitment_new,
-    input.commitment_prev,
-    input.threshold,
-    input.min_distance,
-    request.digestHi,
-    request.digestLo,
+    circuitInput.commitment_new,
+    circuitInput.commitment_prev,
+    circuitInput.threshold,
+    circuitInput.min_distance,
+    prepared.digestHi,
+    prepared.digestLo,
   ];
-  assertBoundPublicInputs(request, expectedSignals.map(toBigEndian32));
-  const artifacts = await loadRequestBoundArtifacts(manifest);
+  assertBoundPublicInputs(prepared, expectedSignals.map(toBigEndian32));
+  const artifacts = await loadRequestBoundArtifacts(checked);
   const result = await generateProof(
     boundInput,
     artifacts.wasm,
@@ -376,6 +407,6 @@ export async function generateRequestBoundProof(
     result.publicSignals,
     "request-bound-v1",
   );
-  assertBoundPublicInputs(request, proof.publicInputs);
+  assertBoundPublicInputs(prepared, proof.publicInputs);
   return proof;
 }

@@ -8,6 +8,7 @@ import {
   verifyProofLocally,
 } from "../src/proof/prover";
 import { bytesHex, hexBytes, prepareProofRequest } from "../src/proof/request";
+import type { RequestBoundManifest } from "../src/proof/request";
 import { BN254_BASE_FIELD } from "../src/config";
 import type { CircuitInput, RawProof } from "../src/proof/types";
 
@@ -67,7 +68,7 @@ describe.skipIf(!directory)("isolated request-bound prover integration", () => {
     });
     vi.stubGlobal("fetch", fetch);
     try {
-      const proof = await generateRequestBoundProof(artifact.input, request, {
+      const manifest: RequestBoundManifest = {
         generation: "request-bound-v1",
         deploymentDomain: context.fields.deployment!,
         genesisHash: "synthetic",
@@ -85,7 +86,12 @@ describe.skipIf(!directory)("isolated request-bound prover integration", () => {
           url: "https://example.invalid/bound.zkey",
           sha256: bytesHex(sha256(zkey)),
         },
-      });
+      };
+      const proof = await generateRequestBoundProof(
+        artifact.input,
+        request,
+        manifest,
+      );
       const signals = proof.publicInputs.map((bytes) =>
         BigInt(`0x${bytesHex(bytes)}`).toString(),
       );
@@ -123,6 +129,34 @@ describe.skipIf(!directory)("isolated request-bound prover integration", () => {
           vk,
         ),
       ).toBe(false);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      const mutableRequest = { ...request, action: { ...request.action } };
+      const mutableInput = {
+        ...artifact.input,
+        ft_new: [...artifact.input.ft_new],
+        ft_prev: [...artifact.input.ft_prev],
+      };
+      const pending = generateRequestBoundProof(
+        mutableInput,
+        mutableRequest,
+        manifest,
+      );
+      const changedRequest = prepareProofRequest({
+        ...request,
+        nonce: "33".repeat(32),
+      });
+      Object.assign(mutableRequest, changedRequest, {
+        action: { ...changedRequest.action },
+      });
+      mutableInput.ft_new[0] = 1 - mutableInput.ft_new[0]!;
+      mutableInput.ft_prev[0] = 1 - mutableInput.ft_prev[0]!;
+      mutableInput.threshold = "0";
+      const preserved = await pending;
+      expect(
+        preserved.publicInputs.map((bytes) =>
+          BigInt(`0x${bytesHex(bytes)}`).toString(),
+        ),
+      ).toEqual(signals);
       expect(fetch).toHaveBeenCalledTimes(2);
     } finally {
       vi.unstubAllGlobals();

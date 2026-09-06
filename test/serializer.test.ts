@@ -35,6 +35,38 @@ const mockPublicSignals = [
 ];
 
 describe("serializer", () => {
+  it.each([
+    { ...mockProof, protocol: "plonk" },
+    { ...mockProof, curve: "bls12-381" },
+    { ...mockProof, pi_a: [...mockProof.pi_a.slice(0, 2), "2"] },
+    { ...mockProof, pi_c: [...mockProof.pi_c.slice(0, 2), "0"] },
+    { ...mockProof, pi_a: [...mockProof.pi_a, "1"] },
+    { ...mockProof, pi_b: [...mockProof.pi_b, ["2", "0"]] },
+    { ...mockProof, pi_b: [...mockProof.pi_b, ["1", "1"]] },
+    { ...mockProof, pi_b: [...mockProof.pi_b, ["0", "0"]] },
+    { ...mockProof, pi_b: [[...mockProof.pi_b[0]!, "7"], mockProof.pi_b[1]!] },
+  ])("rejects unsupported proof representations %#", (proof) => {
+    expect(() => serializeProof(proof, mockPublicSignals)).toThrow();
+  });
+
+  it("preserves affine encodings with optional canonical z coordinates", () => {
+    const legacy = {
+      ...mockProof,
+      pi_a: mockProof.pi_a.slice(0, 2),
+      pi_c: mockProof.pi_c.slice(0, 2),
+      pi_b: mockProof.pi_b.slice(0, 2),
+    };
+    const explicit = {
+      ...legacy,
+      pi_a: [...legacy.pi_a, "1"],
+      pi_c: [...legacy.pi_c, "1"],
+      pi_b: [...legacy.pi_b, ["1", "0"]],
+    };
+    expect(serializeProof(explicit, mockPublicSignals)).toEqual(
+      serializeProof(legacy, mockPublicSignals),
+    );
+  });
+
   it("toBigEndian32 converts decimal string to 32 bytes", () => {
     const bytes = toBigEndian32("256");
     expect(bytes.length).toBe(32);
@@ -48,12 +80,12 @@ describe("serializer", () => {
   });
 
   it("produces 256-byte proof output", () => {
-    const { proofBytes } = serializeProof(mockProof as any, mockPublicSignals);
+    const { proofBytes } = serializeProof(mockProof, mockPublicSignals);
     expect(proofBytes.length).toBe(TOTAL_PROOF_SIZE);
   });
 
   it("produces correct number of public inputs", () => {
-    const { publicInputs } = serializeProof(mockProof as any, mockPublicSignals);
+    const { publicInputs } = serializeProof(mockProof, mockPublicSignals);
     expect(publicInputs.length).toBe(NUM_PUBLIC_INPUTS);
     for (const input of publicInputs) {
       expect(input.length).toBe(32);
@@ -61,7 +93,7 @@ describe("serializer", () => {
   });
 
   it("negates proof_a y-coordinate", () => {
-    const { proofBytes } = serializeProof(mockProof as any, mockPublicSignals);
+    const { proofBytes } = serializeProof(mockProof, mockPublicSignals);
 
     // Extract the y-coordinate from proof_a (bytes 32-63)
     let yFromProof = BigInt(0);
@@ -77,7 +109,7 @@ describe("serializer", () => {
   });
 
   it("reverses G2 coordinate ordering in proof_b", () => {
-    const { proofBytes } = serializeProof(mockProof as any, mockPublicSignals);
+    const { proofBytes } = serializeProof(mockProof, mockPublicSignals);
 
     // First 32 bytes of proof_b should be pi_b[0][1] (c1), not pi_b[0][0] (c0)
     const expectedFirst = toBigEndian32(mockProof.pi_b[0]![1]!);

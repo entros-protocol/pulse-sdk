@@ -224,4 +224,122 @@ describe("artifact integrity", () => {
     ).toBe(2);
     expect(fetch).toHaveBeenCalledTimes(4);
   });
+  it("pins artifact URLs and hashes before yielding to callers", async () => {
+    const original = new Uint8Array([1, 2, 3]);
+    const replacement = new Uint8Array([7, 8, 9]);
+    const config = manifest("synchronous-snapshot", original);
+    const mutable = {
+      ...config,
+      wasm: { ...config.wasm },
+      zkey: { ...config.zkey },
+    };
+    const fetch = vi.fn(
+      async (_url: string | URL | Request) => new Response(original),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const pending = loadRequestBoundArtifacts(mutable);
+    mutable.wasm.url = "https://example.invalid/substituted.wasm";
+    mutable.zkey.url = "https://example.invalid/substituted.zkey";
+    mutable.wasm.sha256 = bytesHex(sha256(replacement));
+    mutable.zkey.sha256 = bytesHex(sha256(replacement));
+    expect((await pending).wasm).toEqual(original);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      config.wasm.url,
+      config.zkey.url,
+    ]);
+  });
+  it("rejects concurrent hash substitution and retries without poisoning the cache", async () => {
+    const original = new Uint8Array([1, 2, 3]);
+    const replacement = new Uint8Array([7, 8, 9]);
+    const config = manifest("concurrent-snapshot", original);
+    const mutable = {
+      ...config,
+      wasm: { ...config.wasm },
+      zkey: { ...config.zkey },
+    };
+    let finish: () => void = () => {};
+    let started: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const downloads = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let count = 0;
+    let served = replacement;
+    const fetch = vi.fn(async () => {
+      if (++count === 2) started();
+      await gate;
+      return new Response(served);
+    });
+    vi.stubGlobal("fetch", fetch);
+    const pending = Promise.allSettled(
+      Array.from({ length: 64 }, () => loadRequestBoundArtifacts(mutable)),
+    );
+    await downloads;
+    mutable.wasm.sha256 = bytesHex(sha256(replacement));
+    mutable.zkey.sha256 = bytesHex(sha256(replacement));
+    finish();
+    const rejected = await pending;
+    expect(rejected.every((result) => result.status === "rejected")).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    served = original;
+    const retried = await Promise.all(
+      Array.from({ length: 64 }, () => loadRequestBoundArtifacts(config)),
+    );
+    expect(
+      retried.every(
+        (artifacts) => bytesHex(artifacts.wasm) === bytesHex(original),
+      ),
+    ).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(4);
+    retried[0]!.wasm[0] = 99;
+    expect(retried[1]!.wasm).toEqual(original);
+    expect((await loadRequestBoundArtifacts(config)).wasm).toEqual(original);
+  });
+  it("retains the two most recently used artifact pairs", async () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const fetch = vi.fn(async () => new Response(bytes));
+    vi.stubGlobal("fetch", fetch);
+    const first = manifest("eviction-first", bytes);
+    const second = manifest("eviction-second", bytes);
+    const third = manifest("eviction-third", bytes);
+    await loadRequestBoundArtifacts(first);
+    await loadRequestBoundArtifacts(second);
+    await loadRequestBoundArtifacts(first);
+    await loadRequestBoundArtifacts(third);
+    await loadRequestBoundArtifacts(first);
+    expect(fetch).toHaveBeenCalledTimes(6);
+    await loadRequestBoundArtifacts(second);
+    expect(fetch).toHaveBeenCalledTimes(8);
+  });
+  it("keeps a replacement cache entry when its evicted request later fails", async () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const first = manifest("pending-first", bytes);
+    let finish: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let firstRequests = 0;
+    const fetch = vi.fn(async (url: string | URL | Request) => {
+      if (
+        (url === first.wasm.url || url === first.zkey.url) &&
+        ++firstRequests <= 2
+      ) {
+        await gate;
+        return new Response(null, { status: 503 });
+      }
+      return new Response(bytes);
+    });
+    vi.stubGlobal("fetch", fetch);
+    const old = Promise.allSettled([loadRequestBoundArtifacts(first)]);
+    await loadRequestBoundArtifacts(manifest("pending-second", bytes));
+    await loadRequestBoundArtifacts(manifest("pending-third", bytes));
+    await loadRequestBoundArtifacts(first);
+    expect(fetch).toHaveBeenCalledTimes(8);
+    finish();
+    expect((await old)[0]?.status).toBe("rejected");
+    expect((await loadRequestBoundArtifacts(first)).wasm).toEqual(bytes);
+    expect(fetch).toHaveBeenCalledTimes(8);
+  });
 });
