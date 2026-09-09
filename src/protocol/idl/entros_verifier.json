@@ -8,6 +8,76 @@
   },
   "instructions": [
     {
+      "name": "close_bound_verification_result",
+      "discriminator": [
+        139,
+        167,
+        185,
+        78,
+        139,
+        205,
+        190,
+        91
+      ],
+      "accounts": [
+        {
+          "name": "verifier",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "verification_result",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  101,
+                  114,
+                  105,
+                  102,
+                  105,
+                  99,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  98,
+                  111,
+                  117,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "verifier"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "_nonce",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "close_challenge",
       "docs": [
         "Close a used or expired challenge account to reclaim rent."
@@ -250,6 +320,282 @@
       ]
     },
     {
+      "name": "verify_proof_bound",
+      "discriminator": [
+        56,
+        250,
+        245,
+        67,
+        70,
+        133,
+        5,
+        140
+      ],
+      "accounts": [
+        {
+          "name": "verifier",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "challenge",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "verifier"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "verification_result",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  101,
+                  114,
+                  105,
+                  102,
+                  105,
+                  99,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  98,
+                  111,
+                  117,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "verifier"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "identity_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "verifier"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                231,
+                54,
+                0,
+                218,
+                112,
+                126,
+                191,
+                25,
+                144,
+                125,
+                50,
+                236,
+                136,
+                66,
+                164,
+                95,
+                180,
+                213,
+                50,
+                99,
+                161,
+                73,
+                104,
+                1,
+                109,
+                180,
+                230,
+                41,
+                55,
+                224,
+                147,
+                209
+              ]
+            }
+          }
+        },
+        {
+          "name": "proof_request_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  111,
+                  102,
+                  95,
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "verifier"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                231,
+                54,
+                0,
+                218,
+                112,
+                126,
+                191,
+                25,
+                144,
+                125,
+                50,
+                236,
+                136,
+                66,
+                164,
+                95,
+                180,
+                213,
+                50,
+                99,
+                161,
+                73,
+                104,
+                1,
+                109,
+                180,
+                230,
+                41,
+                55,
+                224,
+                147,
+                209
+              ]
+            }
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "nonce",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "proof_bytes",
+          "type": {
+            "array": [
+              "u8",
+              256
+            ]
+          }
+        },
+        {
+          "name": "commitment_new",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "commitment_prev",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "threshold",
+          "type": "u16"
+        },
+        {
+          "name": "min_distance",
+          "type": "u16"
+        },
+        {
+          "name": "valid_until",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "verify_proof_compact",
       "docs": [
         "Verify a proof with fixed-size arguments."
@@ -388,6 +734,19 @@
   ],
   "accounts": [
     {
+      "name": "BoundVerificationResult",
+      "discriminator": [
+        65,
+        150,
+        156,
+        190,
+        80,
+        199,
+        159,
+        102
+      ]
+    },
+    {
       "name": "Challenge",
       "discriminator": [
         119,
@@ -482,9 +841,95 @@
       "code": 6007,
       "name": "ArithmeticOverflow",
       "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6008,
+      "name": "UnsupportedProofGeneration",
+      "msg": "Unsupported proof generation"
+    },
+    {
+      "code": 6009,
+      "name": "InvalidRequestContext",
+      "msg": "Invalid proof request context"
     }
   ],
   "types": [
+    {
+      "name": "BoundVerificationResult",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "commitment_new",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "commitment_prev",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "threshold",
+            "type": "u16"
+          },
+          {
+            "name": "min_distance",
+            "type": "u16"
+          },
+          {
+            "name": "counter",
+            "type": "u64"
+          },
+          {
+            "name": "valid_until",
+            "type": "u64"
+          },
+          {
+            "name": "verified_at",
+            "type": "i64"
+          },
+          {
+            "name": "request_digest",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
     {
       "name": "Challenge",
       "type": {

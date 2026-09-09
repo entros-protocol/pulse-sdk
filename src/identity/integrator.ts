@@ -1,3 +1,4 @@
+import { resolveDeployment } from "../protocol/deployment";
 import type { AccountInfo, PublicKey } from "@solana/web3.js";
 import { BN254_SCALAR_FIELD, PROGRAM_IDS, SAS_CONFIG } from "../config";
 import { HIGHEST_SUPPORTED_PROJECTION_VERSION } from "../projection";
@@ -363,6 +364,11 @@ async function waitForAttestationClock(
 export async function readIntegratorEvidence(
   input: ReadIntegratorEvidenceInput,
 ): Promise<IntegratorEvidenceReadResult> {
+  try {
+    if (resolveDeployment(input.deployment).isolated) return { status: "invalid", reason: "unsupported_deployment" };
+  } catch {
+    return { status: "invalid", reason: "invalid_request" };
+  }
   let previousNow = 0;
   const readNow = (): number | null => {
     try {

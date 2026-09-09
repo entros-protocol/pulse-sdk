@@ -197,6 +197,8 @@ export interface PulseConfig {
   rpcEndpoint?: string;
   relayerUrl?: string;
   relayerApiKey?: string;
+  /** Trusted artifact and deployment configuration. Omit for the legacy proof generation. */
+  requestBoundManifest?: import("./proof/request").RequestBoundManifest;
   zkeyUrl?: string;
   wasmUrl?: string;
   threshold?: number;

@@ -1,3 +1,5 @@
+import type { RequestBoundDeployment } from "../proof/request";
+import { checkDeploymentChain, resolveDeployment } from "../protocol/deployment";
 /**
  * Wallet-keyed encrypted baseline storage (master-list #98).
  *
@@ -20,7 +22,7 @@
 
 import type { PublicKey } from "@solana/web3.js";
 import { ed25519 } from "@noble/curves/ed25519";
-import { PROGRAM_IDS, SIGNATURE_TIMEOUT_MS } from "../config";
+import { SIGNATURE_TIMEOUT_MS } from "../config";
 import { withTimeout } from "../submit/errors";
 
 // --- Constants ---
@@ -106,10 +108,12 @@ function buildDomainMessage(walletPubkey: PublicKey): string {
  * Seeds: `[b"encrypted_baseline", walletPubkey.toBuffer()]`.
  */
 export async function deriveEncryptedBaselinePda(
-  walletPubkey: PublicKey
+  walletPubkey: PublicKey,
+  deployment?: RequestBoundDeployment
 ): Promise<[PublicKey, number]> {
+  const selected = resolveDeployment(deployment);
   const { PublicKey: PK } = await import("@solana/web3.js");
-  const programId = new PK(PROGRAM_IDS.entrosAnchor);
+  const programId = new PK(selected.consumerProgram);
   return PK.findProgramAddressSync(
     [new TextEncoder().encode("encrypted_baseline"), walletPubkey.toBuffer()],
     programId
@@ -460,9 +464,12 @@ export async function decryptBaselineBlob(
  */
 export async function fetchEncryptedBaseline(
   walletPubkey: PublicKey,
-  connection: { getAccountInfo: (k: PublicKey) => Promise<unknown> }
+  connection: { getAccountInfo: (k: PublicKey) => Promise<unknown>; getGenesisHash?(): Promise<string> },
+  deployment?: RequestBoundDeployment
 ): Promise<Uint8Array | null> {
-  const [baselinePda] = await deriveEncryptedBaselinePda(walletPubkey);
+  deployment = deployment && Object.freeze({ ...deployment });
+  await checkDeploymentChain(deployment, connection);
+  const [baselinePda] = await deriveEncryptedBaselinePda(walletPubkey, deployment);
   const accountInfo = (await connection.getAccountInfo(baselinePda)) as
     | { data: ArrayLike<number> | Uint8Array }
     | null;

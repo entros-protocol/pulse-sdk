@@ -9,6 +9,14 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+<!-- generated-release:4.11.0 -->
+## [4.11.0] - 2026-09-09
+
+- Prepare and submit immutable proof requests (0146a1e).
+- Validate proof inputs and bound artifact retention (cb3db6c).
+- Isolate devnet program selection and baseline storage (cc36b36).
+<!-- /generated-release:4.11.0 -->
+
 ## [4.10.2] - 2026-09-05
 
 - Re-read verification evidence after a bounded wait for the live clock.

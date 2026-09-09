@@ -1,3 +1,4 @@
+import type { RequestBoundDeployment } from "../proof/request";
 import type { Connection } from "@solana/web3.js";
 
 export interface IntegratorIdentityEvidence {
@@ -51,6 +52,7 @@ export interface IntegratorEvidence {
 }
 
 export type IntegratorEvidenceFailureReason =
+  | "unsupported_deployment"
   | "invalid_request"
   | "wrong_cluster"
   | "identity_missing"
@@ -76,6 +78,8 @@ export type IntegratorEvidenceConnection = Pick<
 >;
 
 export interface ReadIntegratorEvidenceInput {
+  /** Official policy evidence does not support isolated deployments. */
+  deployment?: RequestBoundDeployment;
   walletPubkey: string;
   transactionSignature: string;
   connection: IntegratorEvidenceConnection;
