@@ -1,6 +1,6 @@
 {
   "name": "@entros/pulse-sdk",
-  "version": "4.10.2",
+  "version": "4.11.0",
   "description": "Entros client SDK for behavioral capture, commitments, re-verification proofs, and devnet submission",
   "license": "MIT",
   "homepage": "https://entros.io",
@@ -35,7 +35,8 @@
     "measure:touch-scale": "tsx scripts/measure-touch-scale.ts",
     "measure:validation-transport": "node --import tsx scripts/measure-validation-transport.ts",
     "verify-publish-contents": "node scripts/verify-publish-contents.mjs",
-    "prepublishOnly": "npm run verify-publish-contents && npm run build"
+    "prepublishOnly": "npm run verify-publish-contents && npm run build",
+    "release:prepare": "node scripts/prepare-release.mjs"
   },
   "dependencies": {
     "@noble/curves": "^1.4.2",
