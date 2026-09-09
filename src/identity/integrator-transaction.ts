@@ -85,6 +85,7 @@ export async function qualifyingTransaction(
       "mint_anchor",
       "update_anchor",
       "update_anchor_compact",
+      "update_anchor_bound",
       "rebaseline_anchor",
     ];
     if (!names.includes(decoded.name)) {
@@ -94,11 +95,20 @@ export async function qualifyingTransaction(
     const definition = entrosAnchorIdl.instructions.find(
       (ix) => ix.name === decoded.name,
     );
-    if (
-      !definition ||
-      instruction.accounts.length !== definition.accounts.length
-    )
-      return null;
+    if (!definition) return null;
+    if (instruction.accounts.length !== definition.accounts.length) {
+      if (
+        !["mint_anchor", "rebaseline_anchor"].includes(decoded.name) ||
+        instruction.accounts.length !== definition.accounts.length + 1
+      )
+        return null;
+      const [state] = PublicKey.findProgramAddressSync(
+        [new TextEncoder().encode("proof_request_state"), wallet.toBytes()],
+        new PublicKey(PROGRAM_IDS.entrosAnchor),
+      );
+      if (!instruction.accounts[definition.accounts.length]?.equals(state))
+        return null;
+    }
     if (
       !instruction.accounts[0]?.equals(wallet) ||
       !instruction.accounts[1]?.equals(identity)
@@ -107,7 +117,11 @@ export async function qualifyingTransaction(
     let commitment = commitmentHex(
       decoded.data.initial_commitment ?? decoded.data.new_commitment,
     );
-    if (decoded.name === "update_anchor_compact") {
+    if (
+      decoded.name === "update_anchor_compact" ||
+      decoded.name === "update_anchor_bound"
+    ) {
+      const bound = decoded.name === "update_anchor_bound";
       const nonce = commitmentHex(decoded.data.verification_nonce);
       if (!nonce) return null;
       const nonceBytes = Uint8Array.from(nonce.match(/../g) ?? [], (byte) =>
@@ -115,13 +129,23 @@ export async function qualifyingTransaction(
       );
       const [verificationPda] = PublicKey.findProgramAddressSync(
         [
-          new TextEncoder().encode("verification"),
+          new TextEncoder().encode(
+            bound ? "verification_bound" : "verification",
+          ),
           wallet.toBytes(),
           nonceBytes,
         ],
         new PublicKey(PROGRAM_IDS.entrosVerifier),
       );
-      if (!instruction.accounts[2]?.equals(verificationPda)) return null;
+      if (!instruction.accounts[bound ? 3 : 2]?.equals(verificationPda))
+        return null;
+      if (bound) {
+        const [state] = PublicKey.findProgramAddressSync(
+          [new TextEncoder().encode("proof_request_state"), wallet.toBytes()],
+          new PublicKey(PROGRAM_IDS.entrosAnchor),
+        );
+        if (!instruction.accounts[2]?.equals(state)) return null;
+      }
       for (const earlier of instructions.slice(0, index)) {
         if (
           !earlier.programId.equals(
@@ -133,7 +157,11 @@ export async function qualifyingTransaction(
         const proof = decode(earlier, verifierCoder);
         if (
           !proof ||
-          !["verify_proof", "verify_proof_compact"].includes(proof.name)
+          !(
+            bound
+              ? ["verify_proof_bound"]
+              : ["verify_proof", "verify_proof_compact"]
+          ).includes(proof.name)
         )
           continue;
         const proofDefinition = entrosVerifierIdl.instructions.find(
@@ -146,10 +174,18 @@ export async function qualifyingTransaction(
           !earlier.accounts[2]?.equals(verificationPda)
         )
           continue;
+        if (bound) {
+          if (
+            !earlier.accounts[3]?.equals(identity) ||
+            !earlier.accounts[4]?.equals(instruction.accounts[2]!)
+          )
+            return null;
+        }
         if (commitmentHex(proof.data.nonce) !== nonce) continue;
         const inputs = proof.data.public_inputs;
         commitment =
-          proof.name === "verify_proof_compact"
+          proof.name === "verify_proof_compact" ||
+          proof.name === "verify_proof_bound"
             ? commitmentHex(proof.data.commitment_new)
             : Array.isArray(inputs)
               ? commitmentHex(inputs[0])

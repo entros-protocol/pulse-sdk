@@ -1,3 +1,5 @@
+import type { RequestBoundDeployment } from "./proof/request";
+import { checkDeploymentChain, resolveDeployment } from "./protocol/deployment";
 import { ed25519 } from "@noble/curves/ed25519";
 
 import type { PulseConfig } from "./config";
@@ -6,7 +8,6 @@ import {
   DEFAULT_CAPTURE_MS,
   DEFAULT_MIN_DISTANCE,
   DEFAULT_THRESHOLD,
-  PROGRAM_IDS,
   SIGNATURE_TIMEOUT_MS,
   VALIDATE_DEADLINE_MS,
   VALIDATE_UPLOAD_STALL_MS,
@@ -23,6 +24,10 @@ import type {
 } from "./sensor/types";
 import type { TBH } from "./hashing/types";
 import type { SolanaProof } from "./proof/types";
+import type { PreparedProofRequest } from "./proof/request";
+import { validateRequestBoundManifest } from "./proof/request";
+import { prepareWalletProofRequest, IdentityLayoutUpgradeRequiredError } from "./submit/request";
+import { generateRequestBoundProof } from "./proof/prover";
 import type { SignedReceiptDto, VerificationResult, ProgressCallback } from "./submit/types";
 import type { PostJsonResponse } from "./transport/post-json";
 import { postJson, TransportError } from "./transport/post-json";
@@ -74,6 +79,7 @@ import {
   submitRebaselineViaWallet,
   submitResetViaWallet,
   submitViaWallet,
+  upgradeIdentityLayoutViaWallet,
 } from "./submit/wallet";
 import { submitViaRelayer } from "./submit/relayer";
 import { bytesToHex } from "./submit/receipt";
@@ -915,12 +921,13 @@ async function buildEncryptedBaselineBlobBestEffort(
   fingerprint: number[],
   salt: bigint,
   commitmentBytes: Uint8Array,
+  deployment?: RequestBoundDeployment,
 ): Promise<Uint8Array | undefined> {
   const baselineWallet = resolveBaselineWallet(wallet);
   if (!baselineWallet) return undefined;
   try {
     const key = await getOrDeriveBaselineKey(baselineWallet);
-    const [baselinePda] = await deriveEncryptedBaselinePda(baselineWallet.publicKey);
+    const [baselinePda] = await deriveEncryptedBaselinePda(baselineWallet.publicKey, deployment);
     const simhashBytes = fingerprintToBytes(fingerprint);
     const saltBytes = bigintToBytes32(salt);
     return await encryptBaselineBlob(
@@ -1051,7 +1058,7 @@ async function processSensorData(
   const walletAddress = wallet?.adapter?.publicKey?.toBase58?.()
     ?? wallet?.publicKey?.toBase58?.();
 
-  let previousData = await loadVerificationData(walletAddress);
+  let previousData = await loadVerificationData(walletAddress, config.requestBoundManifest);
   let isFirstVerification = previousData === null;
   let onChainCommitment: Uint8Array | null = null;
   let onChainProjectionVersion: number | null = null;
@@ -1061,7 +1068,8 @@ async function processSensorData(
     if (walletPubkey) {
       try {
         const { PublicKey } = await import("@solana/web3.js");
-        const programId = new PublicKey(PROGRAM_IDS.entrosAnchor);
+        await checkDeploymentChain(config.requestBoundManifest, connection);
+        const programId = new PublicKey(resolveDeployment(config.requestBoundManifest).consumerProgram);
         const [identityPda] = PublicKey.findProgramAddressSync(
           [new TextEncoder().encode("identity"), walletPubkey.toBuffer()],
           programId
@@ -1175,6 +1183,7 @@ async function processSensorData(
   // If the legacy baseline matched, migrate it to the keyed location and remove the legacy storage entry.
   const STORAGE_KEY = "entros-protocol-verification-data";
   if (
+    !resolveDeployment(config.requestBoundManifest).isolated &&
     !needsProjectionMigration &&
     previousData &&
     !localBaselineStale &&
@@ -1182,7 +1191,7 @@ async function processSensorData(
     typeof localStorage !== "undefined" &&
     !localStorage.getItem(`${STORAGE_KEY}_${walletAddress}`)
   ) {
-    await storeVerificationData(previousData, walletAddress);
+    await storeVerificationData(previousData, walletAddress, config.requestBoundManifest);
     localStorage.removeItem(STORAGE_KEY);
   }
 
@@ -1222,9 +1231,9 @@ async function processSensorData(
           ? "Re-syncing baseline with chain..."
           : "Recovering baseline from chain..."
       );
-      const recovery = await recoverBaselineFromChain(baselineWallet, connection);
+      const recovery = await recoverBaselineFromChain(baselineWallet, connection, config.requestBoundManifest);
       if (recovery.recovered) {
-        previousData = await loadVerificationData(walletAddress);
+        previousData = await loadVerificationData(walletAddress, config.requestBoundManifest);
         sdkLog(
           `[Entros SDK] On-chain encrypted baseline ${localBaselineStale ? "re-synced" : "recovered"}`
         );
@@ -1263,6 +1272,7 @@ async function processSensorData(
   }
 
   let solanaProof: SolanaProof | null = null;
+  let preparedRequest: PreparedProofRequest | undefined;
 
   if (!isFirstVerification && !needsProjectionMigration && previousData) {
     onProgress?.("Computing proof...");
@@ -1324,7 +1334,7 @@ async function processSensorData(
     const wasmPath = config.wasmUrl;
     const zkeyPath = config.zkeyUrl;
 
-    if (!wasmPath || !zkeyPath) {
+    if ((!wasmPath || !zkeyPath) && !config.requestBoundManifest) {
       return {
         success: false,
         commitment: tbh.commitmentBytes,
@@ -1338,13 +1348,62 @@ async function processSensorData(
       // Collected from the prefetch started at capture start. Null when it was
       // never started, was aborted, or failed, in which case snarkjs fetches
       // the URLs itself exactly as it always has.
-      const artifacts = await takeCircuitArtifacts(wasmPath, zkeyPath);
-      const { proof, publicSignals } = await generateProof(
-        circuitInput,
-        artifacts ? artifacts.wasm : wasmPath,
-        artifacts ? artifacts.zkey : zkeyPath
-      );
-      solanaProof = serializeProof(proof, publicSignals);
+      if (config.requestBoundManifest) {
+        if (!wallet?.publicKey || !connection)
+          throw new Error("Request-bound proofs require a connected wallet");
+        const requestOptions = {
+          commitmentNew: tbh.commitmentBytes,
+          commitmentPrevious: previousTBH.commitmentBytes,
+          threshold,
+          minDistance,
+          relayerUrl: config.relayerUrl,
+          relayerApiKey: config.relayerApiKey,
+        };
+        try {
+          preparedRequest = await prepareWalletProofRequest(
+            connection,
+            wallet.publicKey,
+            config.requestBoundManifest,
+            requestOptions,
+          );
+        } catch (error) {
+          if (!(error instanceof IdentityLayoutUpgradeRequiredError)) throw error;
+          onProgress?.("Updating identity account...");
+          const upgrade = await upgradeIdentityLayoutViaWallet({
+            wallet,
+            connection,
+            requestBoundManifest: config.requestBoundManifest,
+          });
+          if (!upgrade.success)
+            return {
+              success: false,
+              commitment: tbh.commitmentBytes,
+              isFirstVerification: false,
+              error: upgrade.error,
+              failedAt: upgrade.failedAt ?? "submission",
+            };
+          preparedRequest = await prepareWalletProofRequest(
+            connection,
+            wallet.publicKey,
+            config.requestBoundManifest,
+            requestOptions,
+          );
+          onProgress?.("Computing proof...");
+        }
+        solanaProof = await generateRequestBoundProof(
+          circuitInput,
+          preparedRequest,
+          config.requestBoundManifest,
+        );
+      } else {
+        const artifacts = await takeCircuitArtifacts(wasmPath!, zkeyPath!);
+        const { proof, publicSignals } = await generateProof(
+          circuitInput,
+          artifacts ? artifacts.wasm : wasmPath!,
+          artifacts ? artifacts.zkey : zkeyPath!,
+        );
+        solanaProof = serializeProof(proof, publicSignals);
+      }
     } catch (proofErr: any) {
       // Bounds violations (drift / replay floor) are handled by the pre-check
       // above, so reaching here means a genuine proving failure (artifact
@@ -1398,6 +1457,7 @@ async function processSensorData(
       tbh.fingerprint,
       tbh.salt,
       tbh.commitmentBytes,
+      config.requestBoundManifest,
     );
     portableBaseline = encryptedBaselineBlob !== undefined;
 
@@ -1426,6 +1486,7 @@ async function processSensorData(
         {
           wallet,
           connection,
+          requestBoundManifest: config.requestBoundManifest,
           signedReceipt,
           encryptedBaselineBlob,
         },
@@ -1443,6 +1504,7 @@ async function processSensorData(
           wallet,
           connection,
           isFirstVerification: true,
+          requestBoundManifest: config.requestBoundManifest,
           relayerUrl: config.relayerUrl,
           relayerApiKey: config.relayerApiKey,
           signedReceipt,
@@ -1455,6 +1517,8 @@ async function processSensorData(
         wallet,
         connection,
         isFirstVerification: false,
+        preparedRequest,
+        requestBoundManifest: config.requestBoundManifest,
         relayerUrl: config.relayerUrl,
         relayerApiKey: config.relayerApiKey,
         encryptedBaselineBlob,
@@ -1462,6 +1526,7 @@ async function processSensorData(
       });
     }
   } else if (config.relayerUrl) {
+    if (config.requestBoundManifest) return { success: false, commitment: tbh.commitmentBytes, isFirstVerification, error: "Request-bound proofs require a connected wallet.", failedAt: "submission" };
     submission = await submitViaRelayer(
       solanaProof ?? { proofBytes: new Uint8Array(0), publicInputs: [] },
       tbh.commitmentBytes,
@@ -1493,7 +1558,7 @@ async function processSensorData(
         commitment: tbh.commitment.toString(),
         timestamp: Date.now(),
         projectionVersion: projectionPolicy.current,
-      }, walletAddress);
+      }, walletAddress, config.requestBoundManifest);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       sdkWarn(
@@ -1640,6 +1705,7 @@ async function processResetSensorData(
     tbh.fingerprint,
     tbh.salt,
     tbh.commitmentBytes,
+    config.requestBoundManifest,
   );
   const portableBaseline = encryptedBaselineBlob !== undefined;
 
@@ -1650,6 +1716,7 @@ async function processResetSensorData(
     relayerUrl: config.relayerUrl,
     relayerApiKey: config.relayerApiKey,
     projectionVersion: projectionPolicy.current,
+    requestBoundManifest: config.requestBoundManifest,
     signedReceipt,
     encryptedBaselineBlob,
     onProgress: (stage) => onProgress?.(stage),
@@ -1668,7 +1735,7 @@ async function processResetSensorData(
         commitment: tbh.commitment.toString(),
         timestamp: Date.now(),
         projectionVersion: projectionPolicy.current,
-      }, walletAddress);
+      }, walletAddress, config.requestBoundManifest);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       sdkWarn(`[Entros SDK] Reset succeeded on chain but local baseline persistence failed: ${msg}`);
@@ -2369,12 +2436,15 @@ export class PulseSession {
  *      when each sensor stage starts and stops.
  */
 export class PulseSDK {
+  static readonly supportsRequestBoundProofs = true;
   private config: ResolvedConfig;
 
   constructor(config: PulseConfig) {
+    if (config.requestBoundManifest) validateRequestBoundManifest(config.requestBoundManifest);
     this.config = {
       threshold: DEFAULT_THRESHOLD,
       ...config,
+      ...(config.requestBoundManifest ? { requestBoundManifest: Object.freeze({ ...config.requestBoundManifest, wasm: Object.freeze({ ...config.requestBoundManifest.wasm }), zkey: Object.freeze({ ...config.requestBoundManifest.zkey }) }) } : {}),
     };
     setDebug(config.debug ?? false);
     setPrivacyFallback(config.onPrivacyFallback);

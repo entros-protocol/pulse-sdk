@@ -27,6 +27,20 @@ A host-approved fallback can store the local baseline without encryption. Integr
 npm install @entros/pulse-sdk
 ```
 
+### Bundler requirement
+
+Re-verification encodes a 64-bit instruction argument through Anchor's Borsh layer, which
+reads a global `Buffer`. Next.js and webpack supply that binding to browser code. Supply it
+yourself when you bundle with esbuild, Vite, or Rollup:
+
+```ts
+import { Buffer } from "buffer";
+globalThis.Buffer ??= Buffer;
+```
+
+Without it, re-verification throws `ReferenceError: Buffer is not defined` after capture and
+before the wallet prompt.
+
 ## Usage
 
 ### Wallet-connected (primary)
@@ -174,3 +188,23 @@ on the current repository at `github.com/entros-protocol/pulse-sdk`.
 ## License
 
 MIT
+
+### Isolated devnet deployments
+
+Supply a trusted `requestBoundManifest` through application configuration to select a separate Anchor and verifier pair.
+Both program addresses must differ from the official pair. The SDK keeps the official registry and projection policy unchanged.
+
+Pass the same manifest as the final argument to `fetchIdentityState`, `deriveEncryptedBaselinePda`, `fetchEncryptedBaseline`, and `recoverBaselineFromChain`.
+Pass it as the third argument to `storeVerificationData` and `loadVerificationData`.
+The SDK separates local baselines by wallet, program pair, deployment domain, and genesis hash.
+Existing callers retain their current addresses and storage keys.
+
+Isolated submissions skip shared SAS issuance. The official evidence reader returns `unsupported_deployment` when its `deployment` argument selects an isolated pair.
+Do not derive trusted configuration from popup responses. Use independent acceptance checks for an isolated deployment.
+
+### Release metadata
+
+Run `npm run release:prepare -- NEXT_VERSION PREVIOUS_TAG` to update package versions and generate release notes from Git commit subjects.
+The generator preserves historical entries. Run it after the release changes have committed, then review the generated section before publication.
+Use `--through=SOURCE_COMMIT` to pin the source revision across later metadata commits.
+Add `--check` to verify generated metadata without changing files.
