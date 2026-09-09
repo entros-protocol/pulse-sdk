@@ -21,8 +21,9 @@ import { qualifyingTransaction } from "../src/identity/integrator-transaction";
 import { entrosVerifierIdl } from "../src/protocol/idl";
 
 const wallet = Keypair.fromSeed(new Uint8Array(32).fill(19)).publicKey;
-function fixture() {
-  const anchor = new PublicKey(PROGRAM_IDS.entrosAnchor);
+function deploymentFixture(isolated = false) {
+  const anchor = new PublicKey(isolated ? new Uint8Array(32).fill(61) : PROGRAM_IDS.entrosAnchor);
+  const verifier = new PublicKey(isolated ? new Uint8Array(32).fill(62) : PROGRAM_IDS.entrosVerifier);
   const [identity] = PublicKey.findProgramAddressSync(
     [Buffer.from("identity"), wallet.toBytes()],
     anchor,
@@ -34,15 +35,15 @@ function fixture() {
   const manifest: RequestBoundManifest = {
     generation: "request-bound-v1",
     deploymentDomain: "11".repeat(32),
-    genesisHash: "synthetic",
-    verifierProgram: PROGRAM_IDS.entrosVerifier,
-    consumerProgram: PROGRAM_IDS.entrosAnchor,
+    genesisHash: isolated ? "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG" : "synthetic",
+    verifierProgram: verifier.toBase58(),
+    consumerProgram: anchor.toBase58(),
     wasm: { url: "synthetic.wasm", sha256: "12".repeat(32) },
     zkey: { url: "synthetic.zkey", sha256: "13".repeat(32) },
   };
   const request = prepareProofRequest({
     deploymentDomain: manifest.deploymentDomain,
-    verifier: bytesHex(new PublicKey(PROGRAM_IDS.entrosVerifier).toBytes()),
+    verifier: bytesHex(verifier.toBytes()),
     consumer: bytesHex(anchor.toBytes()),
     wallet: bytesHex(wallet.toBytes()),
     nonce: "09".repeat(32),
@@ -68,7 +69,7 @@ function fixture() {
   const connection = {
     rpcEndpoint: "http://localhost:8899",
     commitment: "confirmed",
-    getGenesisHash: async () => "synthetic",
+    getGenesisHash: async () => manifest.genesisHash,
     getLatestBlockhash: async () => ({
       blockhash: "11111111111111111111111111111111",
       lastValidBlockHeight: 1,
@@ -121,7 +122,8 @@ function parsed(transaction: Transaction): ParsedTransactionWithMeta {
     },
   };
 }
-describe("prepared bound transaction", () => {
+describe.each([false, true])("prepared bound transaction isolated=%s", (isolated) => {
+  const fixture = () => deploymentFixture(isolated);
   it("preserves the nonce and encodes an atomic bounded transaction", async () => {
     const f = fixture();
     const fetch = vi.spyOn(globalThis, "fetch");
@@ -133,10 +135,18 @@ describe("prepared bound transaction", () => {
         preparedRequest: f.request,
         requestBoundManifest: f.manifest,
         encryptedBaselineBlob: new Uint8Array(96),
+        ...(isolated ? { relayerUrl: "https://executor.invalid/verify" } : {}),
       });
-      expect(result.success).toBe(true);
+      expect(result.success, result.error).toBe(true);
       expect(fetch).not.toHaveBeenCalled();
       const transaction = f.transaction();
+      if (isolated) {
+        const addresses = transaction.instructions.flatMap(ix => [ix.programId.toBase58(), ...ix.keys.map(key => key.pubkey.toBase58())]);
+        expect(addresses).not.toContain(PROGRAM_IDS.entrosAnchor);
+        expect(addresses).not.toContain(PROGRAM_IDS.entrosVerifier);
+        const [baseline] = PublicKey.findProgramAddressSync([Buffer.from("encrypted_baseline"), wallet.toBytes()], new PublicKey(f.manifest.consumerProgram));
+        expect(addresses).toContain(baseline.toBase58());
+      }
       expect(transaction.instructions.map((ix) => ix.data.length)).toEqual([
         5, 8, 40, 372, 40, 104,
       ]);
@@ -152,7 +162,7 @@ describe("prepared bound transaction", () => {
       }).length;
       expect(length).toBe(1097);
       expect(length).toBeLessThanOrEqual(1232);
-      expect(
+      if (!isolated) expect(
         await qualifyingTransaction(
           parsed(transaction),
           "bound-signature",
@@ -190,6 +200,7 @@ describe("prepared bound transaction", () => {
         requestBoundManifest: f.manifest,
         signedReceipt,
         encryptedBaselineBlob: new Uint8Array(96),
+        ...(isolated ? { relayerUrl: "https://executor.invalid/verify" } : {}),
       };
       const result =
         kind === "mint"
@@ -204,21 +215,28 @@ describe("prepared bound transaction", () => {
                 projectionVersion: 1,
               })
             : await submitRebaselineViaWallet(commitment, 1, common);
-      expect(result.success).toBe(true);
+      expect(result.success, result.error).toBe(true);
       const transaction = f.transaction();
+      if (isolated) {
+        const addresses = transaction.instructions.flatMap(ix => [ix.programId.toBase58(), ...ix.keys.map(key => key.pubkey.toBase58())]);
+        expect(addresses).not.toContain(PROGRAM_IDS.entrosAnchor);
+        expect(addresses).not.toContain(PROGRAM_IDS.entrosVerifier);
+        const [baseline] = PublicKey.findProgramAddressSync([Buffer.from("encrypted_baseline"), wallet.toBytes()], new PublicKey(f.manifest.consumerProgram));
+        expect(addresses).toContain(baseline.toBase58());
+      }
       expect(transaction.instructions[1]!.programId.toBase58()).toBe(
         Ed25519Program.programId.toBase58(),
       );
       const action = transaction.instructions[2]!;
       const [state] = PublicKey.findProgramAddressSync(
         [Buffer.from("proof_request_state"), wallet.toBytes()],
-        new PublicKey(PROGRAM_IDS.entrosAnchor),
+        new PublicKey(f.manifest.consumerProgram),
       );
       expect(action.keys[action.keys.length - 1]?.pubkey.toBase58()).toBe(
         state.toBase58(),
       );
       expect(action.keys[action.keys.length - 1]?.isWritable).toBe(true);
-      if (kind !== "reset")
+      if (!isolated && kind !== "reset")
         expect(
           await qualifyingTransaction(
             parsed(transaction),

@@ -1,3 +1,4 @@
+import { checkDeploymentChain, deploymentIdl, resolveDeployment } from "../protocol/deployment";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Anchor program interactions are typed dynamically because the SDK's
 // peer dep on @coral-xyz/anchor + @solana/web3.js is loaded via dynamic
@@ -57,14 +58,20 @@ interface SubmissionConnection {
   ): Promise<{ value: { err: unknown | null } }>;
 }
 
+function snapshotManifest(manifest: RequestBoundManifest): RequestBoundManifest {
+  return Object.freeze({ ...manifest,
+    wasm: Object.freeze({ ...manifest.wasm }),
+    zkey: Object.freeze({ ...manifest.zkey }),
+  });
+}
+
 async function checkBoundDeployment(
   manifest: RequestBoundManifest | undefined,
   connection: { getGenesisHash?(): Promise<string> },
 ): Promise<void> {
   if (!manifest) return;
   validateRequestBoundManifest(manifest);
-  if (manifest.verifierProgram !== PROGRAM_IDS.entrosVerifier || manifest.consumerProgram !== PROGRAM_IDS.entrosAnchor) throw new Error("Unsupported request-bound deployment programs");
-  if (!connection.getGenesisHash || await connection.getGenesisHash() !== manifest.genesisHash) throw new Error("Connected chain does not match the proof manifest");
+  await checkDeploymentChain(manifest, connection);
 }
 
 interface SubmissionWallet {
@@ -199,7 +206,7 @@ async function buildSetEncryptedBaselineIx(
     );
   }
   const { PublicKey, SystemProgram } = await import("@solana/web3.js");
-  const programId = new PublicKey(PROGRAM_IDS.entrosAnchor);
+  const programId = anchorProgram.programId;
   const [identityPda] = PublicKey.findProgramAddressSync(
     [new TextEncoder().encode("identity"), walletPubkey.toBuffer()],
     programId,
@@ -482,6 +489,7 @@ export async function submitViaWallet(
   }
 
   try {
+    options = { ...options, requestBoundManifest: options.requestBoundManifest && snapshotManifest(options.requestBoundManifest) };
     await checkBoundDeployment(options.requestBoundManifest, options.connection);
     const anchor = await import("@coral-xyz/anchor");
     const {
@@ -498,7 +506,7 @@ export async function submitViaWallet(
       { commitment: "confirmed" }
     );
 
-    const anchorProgramId = new PublicKey(PROGRAM_IDS.entrosAnchor);
+    const anchorProgramId = new PublicKey(resolveDeployment(options.requestBoundManifest).consumerProgram);
 
     let txSig: string | undefined;
     let serverNonce = false;
@@ -510,7 +518,7 @@ export async function submitViaWallet(
       if (request) {
         validateRequestBoundManifest(options.requestBoundManifest!);
         assertBoundPublicInputs(request, proof.publicInputs);
-        if (request.wallet !== bytesHex(provider.wallet.publicKey.toBytes()) || request.consumer !== bytesHex(new PublicKey(PROGRAM_IDS.entrosAnchor).toBytes()) || request.verifier !== bytesHex(new PublicKey(PROGRAM_IDS.entrosVerifier).toBytes()) || request.deploymentDomain !== options.requestBoundManifest!.deploymentDomain) throw new Error("Submission context does not match the prepared request");
+        if (request.wallet !== bytesHex(provider.wallet.publicKey.toBytes()) || request.consumer !== bytesHex(new PublicKey(resolveDeployment(options.requestBoundManifest).consumerProgram).toBytes()) || request.verifier !== bytesHex(new PublicKey(resolveDeployment(options.requestBoundManifest).verifierProgram).toBytes()) || request.deploymentDomain !== options.requestBoundManifest!.deploymentDomain) throw new Error("Submission context does not match the prepared request");
       }
       const compactProof = compactProofArguments(proof, Boolean(request));
       const expectedCommitment = fixedBytes(commitment, 32, "commitment");
@@ -524,7 +532,7 @@ export async function submitViaWallet(
 
       // Re-verification submits challenge creation, proof verification, and
       // identity update in one transaction.
-      const verifierProgramId = new PublicKey(PROGRAM_IDS.entrosVerifier);
+      const verifierProgramId = new PublicKey(resolveDeployment(options.requestBoundManifest).verifierProgram);
 
       if (request) {
         nonce = Array.from(hexBytes(request.nonce));
@@ -569,11 +577,11 @@ export async function submitViaWallet(
       );
 
       const verifierProgram: any = new anchor.Program(
-        entrosVerifierIdl as Idl,
+        await deploymentIdl(entrosVerifierIdl as Idl, options.requestBoundManifest),
         provider,
       );
       const anchorProgram: any = new anchor.Program(
-        entrosAnchorIdl as Idl,
+        await deploymentIdl(entrosAnchorIdl as Idl, options.requestBoundManifest),
         provider,
       );
 
@@ -669,7 +677,7 @@ export async function submitViaWallet(
       // log-only, but the Anchor framework itself requires every account
       // listed in the IDL to be supplied).
       const anchorProgram: any = new anchor.Program(
-        entrosAnchorIdl as Idl,
+        await deploymentIdl(entrosAnchorIdl as Idl, options.requestBoundManifest),
         provider,
       );
 
@@ -806,7 +814,7 @@ export async function submitViaWallet(
     // attestation is best-effort. Isolated rather than left to the outer catch
     // so that stays true if anything else is ever added after the confirm.
     let attestationTx: string | undefined;
-    if (options.relayerUrl) {
+    if (options.relayerUrl && !resolveDeployment(options.requestBoundManifest).isolated) {
       try {
         attestationTx = await requestSasAttestation(
           options.wallet,
@@ -878,6 +886,7 @@ export async function submitResetViaWallet(
   }
 ): Promise<SubmissionResult> {
   try {
+    options = { ...options, requestBoundManifest: options.requestBoundManifest && snapshotManifest(options.requestBoundManifest) };
     await checkBoundDeployment(options.requestBoundManifest, options.connection);
     const anchor = await import("@coral-xyz/anchor");
     const {
@@ -895,7 +904,7 @@ export async function submitResetViaWallet(
       { commitment: "confirmed" }
     );
 
-    const anchorProgramId = new PublicKey(PROGRAM_IDS.entrosAnchor);
+    const anchorProgramId = new PublicKey(resolveDeployment(options.requestBoundManifest).consumerProgram);
     const registryProgramId = new PublicKey(PROGRAM_IDS.entrosRegistry);
 
     const [identityPda] = PublicKey.findProgramAddressSync(
@@ -912,7 +921,7 @@ export async function submitResetViaWallet(
     );
 
     const anchorProgram: any = new anchor.Program(
-      entrosAnchorIdl as Idl,
+      await deploymentIdl(entrosAnchorIdl as Idl, options.requestBoundManifest),
       provider,
     );
     const projectionVersion = options.projectionVersion ?? 0;
@@ -1013,7 +1022,7 @@ export async function submitResetViaWallet(
     // current commitment. Isolated for the same reason as the verify path: the
     // reset has already confirmed on chain and nothing here may undo that.
     let attestationTx: string | undefined;
-    if (options.relayerUrl) {
+    if (options.relayerUrl && !resolveDeployment(options.requestBoundManifest).isolated) {
       try {
         attestationTx = await requestSasAttestation(
           options.wallet,
@@ -1051,6 +1060,7 @@ export async function submitRebaselineViaWallet(
   },
 ): Promise<SubmissionResult> {
   try {
+    options = { ...options, requestBoundManifest: options.requestBoundManifest && snapshotManifest(options.requestBoundManifest) };
     await checkBoundDeployment(options.requestBoundManifest, options.connection);
     const anchor = await import("@coral-xyz/anchor");
     const {
@@ -1065,7 +1075,7 @@ export async function submitRebaselineViaWallet(
       options.wallet as unknown as Wallet,
       { commitment: "confirmed" },
     );
-    const anchorProgramId = new PublicKey(PROGRAM_IDS.entrosAnchor);
+    const anchorProgramId = new PublicKey(resolveDeployment(options.requestBoundManifest).consumerProgram);
     const registryProgramId = new PublicKey(PROGRAM_IDS.entrosRegistry);
     const [identityPda] = PublicKey.findProgramAddressSync(
       [new TextEncoder().encode("identity"), provider.wallet.publicKey.toBuffer()],
@@ -1080,7 +1090,7 @@ export async function submitRebaselineViaWallet(
       registryProgramId,
     );
     const anchorProgram = new anchor.Program(
-      entrosAnchorIdl as Idl,
+      await deploymentIdl(entrosAnchorIdl as Idl, options.requestBoundManifest),
       provider,
     ) as unknown as RebaselineProgram;
 
@@ -1154,6 +1164,7 @@ export async function upgradeIdentityLayoutViaWallet(options: {
   requestBoundManifest: RequestBoundManifest;
 }): Promise<SubmissionResult> {
   try {
+    options = { ...options, requestBoundManifest: snapshotManifest(options.requestBoundManifest) };
     await checkBoundDeployment(
       options.requestBoundManifest,
       options.connection,
@@ -1168,13 +1179,13 @@ export async function upgradeIdentityLayoutViaWallet(options: {
       options.wallet as unknown as Wallet,
       { commitment: "confirmed" },
     );
-    const program = new anchor.Program(entrosAnchorIdl as Idl, provider);
+    const program = new anchor.Program(await deploymentIdl(entrosAnchorIdl as Idl, options.requestBoundManifest), provider);
     const [identity] = PublicKey.findProgramAddressSync(
       [
         new TextEncoder().encode("identity"),
         options.wallet.publicKey.toBytes(),
       ],
-      new PublicKey(PROGRAM_IDS.entrosAnchor),
+      new PublicKey(resolveDeployment(options.requestBoundManifest).consumerProgram),
     );
     const method = program.methods.upgradeIdentityLayout;
     if (!method)

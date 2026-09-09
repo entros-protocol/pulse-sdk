@@ -1,3 +1,5 @@
+import type { RequestBoundDeployment } from "../proof/request";
+import { checkDeploymentChain, resolveDeployment } from "../protocol/deployment";
 import type { Idl } from "@coral-xyz/anchor";
 import type { PublicKey } from "@solana/web3.js";
 import { CLIENT_PROJECTION_VERSION, PROGRAM_IDS } from "../config";
@@ -44,6 +46,16 @@ export interface ProjectionPolicyConnection {
 // private browsing on some browsers). Data is lost on page reload — users
 // in private browsing mode must re-enroll on each session.
 let inMemoryStore: StoredVerificationData | null = null;
+const isolatedMemoryStore = new Map<string, StoredVerificationData>();
+function verificationStorage(walletAddress?: string, deployment?: RequestBoundDeployment) {
+  const { storageNamespace, isolated } = resolveDeployment(deployment);
+  if (isolated && !walletAddress) throw new Error("Isolated baseline storage requires a wallet address");
+  const keyName = `${STORAGE_KEY}${storageNamespace}${walletAddress ? `_${walletAddress}` : ""}`;
+  return { keyName, isolated,
+    read: () => isolated ? isolatedMemoryStore.get(keyName) ?? null : inMemoryStore,
+    write: (data: StoredVerificationData) => { if (isolated) isolatedMemoryStore.set(keyName, data); else inMemoryStore = data; },
+  };
+}
 
 // Module-level privacy-fallback callback. Set by PulseSDK constructor via
 // `setPrivacyFallback`. Mirrors the `setDebug` pattern in `log.ts` so
@@ -232,11 +244,15 @@ export async function decodeIdentityState(
 
 export async function fetchIdentityState(
   walletPubkey: string,
-  connection: any
+  connection: any,
+  deployment?: RequestBoundDeployment
 ): Promise<IdentityState | null> {
+  deployment = deployment && Object.freeze({ ...deployment });
+  const selected = resolveDeployment(deployment);
+  await checkDeploymentChain(deployment, connection);
   try {
     const { PublicKey } = await import("@solana/web3.js");
-    const programId = new PublicKey(PROGRAM_IDS.entrosAnchor);
+    const programId = new PublicKey(selected.consumerProgram);
     const [identityPda] = PublicKey.findProgramAddressSync(
       [new TextEncoder().encode("identity"), new PublicKey(walletPubkey).toBuffer()],
       programId
@@ -329,13 +345,15 @@ export function localCommitmentMatchesChain(
  */
 export async function storeVerificationData(
   data: StoredVerificationData,
-  walletAddress?: string
+  walletAddress?: string,
+  deployment?: RequestBoundDeployment
 ): Promise<void> {
+  const storage = verificationStorage(walletAddress, deployment);
   if (typeof localStorage === "undefined") {
-    inMemoryStore = data;
+    storage.write(data);
     return;
   }
-  const keyName = walletAddress ? `${STORAGE_KEY}_${walletAddress}` : STORAGE_KEY;
+  const keyName = storage.keyName;
   try {
     if (!hasCryptoSupport()) {
       // Crypto unavailable → consult the host-provided privacy callback.
@@ -353,7 +371,7 @@ export async function storeVerificationData(
         sdkWarn(
           "[Entros SDK] Crypto unavailable and no privacy-fallback approval — using in-memory storage (data lost on reload)"
         );
-        inMemoryStore = data;
+        storage.write(data);
       }
       return;
     }
@@ -373,7 +391,7 @@ export async function storeVerificationData(
         sdkWarn(
           "[Entros SDK] Encryption key unavailable and no privacy-fallback approval — using in-memory storage"
         );
-        inMemoryStore = data;
+        storage.write(data);
       }
       return;
     }
@@ -382,7 +400,7 @@ export async function storeVerificationData(
     const envelope: EncryptedEnvelope = { v: ENCRYPTED_VERSION, iv, ct };
     localStorage.setItem(keyName, JSON.stringify(envelope));
   } catch {
-    inMemoryStore = data;
+    storage.write(data);
   }
 }
 
@@ -391,23 +409,26 @@ export async function storeVerificationData(
  * Decrypts if encrypted, migrates plaintext to encrypted on first load.
  */
 export async function loadVerificationData(
-  walletAddress?: string
+  walletAddress?: string,
+  deployment?: RequestBoundDeployment
 ): Promise<StoredVerificationData | null> {
-  if (typeof localStorage === "undefined") return inMemoryStore;
+  deployment = deployment && Object.freeze({ ...deployment });
+  const storage = verificationStorage(walletAddress, deployment);
+  if (typeof localStorage === "undefined") return storage.read();
   try {
-    const keyName = walletAddress ? `${STORAGE_KEY}_${walletAddress}` : STORAGE_KEY;
+    const keyName = storage.keyName;
     let raw = localStorage.getItem(keyName);
     let isLegacyFallback = false;
 
     // Fallback to legacy unkeyed key if keyed storage does not exist yet
-    if (!raw && walletAddress) {
+    if (!raw && walletAddress && !storage.isolated) {
       raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         isLegacyFallback = true;
       }
     }
 
-    if (!raw) return inMemoryStore;
+    if (!raw) return storage.read();
 
     const parsed: unknown = JSON.parse(raw);
 
@@ -415,7 +436,7 @@ export async function loadVerificationData(
     if (isEncryptedEnvelope(parsed)) {
       if (!hasCryptoSupport()) {
         sdkWarn("[Entros SDK] Encrypted data found but crypto unavailable");
-        return inMemoryStore;
+        return storage.read();
       }
       const key = await getOrCreateEncryptionKey();
       if (!key) {
@@ -431,12 +452,12 @@ export async function loadVerificationData(
           "[Entros SDK] Encryption key unavailable — keeping envelope for recovery. " +
             "If this persists across reloads, check IndexedDB state via DevTools."
         );
-        return inMemoryStore;
+        return storage.read();
       }
       try {
         const plaintext = await decrypt(parsed.iv, parsed.ct, key);
         const decrypted: unknown = JSON.parse(plaintext);
-        return isPlaintextData(decrypted) ? normalizeStoredData(decrypted) : inMemoryStore;
+        return isPlaintextData(decrypted) ? normalizeStoredData(decrypted) : storage.read();
       } catch {
         // Same rationale as above: decrypt failure is often transient
         // (IndexedDB hiccup, key re-derivation edge case). Preserve the
@@ -448,14 +469,14 @@ export async function loadVerificationData(
           "[Entros SDK] Decryption failed — keeping envelope for recovery. " +
             "Trigger a baseline reset or Clear site data if this is persistent."
         );
-        return inMemoryStore;
+        return storage.read();
       }
     }
 
     // Plaintext legacy data — migrate to encrypted
     if (isPlaintextData(parsed)) {
       const normalized = normalizeStoredData(parsed);
-      await storeVerificationData(normalized, walletAddress);
+      await storeVerificationData(normalized, walletAddress, deployment);
       if (isLegacyFallback) {
         localStorage.removeItem(STORAGE_KEY);
       }
@@ -465,9 +486,9 @@ export async function loadVerificationData(
     // Unrecognized format
     sdkWarn("[Entros SDK] Unrecognized verification data format — clearing");
     localStorage.removeItem(isLegacyFallback ? STORAGE_KEY : keyName);
-    return inMemoryStore;
+    return storage.read();
   } catch {
-    return inMemoryStore;
+    return storage.read();
   }
 }
 
@@ -528,18 +549,21 @@ export interface BaselineRecoveryResult {
 export async function recoverBaselineFromChain(
   wallet: BaselineWallet,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Connection is an optional peer dep; matches fetchIdentityState style
-  connection: any
+  connection: any,
+  deployment?: RequestBoundDeployment
 ): Promise<BaselineRecoveryResult> {
+  deployment = deployment && Object.freeze({ ...deployment });
   try {
     const identity = await fetchIdentityState(
       wallet.publicKey.toBase58(),
-      connection
+      connection,
+      deployment
     );
     if (!identity) {
       return { recovered: false, reason: "no-on-chain-identity" };
     }
 
-    const blob = await fetchEncryptedBaseline(wallet.publicKey, connection);
+    const blob = await fetchEncryptedBaseline(wallet.publicKey, connection, deployment);
     if (!blob) {
       return { recovered: false, reason: "no-encrypted-baseline" };
     }
@@ -563,7 +587,7 @@ export async function recoverBaselineFromChain(
       };
     }
 
-    const [baselinePda] = await deriveEncryptedBaselinePda(wallet.publicKey);
+    const [baselinePda] = await deriveEncryptedBaselinePda(wallet.publicKey, deployment);
 
     let plaintext: { simhash: Uint8Array; salt: Uint8Array };
     try {
@@ -595,7 +619,7 @@ export async function recoverBaselineFromChain(
           ? identity.lastVerificationTimestamp * 1000
           : Date.now(),
       projectionVersion: identity.projectionVersion,
-    }, wallet.publicKey.toBase58());
+    }, wallet.publicKey.toBase58(), deployment);
     sdkLog(
       "[Entros SDK] Recovered local baseline from on-chain EncryptedBaseline PDA"
     );

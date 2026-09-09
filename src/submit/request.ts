@@ -1,3 +1,4 @@
+import { resolveDeployment } from "../protocol/deployment";
 import type { Connection, PublicKey } from "@solana/web3.js";
 import type {
   AnchorUpdateAction,
@@ -11,7 +12,7 @@ import {
   validateRequestBoundManifest,
 } from "../proof/request";
 import { decodeIdentityState } from "../identity/anchor";
-import { PROGRAM_IDS, MAX_THRESHOLD, MIN_DISTANCE_FLOOR } from "../config";
+import { MAX_THRESHOLD, MIN_DISTANCE_FLOOR } from "../config";
 import { sha256 } from "@noble/hashes/sha256";
 import { fetchSubmissionNonce, validateNonce } from "./nonce";
 
@@ -45,11 +46,8 @@ export async function prepareWalletProofRequest(
   options: PrepareWalletProofOptions,
 ): Promise<PreparedProofRequest> {
   validateRequestBoundManifest(manifest);
-  if (
-    manifest.verifierProgram !== PROGRAM_IDS.entrosVerifier ||
-    manifest.consumerProgram !== PROGRAM_IDS.entrosAnchor
-  )
-    throw new Error("Unsupported request-bound deployment programs");
+  manifest = Object.freeze({ ...manifest, wasm: { ...manifest.wasm }, zkey: { ...manifest.zkey } });
+  resolveDeployment(manifest);
   if (
     options.threshold > MAX_THRESHOLD ||
     options.minDistance < MIN_DISTANCE_FLOOR

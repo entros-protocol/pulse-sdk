@@ -2,12 +2,14 @@ import { sha256 } from "@noble/hashes/sha256";
 
 export const SCALAR_MODULUS =
   21888242871839275222246405745257275088548364400416034343698204186575808495617n;
-export interface RequestBoundManifest {
+export interface RequestBoundDeployment {
   readonly generation: "request-bound-v1";
   readonly deploymentDomain: string;
   readonly genesisHash: string;
   readonly verifierProgram: string;
   readonly consumerProgram: string;
+}
+export interface RequestBoundManifest extends RequestBoundDeployment {
   readonly wasm: Readonly<{ url: string; sha256: string }>;
   readonly zkey: Readonly<{ url: string; sha256: string }>;
 }

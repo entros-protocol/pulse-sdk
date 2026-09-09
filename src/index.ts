@@ -204,3 +204,5 @@ export type { PrepareWalletProofOptions } from "./submit/request";
 
 export { IdentityLayoutUpgradeRequiredError } from "./submit/request";
 export { upgradeIdentityLayoutViaWallet } from "./submit/wallet";
+
+export type { RequestBoundDeployment } from "./proof/request";

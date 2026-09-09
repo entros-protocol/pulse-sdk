@@ -1,3 +1,5 @@
+import type { RequestBoundDeployment } from "./proof/request";
+import { checkDeploymentChain, resolveDeployment } from "./protocol/deployment";
 import { ed25519 } from "@noble/curves/ed25519";
 
 import type { PulseConfig } from "./config";
@@ -6,7 +8,6 @@ import {
   DEFAULT_CAPTURE_MS,
   DEFAULT_MIN_DISTANCE,
   DEFAULT_THRESHOLD,
-  PROGRAM_IDS,
   SIGNATURE_TIMEOUT_MS,
   VALIDATE_DEADLINE_MS,
   VALIDATE_UPLOAD_STALL_MS,
@@ -920,12 +921,13 @@ async function buildEncryptedBaselineBlobBestEffort(
   fingerprint: number[],
   salt: bigint,
   commitmentBytes: Uint8Array,
+  deployment?: RequestBoundDeployment,
 ): Promise<Uint8Array | undefined> {
   const baselineWallet = resolveBaselineWallet(wallet);
   if (!baselineWallet) return undefined;
   try {
     const key = await getOrDeriveBaselineKey(baselineWallet);
-    const [baselinePda] = await deriveEncryptedBaselinePda(baselineWallet.publicKey);
+    const [baselinePda] = await deriveEncryptedBaselinePda(baselineWallet.publicKey, deployment);
     const simhashBytes = fingerprintToBytes(fingerprint);
     const saltBytes = bigintToBytes32(salt);
     return await encryptBaselineBlob(
@@ -1056,7 +1058,7 @@ async function processSensorData(
   const walletAddress = wallet?.adapter?.publicKey?.toBase58?.()
     ?? wallet?.publicKey?.toBase58?.();
 
-  let previousData = await loadVerificationData(walletAddress);
+  let previousData = await loadVerificationData(walletAddress, config.requestBoundManifest);
   let isFirstVerification = previousData === null;
   let onChainCommitment: Uint8Array | null = null;
   let onChainProjectionVersion: number | null = null;
@@ -1066,7 +1068,8 @@ async function processSensorData(
     if (walletPubkey) {
       try {
         const { PublicKey } = await import("@solana/web3.js");
-        const programId = new PublicKey(PROGRAM_IDS.entrosAnchor);
+        await checkDeploymentChain(config.requestBoundManifest, connection);
+        const programId = new PublicKey(resolveDeployment(config.requestBoundManifest).consumerProgram);
         const [identityPda] = PublicKey.findProgramAddressSync(
           [new TextEncoder().encode("identity"), walletPubkey.toBuffer()],
           programId
@@ -1180,6 +1183,7 @@ async function processSensorData(
   // If the legacy baseline matched, migrate it to the keyed location and remove the legacy storage entry.
   const STORAGE_KEY = "entros-protocol-verification-data";
   if (
+    !resolveDeployment(config.requestBoundManifest).isolated &&
     !needsProjectionMigration &&
     previousData &&
     !localBaselineStale &&
@@ -1187,7 +1191,7 @@ async function processSensorData(
     typeof localStorage !== "undefined" &&
     !localStorage.getItem(`${STORAGE_KEY}_${walletAddress}`)
   ) {
-    await storeVerificationData(previousData, walletAddress);
+    await storeVerificationData(previousData, walletAddress, config.requestBoundManifest);
     localStorage.removeItem(STORAGE_KEY);
   }
 
@@ -1227,9 +1231,9 @@ async function processSensorData(
           ? "Re-syncing baseline with chain..."
           : "Recovering baseline from chain..."
       );
-      const recovery = await recoverBaselineFromChain(baselineWallet, connection);
+      const recovery = await recoverBaselineFromChain(baselineWallet, connection, config.requestBoundManifest);
       if (recovery.recovered) {
-        previousData = await loadVerificationData(walletAddress);
+        previousData = await loadVerificationData(walletAddress, config.requestBoundManifest);
         sdkLog(
           `[Entros SDK] On-chain encrypted baseline ${localBaselineStale ? "re-synced" : "recovered"}`
         );
@@ -1453,6 +1457,7 @@ async function processSensorData(
       tbh.fingerprint,
       tbh.salt,
       tbh.commitmentBytes,
+      config.requestBoundManifest,
     );
     portableBaseline = encryptedBaselineBlob !== undefined;
 
@@ -1553,7 +1558,7 @@ async function processSensorData(
         commitment: tbh.commitment.toString(),
         timestamp: Date.now(),
         projectionVersion: projectionPolicy.current,
-      }, walletAddress);
+      }, walletAddress, config.requestBoundManifest);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       sdkWarn(
@@ -1700,6 +1705,7 @@ async function processResetSensorData(
     tbh.fingerprint,
     tbh.salt,
     tbh.commitmentBytes,
+    config.requestBoundManifest,
   );
   const portableBaseline = encryptedBaselineBlob !== undefined;
 
@@ -1729,7 +1735,7 @@ async function processResetSensorData(
         commitment: tbh.commitment.toString(),
         timestamp: Date.now(),
         projectionVersion: projectionPolicy.current,
-      }, walletAddress);
+      }, walletAddress, config.requestBoundManifest);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       sdkWarn(`[Entros SDK] Reset succeeded on chain but local baseline persistence failed: ${msg}`);
