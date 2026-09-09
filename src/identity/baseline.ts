@@ -1,7 +1,7 @@
 import type { RequestBoundDeployment } from "../proof/request";
 import { checkDeploymentChain, resolveDeployment } from "../protocol/deployment";
 /**
- * Wallet-keyed encrypted baseline storage (master-list #98).
+ * Wallet-keyed encrypted baseline storage.
  *
  * Architecture: the user's previous SimHash + salt (private witnesses for
  * the Hamming-distance ZK proof) are encrypted with AES-256-GCM under a

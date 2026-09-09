@@ -1,5 +1,5 @@
 /**
- * Local-validator smoke for master-list #98.
+ * Local-validator smoke for the wallet-keyed encrypted baseline.
  *
  * Exercises the pulse-sdk's Anchor TS instruction builder against the live
  * entros_anchor binary preloaded on solana-test-validator at the canonical

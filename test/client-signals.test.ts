@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { collectClientSignals } from "../src/client-signals/automation";
 
 /**
- * Layer A1 client-signals collector. These tests pin the privacy contract
+ * Client-signals collector. These tests pin the privacy contract
  * (clean for real/privacy browsers, no false positives, never throws) and the
  * detection behaviour (each framework artifact maps to a stable label).
  */

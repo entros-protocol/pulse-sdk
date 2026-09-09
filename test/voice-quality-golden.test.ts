@@ -60,7 +60,7 @@ describe("cepstral DCT basis matches the expression it replaced", () => {
  * into the fused vector, which becomes the SimHash, which becomes the
  * commitment written on chain. Moving any of them is a projection change: it
  * invalidates every stored baseline, and users meet it as `drift-too-high`
- * with a reset as the only exit. That is the failure mode master-list #215
+ * with a reset as the only exit. That is the failure mode projection versioning
  * exists to prevent, and it would arrive here disguised as a performance
  * optimisation.
  *

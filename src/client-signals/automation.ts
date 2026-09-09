@@ -1,5 +1,5 @@
 /**
- * Client signals — Layer A1, observe-only.
+ * Client signals, observe-only.
  *
  * Produces the `client_signals` envelope attached to the `/validate-features`
  * request. Today it carries one signal group, `automation` — whether the

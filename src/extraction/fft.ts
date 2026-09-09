@@ -4,7 +4,7 @@
  *
  * Used to extract physiological-tremor signatures and motion frequency-band
  * energies from IMU axes (~50–200 Hz sample rates, ~600–2400 sample
- * windows). See `docs/master/BLUEPRINT-feature-pipeline-v2.md` §2.2.
+ * windows).
  *
  * Why a custom FFT and not Meyda: Meyda's spectral extractors are
  * tuned for audio frame sizes (≥ 512 samples at 16 kHz) and bake in

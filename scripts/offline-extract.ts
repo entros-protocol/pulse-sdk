@@ -23,7 +23,7 @@
  *   npx tsx scripts/offline-extract.ts --list <paths-file> [--out features.jsonl]
  *
  * `--list` reads newline-delimited absolute paths from a file. Used by the
- * Phase B2 corpus prep shell script to split a stratified file list across
+ * corpus prep shell script to split a stratified file list across
  * N parallel Node processes (each instance handles one chunk).
  *
  * Format notes:
