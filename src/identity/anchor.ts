@@ -494,12 +494,12 @@ export async function loadVerificationData(
 
 /**
  * Outcome of an attempt to recover the local baseline from the on-chain
- * encrypted blob (master-list #98 cache-clear / cross-device path).
+ * encrypted blob, on the cache-clear and cross-device path.
  *
  * Reasons distinguish recoverable from terminal failures:
  *   - `no-on-chain-identity`: caller should treat as first-verification.
  *   - `no-encrypted-baseline`: identity exists but user has never written
- *     an encrypted baseline (pre-3.3.0 SDK or pre-#98 deploy). UX should
+ *     an encrypted baseline (SDK older than 3.3.0, or before it shipped). UX should
  *     surface the existing baseline-missing copy and offer reset.
  *   - `signing-unavailable`: AES key derivation failed because the wallet
  *     can't `signMessage` (no method on the adapter, e.g., older Ledger
@@ -540,7 +540,7 @@ export interface BaselineRecoveryResult {
  *
  * No-op when:
  *   - The on-chain `IdentityState` PDA does not exist (treat as first-verify).
- *   - The on-chain `EncryptedBaseline` PDA does not exist (pre-#98 or wallet
+ *   - The on-chain `EncryptedBaseline` PDA does not exist (predates it, or the wallet
  *     never had `set_encrypted_baseline` written — UX should offer reset).
  *   - The wallet lacks `signMessage` (some Ledger firmware versions).
  *   - The blob's auth tag doesn't verify under the current on-chain

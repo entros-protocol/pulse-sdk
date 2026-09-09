@@ -72,8 +72,7 @@ const SPEAKER_FEATURE_COUNT =
   FORMANT_TRAJECTORY_FEATURE_COUNT +
   VOICE_QUALITY_FEATURE_COUNT +
   PITCH_CONTOUR_SHAPE_FEATURE_COUNT;
-// = 44 + 72 + 24 + 16 + 9 + 5 = 170. See
-// docs/master/BLUEPRINT-feature-pipeline-v2.md §2.1.
+// = 44 + 72 + 24 + 16 + 9 + 5 = 170.
 // (Audio block shrank 176 → 170 in v3 when MFCC[0] was dropped — see
 // mfcc.ts::MFCC_DROP_LEADING.)
 

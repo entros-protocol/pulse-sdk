@@ -1,5 +1,5 @@
 /**
- * Tests for src/identity/baseline.ts — master-list #98 SDK side.
+ * Tests for the SDK side of src/identity/baseline.ts.
  *
  * Covers:
  *   - deriveBaselineKey determinism under a mocked deterministic signer

@@ -7,8 +7,7 @@
  * because individual speakers have characteristic prosodic patterns —
  * rising/falling/modulated melodies — that the existing F0 statistics
  * (mean, variance, skew, kurtosis) don't reach. Closes the
- * "no-pitch-trajectory-shape" gap documented in
- * `docs/master/BLUEPRINT-feature-pipeline-v2.md` §1.1.
+ * "no-pitch-trajectory-shape" gap.
  *
  * @privacyGuarantee The output is a small fixed number of coefficients
  * (5 by default) capturing the lowest-frequency components of the pitch

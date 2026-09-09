@@ -173,14 +173,14 @@ describe("extractLpcAnalysis", () => {
  * becomes the commitment written on chain. A changed value here therefore
  * shifts every fingerprint and strands every stored baseline behind
  * `drift-too-high`, with a reset as the only exit. That is the failure mode
- * master-list #215 exists to prevent, and it would arrive here disguised as a
+ * projection versioning exists to prevent, and it would arrive here disguised as a
  * performance optimisation.
  *
  * The values were produced by the implementation at commit `cf2bf5f`, before
  * the Hamming-window table was hoisted out of the per-frame loop, and verified
  * unchanged after it. Any future rewrite of the windowing, the autocorrelation,
  * the Levinson-Durbin recursion or the root finder has to reproduce them
- * exactly, or it is a projection change and must be sequenced behind #215.
+ * exactly, or it is a projection change and must be sequenced as one.
  *
  * The other tests in this file check shape, alignment and determinism. Every
  * one of them passes against an implementation that computes different numbers.

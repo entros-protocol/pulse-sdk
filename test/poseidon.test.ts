@@ -96,7 +96,7 @@ describe("poseidon", () => {
  *   - the 32-byte plaintext inside every encrypted baseline blob
  *
  * A changed value strands every existing identity with no route back except a
- * manual reset. That is the failure mode master-list #215 exists to prevent,
+ * manual reset. That is the failure mode projection versioning exists to prevent,
  * and it would arrive here disguised as a dependency bump.
  *
  * The values below were produced by the implementation in place on 2026-08-03,
