@@ -62,6 +62,18 @@ export { submitViaRelayer } from "./submit/relayer";
 export type { EntrosAttestation } from "./attestation/sas";
 export { verifyEntrosAttestation } from "./attestation/sas";
 
+// Agent Operator Permit: current state of an 8004 registry agent and its agent wallet binding.
+// Evaluate permits with `@entros/verify/agent-permit`.
+export { readAgentState } from "./agent/state";
+export type {
+  AgentStateConnection,
+  AgentStateEvidence,
+  AgentStateFailureReason,
+  AgentStateReadResult,
+  AgentWalletStatus,
+  ReadAgentStateInput,
+} from "./agent/state";
+
 // Agent Anchor (Solana Agent Registry)
 export type { AgentHumanOperator } from "./agent/anchor";
 export { attestAgentOperator, getAgentHumanOperator } from "./agent/anchor";

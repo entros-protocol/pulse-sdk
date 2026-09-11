@@ -184,6 +184,10 @@ export const AGENT_REGISTRY_CONFIG = {
   programIdDevnet: "8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C",
   programIdMainnet: "8oo4dC4JvBLwy5tGgiH3WwK4B9PWxL9Z4XjA2jzkQMbQ",
   metadataKey: "entros:human-operator",
+  /** Metaplex Core holds the owner of every registry agent. The registry only caches it. */
+  coreProgramId: "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d",
+  /** Registry base collection on devnet. Only registry instructions can add assets to it. */
+  collectionDevnet: "6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA",
 } as const;
 
 export const SAS_CONFIG = {

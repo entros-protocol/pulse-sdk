@@ -22,7 +22,8 @@ export const INTEGRATOR_PROGRAM_IDS = {
   schema: SAS_CONFIG.entrosSchemaPda,
 } as const;
 
-async function boundedRpc<T>(operation: Promise<T>): Promise<T> {
+/** Rejects after three seconds so one stalled RPC call cannot hold a reader open. */
+export async function boundedRpc<T>(operation: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
