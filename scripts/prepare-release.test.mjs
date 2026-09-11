@@ -22,6 +22,18 @@ test("regeneration updates only the generated release", () => {
   assert.equal(twice.match(/## \[1.1.0\]/g)?.length, 1);
   assert.ok(twice.endsWith(history.slice(history.indexOf("## [1.0.0]"))));
 });
+test("a new release goes above an earlier generated release, outside its markers", () => {
+  const first = renderRelease(history, "1.1.0", "2026-09-06", commits);
+  const second = renderRelease(first, "1.2.0", "2026-09-07", [
+    { hash: "fedcba987", subject: "Add a reader" },
+  ]);
+  assert.ok(
+    second.indexOf("<!-- /generated-release:1.2.0 -->") <
+      second.indexOf("<!-- generated-release:1.1.0 -->"),
+  );
+  assert.ok(second.endsWith(first.slice(first.indexOf("<!-- generated-release:1.1.0 -->"))));
+  assert.equal(renderRelease(second, "1.1.0", "2026-09-06", commits), second);
+});
 test("generation rejects unknown existing entries, malformed versions, and empty history", () => {
   assert.throws(() => renderRelease(history, "1.0.0", "2026-09-06", commits));
   assert.throws(() =>
