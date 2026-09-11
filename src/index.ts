@@ -73,6 +73,17 @@ export type {
   AgentWalletStatus,
   ReadAgentStateInput,
 } from "./agent/state";
+export {
+  AGENT_WALLET_BINDING_MAX_DEADLINE_SECONDS,
+  agentWalletBindingMessage,
+  buildSetAgentWalletInstructions,
+  encodeAgentWalletBindingFragment,
+  encodeAgentWalletBindingRequest,
+  parseAgentWalletBindingFragment,
+  parseAgentWalletBindingRequest,
+  verifyAgentWalletBindingRequest,
+} from "./agent/wallet-binding";
+export type { AgentWalletBindingRequest } from "./agent/wallet-binding";
 
 // Agent Anchor (Solana Agent Registry)
 export type { AgentHumanOperator } from "./agent/anchor";
