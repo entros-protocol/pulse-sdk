@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { attestAgentOperator } from "../src/agent/anchor";
+import { attestAgentOperator, type AgentAnchorConnection } from "../src/agent/anchor";
 
 describe("Agent Anchor cluster boundary", () => {
   it("rejects mainnet before wallet or RPC work", async () => {
@@ -9,10 +9,14 @@ describe("Agent Anchor cluster boundary", () => {
         throw new Error("wallet access must not occur");
       },
     };
-    const connection = {
-      getAccountInfo(): never {
-        throw new Error("RPC access must not occur");
-      },
+    const unreachable = (): never => {
+      throw new Error("RPC access must not occur");
+    };
+    const connection: AgentAnchorConnection = {
+      getAccountInfo: unreachable,
+      getLatestBlockhash: unreachable,
+      sendRawTransaction: unreachable,
+      confirmTransaction: unreachable,
     };
 
     const result = await attestAgentOperator("unused", {

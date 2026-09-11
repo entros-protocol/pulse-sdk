@@ -85,9 +85,20 @@ export {
 } from "./agent/wallet-binding";
 export type { AgentWalletBindingRequest } from "./agent/wallet-binding";
 
-// Agent Anchor (Solana Agent Registry)
-export type { AgentHumanOperator } from "./agent/anchor";
-export { attestAgentOperator, getAgentHumanOperator } from "./agent/anchor";
+// Historical `entros:human-operator` metadata. It grants no permission.
+export type {
+  AgentAnchorConnection,
+  AgentAnchorWallet,
+  AgentHumanOperator,
+  AgentOperatorSnapshot,
+  AgentOperatorSnapshotReadResult,
+  AgentSnapshotConnection,
+} from "./agent/anchor";
+export {
+  attestAgentOperator,
+  getAgentHumanOperator,
+  readAgentOperatorSnapshot,
+} from "./agent/anchor";
 
 // Identity
 export type { IdentityState, StoredVerificationData } from "./identity/types";
