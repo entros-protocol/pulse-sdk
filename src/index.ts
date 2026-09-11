@@ -204,9 +204,11 @@ export type { ProgressCallback, UploadProgress } from "./submit/types";
 
 export {
   readIntegratorEvidence,
+  findLatestVerificationTransaction,
   INTEGRATOR_DEVNET_GENESIS_HASH,
   INTEGRATOR_PROGRAM_IDS,
 } from "./identity/integrator";
+export type { VerificationTransactionSearchResult } from "./identity/integrator";
 export type {
   IntegratorEvidence,
   IntegratorEvidenceConnection,
