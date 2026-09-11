@@ -116,6 +116,31 @@ The evidence reports `browser_unattested` assurance and `unmeasured` uniqueness.
 These fields do not establish sensor provenance or population uniqueness.
 The reader supports the pinned Entros devnet programs. It does not submit a transaction.
 
+### Read an agent for an Agent Operator Permit
+
+`readAgentState` reads a Solana Agent Registry agent at one confirmed devnet slot.
+It returns the agent's Metaplex Core owner, its registry agent wallet, and the wallet status.
+
+```typescript
+import { readAgentState } from '@entros/pulse-sdk';
+
+const state = await readAgentState({ agent, connection });
+if (state.status === 'available' && state.evidence.agentWalletStatus === 'bound') {
+  // state.evidence.owner signs permits. state.evidence.agentWallet presents them.
+}
+```
+
+The owner comes from the Core asset, because the registry's cached owner lags a direct Core transfer.
+The agent wallet counts only while the cached owner matches the Core owner. Otherwise the status is `stale`.
+
+`buildSetAgentWalletInstructions` builds the registry's Ed25519 check and `set_agent_wallet` instructions for one binding request.
+`findLatestVerificationTransaction` finds a wallet's newest qualifying verification transaction for `readIntegratorEvidence`.
+Evaluate permits with `@entros/verify/agent-permit` in Verify `0.3.0` or later.
+The [integration guide](https://entros.io/docs/integrate/agent-permit) covers the complete flow.
+
+`readAgentOperatorSnapshot` reads the old `entros:human-operator` metadata entry as a historical snapshot.
+Any agent owner can write that entry, and it grants no permission.
+
 ### Projection 2 compatibility
 
 The on-chain policy controls projection 2 activation. `CLIENT_PROJECTION_VERSION` reports client support and does not activate policy.
