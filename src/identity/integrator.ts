@@ -1,5 +1,5 @@
 import { resolveDeployment } from "../protocol/deployment";
-import type { AccountInfo, PublicKey } from "@solana/web3.js";
+import type { AccountInfo, Connection, PublicKey } from "@solana/web3.js";
 import { BN254_SCALAR_FIELD, PROGRAM_IDS, SAS_CONFIG } from "../config";
 import { HIGHEST_SUPPORTED_PROJECTION_VERSION } from "../projection";
 import { decodeIdentityState } from "./anchor";
@@ -22,7 +22,8 @@ export const INTEGRATOR_PROGRAM_IDS = {
   schema: SAS_CONFIG.entrosSchemaPda,
 } as const;
 
-async function boundedRpc<T>(operation: Promise<T>): Promise<T> {
+/** Rejects after three seconds so one stalled RPC call cannot hold a reader open. */
+export async function boundedRpc<T>(operation: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
@@ -414,4 +415,54 @@ export async function readIntegratorEvidence(
     }
   }
   return { status: "unavailable", reason: "rpc_unavailable" };
+}
+
+export type VerificationTransactionSearchResult =
+  | { status: "found"; signature: string }
+  | { status: "none" | "invalid" | "unavailable" };
+
+/**
+ * Finds the newest confirmed Entros transaction that qualifies as verification evidence for a
+ * wallet. Pass the signature to `readIntegratorEvidence`, which checks it against current state.
+ */
+export async function findLatestVerificationTransaction(input: {
+  walletPubkey: string;
+  connection: Pick<Connection, "getSignaturesForAddress" | "getParsedTransaction">;
+  /** Signatures to inspect, newest first. From 1 to 25, default 10. */
+  limit?: number;
+}): Promise<VerificationTransactionSearchResult> {
+  const limit = input.limit ?? 10;
+  if (!integer(limit, 1, 25)) return { status: "invalid" };
+  const { PublicKey } = await import("@solana/web3.js");
+  let wallet: PublicKey;
+  try {
+    wallet = new PublicKey(input.walletPubkey);
+    if (wallet.toBase58() !== input.walletPubkey) return { status: "invalid" };
+  } catch {
+    return { status: "invalid" };
+  }
+  const [identityPda] = PublicKey.findProgramAddressSync(
+    [new TextEncoder().encode("identity"), wallet.toBytes()],
+    new PublicKey(PROGRAM_IDS.entrosAnchor),
+  );
+  try {
+    const signatures = await boundedRpc(
+      input.connection.getSignaturesForAddress(identityPda, { limit }, "confirmed"),
+    );
+    for (const entry of signatures.slice(0, limit)) {
+      if (entry.err !== null) continue;
+      const parsed = await boundedRpc(
+        input.connection.getParsedTransaction(entry.signature, {
+          commitment: "confirmed",
+          maxSupportedTransactionVersion: 0,
+        }),
+      );
+      if (!parsed) continue;
+      if (await qualifyingTransaction(parsed, entry.signature, wallet, identityPda))
+        return { status: "found", signature: entry.signature };
+    }
+    return { status: "none" };
+  } catch {
+    return { status: "unavailable" };
+  }
 }

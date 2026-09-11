@@ -62,9 +62,43 @@ export { submitViaRelayer } from "./submit/relayer";
 export type { EntrosAttestation } from "./attestation/sas";
 export { verifyEntrosAttestation } from "./attestation/sas";
 
-// Agent Anchor (Solana Agent Registry)
-export type { AgentHumanOperator } from "./agent/anchor";
-export { attestAgentOperator, getAgentHumanOperator } from "./agent/anchor";
+// Agent Operator Permit: current state of an 8004 registry agent and its agent wallet binding.
+// Evaluate permits with `@entros/verify/agent-permit`.
+export { readAgentState } from "./agent/state";
+export type {
+  AgentStateConnection,
+  AgentStateEvidence,
+  AgentStateFailureReason,
+  AgentStateReadResult,
+  AgentWalletStatus,
+  ReadAgentStateInput,
+} from "./agent/state";
+export {
+  AGENT_WALLET_BINDING_MAX_DEADLINE_SECONDS,
+  agentWalletBindingMessage,
+  buildSetAgentWalletInstructions,
+  encodeAgentWalletBindingFragment,
+  encodeAgentWalletBindingRequest,
+  parseAgentWalletBindingFragment,
+  parseAgentWalletBindingRequest,
+  verifyAgentWalletBindingRequest,
+} from "./agent/wallet-binding";
+export type { AgentWalletBindingRequest } from "./agent/wallet-binding";
+
+// Historical `entros:human-operator` metadata. It grants no permission.
+export type {
+  AgentAnchorConnection,
+  AgentAnchorWallet,
+  AgentHumanOperator,
+  AgentOperatorSnapshot,
+  AgentOperatorSnapshotReadResult,
+  AgentSnapshotConnection,
+} from "./agent/anchor";
+export {
+  attestAgentOperator,
+  getAgentHumanOperator,
+  readAgentOperatorSnapshot,
+} from "./agent/anchor";
 
 // Identity
 export type { IdentityState, StoredVerificationData } from "./identity/types";
@@ -181,9 +215,11 @@ export type { ProgressCallback, UploadProgress } from "./submit/types";
 
 export {
   readIntegratorEvidence,
+  findLatestVerificationTransaction,
   INTEGRATOR_DEVNET_GENESIS_HASH,
   INTEGRATOR_PROGRAM_IDS,
 } from "./identity/integrator";
+export type { VerificationTransactionSearchResult } from "./identity/integrator";
 export type {
   IntegratorEvidence,
   IntegratorEvidenceConnection,

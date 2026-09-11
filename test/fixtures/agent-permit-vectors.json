@@ -1,0 +1,423 @@
+{
+  "schema": "entros-agent-permit-vectors-v1",
+  "generator": "scripts/agent-permit/generate-vectors.py",
+  "network": {
+    "cluster": "devnet",
+    "genesisHash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+    "entrosAnchorProgram": "GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2",
+    "agentRegistryProgram": "8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C",
+    "agentCollection": "6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA",
+    "coreProgram": "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d"
+  },
+  "constants": {
+    "versionLine": "Entros-Agent-Permit-v1",
+    "noticeLine": "Sign only to let this agent perform the action below. This is not a transaction.",
+    "presentationLine": "Entros-Agent-Permit-Presentation-v1",
+    "minLifetimeSeconds": 30,
+    "maxLifetimeSeconds": 900,
+    "maxAudienceLength": 200,
+    "maxLabelLength": 96,
+    "minTimeSeconds": 946684800,
+    "maxTimeSeconds": 253402300799,
+    "clockSkewSeconds": 30
+  },
+  "keys": {
+    "operator": {
+      "seedHex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+      "publicKey": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+      "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+    },
+    "agentWallet": {
+      "seedHex": "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+      "publicKey": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+      "publicKeyHex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c"
+    },
+    "other": {
+      "seedHex": "c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7",
+      "publicKey": "Hyx62wPQGyvXCoihZq1BrbUjBRh2LuNxWiiqMkfAuSZr",
+      "publicKeyHex": "fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025"
+    },
+    "smallOrder": {
+      "publicKey": "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM",
+      "publicKeyHex": "0100000000000000000000000000000000000000000000000000000000000000"
+    },
+    "nonCanonical": {
+      "publicKey": "H5xSWNRAbqKddKjrabehyU8drL3Dk4LgZJiEJc9rGGyC",
+      "publicKeyHex": "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"
+    }
+  },
+  "valid": [
+    {
+      "name": "standard request",
+      "request": {
+        "version": 1,
+        "agent": "AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S",
+        "agentWallet": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+        "operator": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "audience": "https://consumer.example/agent-actions",
+        "action": {
+          "label": "Grant synthetic-vault access for 60 seconds",
+          "sha256": "4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf"
+        },
+        "policy": {
+          "id": "agent-demo",
+          "version": 1,
+          "minTrustScore": 100,
+          "maxVerificationAgeSeconds": 86400,
+          "maxEvaluationAgeSeconds": 90,
+          "requiredAssurance": "browser_unattested",
+          "uniquenessRequirement": "allow_unmeasured",
+          "requireAttestation": false,
+          "cluster": "devnet"
+        },
+        "cluster": "devnet",
+        "genesisHash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+        "entrosAnchorProgram": "GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2",
+        "agentRegistryProgram": "8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C",
+        "agentCollection": "6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA",
+        "issuedAt": 1789041600,
+        "expiresAt": 1789042200,
+        "nonce": "ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+      },
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587",
+      "permitId": "5e7f8a8b6d08bc2fea46ce1814faf478883601e079fd8f5786c078b5288f604e",
+      "presentation": "Entros-Agent-Permit-Presentation-v1\npermit:5e7f8a8b6d08bc2fea46ce1814faf478883601e079fd8f5786c078b5288f604e",
+      "operatorSignature": "c46cffa379fb2ddad7504a6a58d40908aafc8fa2d95da6ee0dc561184eb0783656a1a6bb29224ab7b457ed80f48ffedb019b27f4576cb1b7a25c61f5d7fa6100",
+      "presentationSignature": "ce5bc4c6163bd64bd5ce2a238367ada3e02b8abdc1626fb88d6b46e52c07eecb3af057d807cddb20c1d03b517b6b952c084970c1ff4610b9624b7d370444b50a",
+      "copiedPresentationSignature": "5e7fc06e3bf10bf91ec834c4736d68bd9f4c9a95d5c1e89c0d62170886f6bce00029c4d6feff5fa28e0fc668dc58b674945a622fe1513d3c4a8eef9e5f648c0e",
+      "approval": "{\"version\":1,\"permitId\":\"5e7f8a8b6d08bc2fea46ce1814faf478883601e079fd8f5786c078b5288f604e\",\"operatorSignature\":\"c46cffa379fb2ddad7504a6a58d40908aafc8fa2d95da6ee0dc561184eb0783656a1a6bb29224ab7b457ed80f48ffedb019b27f4576cb1b7a25c61f5d7fa6100\",\"verifiedTransaction\":\"2B77o9bQwNm68cZfJDvkj4tKi3ey2PjWgEUJhudHy2nAPn5LDSqFsadHEUV3RDPw6eP5jb9MhoKpDCH6gkWAcwNP\"}",
+      "settlementBundle": "{\"version\":1,\"nonce\":\"ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587\",\"operatorSignature\":\"c46cffa379fb2ddad7504a6a58d40908aafc8fa2d95da6ee0dc561184eb0783656a1a6bb29224ab7b457ed80f48ffedb019b27f4576cb1b7a25c61f5d7fa6100\",\"presentationSignature\":\"ce5bc4c6163bd64bd5ce2a238367ada3e02b8abdc1626fb88d6b46e52c07eecb3af057d807cddb20c1d03b517b6b952c084970c1ff4610b9624b7d370444b50a\",\"verifiedTransaction\":\"2B77o9bQwNm68cZfJDvkj4tKi3ey2PjWgEUJhudHy2nAPn5LDSqFsadHEUV3RDPw6eP5jb9MhoKpDCH6gkWAcwNP\"}"
+    },
+    {
+      "name": "loopback request at minimum lifetime",
+      "request": {
+        "version": 1,
+        "agent": "AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S",
+        "agentWallet": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+        "operator": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "audience": "http://127.0.0.1:5199/agent-action",
+        "action": {
+          "label": "Publish listing #42: price 1.5 SOL (devnet)",
+          "sha256": "8bdd9718d71479b66fc93822325b9b1195c85036c7402afd4623ecebf09e0bb6"
+        },
+        "policy": {
+          "id": "agent_high-value",
+          "version": 1,
+          "minTrustScore": 500,
+          "maxVerificationAgeSeconds": 900,
+          "maxEvaluationAgeSeconds": 30,
+          "requiredAssurance": "browser_unattested",
+          "uniquenessRequirement": "allow_unmeasured",
+          "requireAttestation": true,
+          "cluster": "devnet"
+        },
+        "cluster": "devnet",
+        "genesisHash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+        "entrosAnchorProgram": "GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2",
+        "agentRegistryProgram": "8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C",
+        "agentCollection": "6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA",
+        "issuedAt": 1789041600,
+        "expiresAt": 1789041630,
+        "nonce": "2369a5e88885b87a641ea72de857ab21dcbb8bcd8b00aa7456e2d527c5e9c9fa"
+      },
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:http://127.0.0.1:5199/agent-action\naction:Publish listing #42: price 1.5 SOL (devnet)\naction_sha256:8bdd9718d71479b66fc93822325b9b1195c85036c7402afd4623ecebf09e0bb6\npolicy:{\"id\":\"agent_high-value\",\"version\":1,\"minTrustScore\":500,\"maxVerificationAgeSeconds\":900,\"maxEvaluationAgeSeconds\":30,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":true,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:00:30Z\nnonce:2369a5e88885b87a641ea72de857ab21dcbb8bcd8b00aa7456e2d527c5e9c9fa",
+      "permitId": "e1c28987fe928463ca1994c4f10bf754f82df6728c81d1fee45e226490c1e5d8",
+      "presentation": "Entros-Agent-Permit-Presentation-v1\npermit:e1c28987fe928463ca1994c4f10bf754f82df6728c81d1fee45e226490c1e5d8",
+      "operatorSignature": "d25bfa4535e73b2a0d233fc1a25572baa0377c9d112423d66f61addf65ed2e462095e8303f97747b293056b2afaa3b353fca54f90920bce5d172c6a7fca06e03",
+      "presentationSignature": "117ba201c2cba29da8131b3573f85a665350080758034e6c33f86da3e2b5d79f2e10e63d4ab03d9fc7481e394f9869c148ac0c4b387ac770af920fc4e346100a",
+      "copiedPresentationSignature": "2b1d31b59ee3d49714ed8e2269bd72459efc0600ba6113cfbff770a4f662142de9b6020762ab8915bd0c20beac10bc34cc5ccc841eaf92ba7e3360a20e213b09",
+      "approval": "{\"version\":1,\"permitId\":\"e1c28987fe928463ca1994c4f10bf754f82df6728c81d1fee45e226490c1e5d8\",\"operatorSignature\":\"d25bfa4535e73b2a0d233fc1a25572baa0377c9d112423d66f61addf65ed2e462095e8303f97747b293056b2afaa3b353fca54f90920bce5d172c6a7fca06e03\",\"verifiedTransaction\":\"5L82uC7CW9ei73p1VYb24zgZ91guojXTso3CpQuzgF7fBocjV7VCyx87WoXH29Jv814spwB4xTNpBsLryRrKrYjG\"}",
+      "settlementBundle": "{\"version\":1,\"nonce\":\"2369a5e88885b87a641ea72de857ab21dcbb8bcd8b00aa7456e2d527c5e9c9fa\",\"operatorSignature\":\"d25bfa4535e73b2a0d233fc1a25572baa0377c9d112423d66f61addf65ed2e462095e8303f97747b293056b2afaa3b353fca54f90920bce5d172c6a7fca06e03\",\"presentationSignature\":\"117ba201c2cba29da8131b3573f85a665350080758034e6c33f86da3e2b5d79f2e10e63d4ab03d9fc7481e394f9869c148ac0c4b387ac770af920fc4e346100a\",\"verifiedTransaction\":\"5L82uC7CW9ei73p1VYb24zgZ91guojXTso3CpQuzgF7fBocjV7VCyx87WoXH29Jv814spwB4xTNpBsLryRrKrYjG\"}"
+    },
+    {
+      "name": "operator key as agent wallet at maximum lifetime",
+      "request": {
+        "version": 1,
+        "agent": "AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S",
+        "agentWallet": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "operator": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "audience": "https://api.consumer.example:8443/v1/agents/permits/",
+        "action": {
+          "label": "Grant synthetic-vault access for 60 seconds",
+          "sha256": "4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf"
+        },
+        "policy": {
+          "id": "agent-demo",
+          "version": 1,
+          "minTrustScore": 100,
+          "maxVerificationAgeSeconds": 86400,
+          "maxEvaluationAgeSeconds": 90,
+          "requiredAssurance": "browser_unattested",
+          "uniquenessRequirement": "allow_unmeasured",
+          "requireAttestation": false,
+          "cluster": "devnet"
+        },
+        "cluster": "devnet",
+        "genesisHash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+        "entrosAnchorProgram": "GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2",
+        "agentRegistryProgram": "8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C",
+        "agentCollection": "6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA",
+        "issuedAt": 1789041600,
+        "expiresAt": 1789042500,
+        "nonce": "b85c47c0d8812841eecb594ede05800d7419ea9f8a9a238be5a5e3cb2411a6b0"
+      },
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://api.consumer.example:8443/v1/agents/permits/\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:15:00Z\nnonce:b85c47c0d8812841eecb594ede05800d7419ea9f8a9a238be5a5e3cb2411a6b0",
+      "permitId": "81de536e6124ce86fcaf817db27755bbd5bfec71c596a9798b2b775257cc5d48",
+      "presentation": "Entros-Agent-Permit-Presentation-v1\npermit:81de536e6124ce86fcaf817db27755bbd5bfec71c596a9798b2b775257cc5d48",
+      "operatorSignature": "0ccc32c810533992462a78ccd6c6010ac2dfaa83363b37a7fb0524c7910c4c7ea66226879eaa21a933e514364b1bd9da527e8851b429ffbed2a6ce802d9e370d",
+      "presentationSignature": "84a535873436d1f18b0d9a8ee12cb76a3aa9f84614a4cd152ea92c742c6adfbcf0da86e92b2123eb130e37dd2900104d26b000da84e01b6967da16a74c102307",
+      "copiedPresentationSignature": "44e53c7702c5c3a8e59601ec3e04578abba95490a1fea9840ca3b4ea3c97352c99f567669087e9bbb5aa3e12eec7265bf2481392ee470cba71df1d8114b0800b",
+      "approval": "{\"version\":1,\"permitId\":\"81de536e6124ce86fcaf817db27755bbd5bfec71c596a9798b2b775257cc5d48\",\"operatorSignature\":\"0ccc32c810533992462a78ccd6c6010ac2dfaa83363b37a7fb0524c7910c4c7ea66226879eaa21a933e514364b1bd9da527e8851b429ffbed2a6ce802d9e370d\",\"verifiedTransaction\":\"3rkyVudynrtLTWYTBqqGWii7eGkk4m4RaagMh4VjQbTGboWgxCvUGHqXcExSjxd8hyiskaC9joS8nuTPNysHraMx\"}",
+      "settlementBundle": "{\"version\":1,\"nonce\":\"b85c47c0d8812841eecb594ede05800d7419ea9f8a9a238be5a5e3cb2411a6b0\",\"operatorSignature\":\"0ccc32c810533992462a78ccd6c6010ac2dfaa83363b37a7fb0524c7910c4c7ea66226879eaa21a933e514364b1bd9da527e8851b429ffbed2a6ce802d9e370d\",\"presentationSignature\":\"84a535873436d1f18b0d9a8ee12cb76a3aa9f84614a4cd152ea92c742c6adfbcf0da86e92b2123eb130e37dd2900104d26b000da84e01b6967da16a74c102307\",\"verifiedTransaction\":\"3rkyVudynrtLTWYTBqqGWii7eGkk4m4RaagMh4VjQbTGboWgxCvUGHqXcExSjxd8hyiskaC9joS8nuTPNysHraMx\"}"
+    }
+  ],
+  "invalidMessages": [
+    {
+      "name": "line injection through the label",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant\naudience:https://evil.example/\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "trailing newline",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587\n"
+    },
+    {
+      "name": "carriage return line endings",
+      "message": "Entros-Agent-Permit-v1\r\nSign only to let this agent perform the action below. This is not a transaction.\r\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\r\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\r\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\r\naudience:https://consumer.example/agent-actions\r\naction:Grant synthetic-vault access for 60 seconds\r\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\r\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\r\ncluster:devnet\r\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\r\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\r\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\r\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\r\nissued_at:2026-09-10T12:00:00Z\r\nexpires_at:2026-09-10T12:10:00Z\r\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "unknown version line",
+      "message": "Entros-Agent-Permit-v2\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "changed notice line",
+      "message": "Entros-Agent-Permit-v1\nSign to continue.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "missing nonce line",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z"
+    },
+    {
+      "name": "extra line",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587\nextra:1"
+    },
+    {
+      "name": "swapped key order",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "agent with an extra leading zero byte",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:1AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "agent that decodes to 31 bytes",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:thX6LZfHDZZKUs92febYZhYRcXddmzfzF2NvTkPNE\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "agent with a character outside base58",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:0KNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "small-order operator key",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "non-canonical operator key",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:H5xSWNRAbqKddKjrabehyU8drL3Dk4LgZJiEJc9rGGyC\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "small-order agent wallet",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "uppercase audience host",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://Consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "audience with the default port",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example:443/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "audience port with a leading zero",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example:08443/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "audience with a query",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions?x=1\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "audience with a fragment",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions#x\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "audience with user information",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://user@consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "plain http audience outside loopback",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:http://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "audience without a path",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "audience with a dot segment",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/a/../agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "audience with a punycode label",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://xn--consumer-9za.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "audience with a numeric final label",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://1.2.3.4/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "audience with a percent escape",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent%20actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "audience over 200 characters",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "label with a leading space",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction: Grant access\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "label over 96 characters",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "label outside printable ASCII",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant acc\u00e8s\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "empty label",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "uppercase action digest",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930AB577B2336A7F446D4086EBBB27A0C5DD1F5EC649689A5B2D23737C149CF\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "all-zero action digest",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:0000000000000000000000000000000000000000000000000000000000000000\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "policy with spaces",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\", \"version\":1, \"minTrustScore\":100, \"maxVerificationAgeSeconds\":86400, \"maxEvaluationAgeSeconds\":90, \"requiredAssurance\":\"browser_unattested\", \"uniquenessRequirement\":\"allow_unmeasured\", \"requireAttestation\":false, \"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "policy with unsupported assurance",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"hardware_attested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "policy with a fractional score",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100.0,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "policy missing a default field",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "mainnet cluster",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:mainnet-beta\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "wrong genesis",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "retired Anchor program",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:4F97jNoxQzT2qRbkWpW3ztC3Nz2TtKj3rnKG8ExgnrfV\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "rotated agent collection",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:C6W2bq4BoVT8FDvqhdp3sbcHFBjNBXE8TsNak2wTXQs9\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "time with milliseconds",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00.000Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "impossible calendar date",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-02-30T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "leap second",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T11:59:60Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "times before 2000",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:1999-12-31T23:50:00Z\nexpires_at:1999-12-31T23:59:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "lifetime of 29 seconds",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:00:29Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "lifetime of 901 seconds",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:15:01Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "expiry before issue",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T11:59:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587"
+    },
+    {
+      "name": "all-zero nonce",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "nonce of 63 characters",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b21458"
+    }
+  ],
+  "signatures": [
+    {
+      "name": "operator signature",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587",
+      "publicKey": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+      "signature": "c46cffa379fb2ddad7504a6a58d40908aafc8fa2d95da6ee0dc561184eb0783656a1a6bb29224ab7b457ed80f48ffedb019b27f4576cb1b7a25c61f5d7fa6100",
+      "strict": true,
+      "permissive": true
+    },
+    {
+      "name": "signature by another key",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587",
+      "publicKey": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+      "signature": "a0da7aec0c736c0bb7d8ac456e7771743a4eebcfb44d9323fdabee889960ab374b34121528b0215616bf550a8d2ead8d17d17b972094cff9929d606d5b79cc07",
+      "strict": false,
+      "permissive": false
+    },
+    {
+      "name": "identity key with a zero signature",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587",
+      "publicKey": "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM",
+      "signature": "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "strict": false,
+      "permissive": true
+    },
+    {
+      "name": "scalar above the group order",
+      "message": "Entros-Agent-Permit-v1\nSign only to let this agent perform the action below. This is not a transaction.\nagent:AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\nagent_wallet:586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\noperator:FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\naudience:https://consumer.example/agent-actions\naction:Grant synthetic-vault access for 60 seconds\naction_sha256:4930ab577b2336a7f446d4086ebbb27a0c5dd1f5ec649689a5b2d23737c149cf\npolicy:{\"id\":\"agent-demo\",\"version\":1,\"minTrustScore\":100,\"maxVerificationAgeSeconds\":86400,\"maxEvaluationAgeSeconds\":90,\"requiredAssurance\":\"browser_unattested\",\"uniquenessRequirement\":\"allow_unmeasured\",\"requireAttestation\":false,\"cluster\":\"devnet\"}\ncluster:devnet\ngenesis:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG\nentros_anchor:GZYwTp2ozeuRA5Gof9vs4ya961aANcJBdUzB7LN6q4b2\nagent_registry:8oo4J9tBB3Hna1jRQ3rWvJjojqM5DYTDJo5cejUuJy3C\nagent_collection:6CTyGPcn8dMwKEqgtvx2XCpkGUd7uqCVK6937RSM5bhA\nissued_at:2026-09-10T12:00:00Z\nexpires_at:2026-09-10T12:10:00Z\nnonce:ca8129f6bc76f981713213b9c6d4b7403ab3e65af811c0e13f8487950b214587",
+      "publicKey": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+      "signature": "c46cffa379fb2ddad7504a6a58d40908aafc8fa2d95da6ee0dc561184eb0783643759c1844855c0f8bf4e423d389ddf0019b27f4576cb1b7a25c61f5d7fa6110",
+      "strict": false,
+      "permissive": false
+    }
+  ],
+  "binding": [
+    {
+      "name": "agent wallet binding",
+      "agent": "AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S",
+      "agentWallet": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+      "owner": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+      "deadline": 1789041840,
+      "messageHex": "383030345f57414c4c45545f5345543a8a6dd8dc606b0a13b60894ee45dea2a01971800abd49febc3200b8468c59b7f53d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660cd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511ab09ca26a00000000",
+      "signature": "fe9bf2318c7a322d585c294e71693c98e665afb8564d2079373cc8cfe2dfea28bfcaaff136a9eba0b57b61e8b5cc1f022f07f2ece395ecd1ba03777bb2a00f03",
+      "bindingRequest": "{\"version\":1,\"agent\":\"AKNQsjodYmDkuptwAiiaRSnkbstfdyd3h3GgCURct13S\",\"agentWallet\":\"586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5\",\"owner\":\"FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z\",\"deadline\":1789041840,\"signature\":\"fe9bf2318c7a322d585c294e71693c98e665afb8564d2079373cc8cfe2dfea28bfcaaff136a9eba0b57b61e8b5cc1f022f07f2ece395ecd1ba03777bb2a00f03\"}",
+      "fragment": "bind=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6IkFLTlFzam9kWW1Ea3VwdHdBaWlhUlNua2JzdGZkeWQzaDNHZ0NVUmN0MTNTIiwiYWdlbnRXYWxsZXQiOiI1ODZaN0gydnBYOXFOaE4yVDRlOVV0dWdpZTNvZ2pieHpHYU10TTNFNkhSNSIsIm93bmVyIjoiRlZlbjNYNjY5eEx6c2k2TjJWOTFEb2l5ekh6ZzF1QWdxaVQ4alo5blM5NloiLCJkZWFkbGluZSI6MTc4OTA0MTg0MCwic2lnbmF0dXJlIjoiZmU5YmYyMzE4YzdhMzIyZDU4NWMyOTRlNzE2OTNjOThlNjY1YWZiODU2NGQyMDc5MzczY2M4Y2ZlMmRmZWEyOGJmY2FhZmYxMzZhOWViYTBiNTdiNjFlOGI1Y2MxZjAyMmYwN2YyZWNlMzk1ZWNkMWJhMDM3NzdiYjJhMDBmMDMifQ"
+    }
+  ]
+}
