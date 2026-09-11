@@ -168,21 +168,7 @@ const OLDEST_PREFIX_COMPATIBLE_LEN = 543;
 function padToCurrentLayout(accountData: Uint8Array): Uint8Array | null {
   if (accountData.length >= IDENTITY_STATE_LEN) return accountData;
   if (accountData.length < OLDEST_PREFIX_COMPATIBLE_LEN) return null;
-  // Anchor's Borsh layouts call `readUIntLE`, which only a Node `Buffer` has,
-  // so a plain `Uint8Array` decodes to null at any length, full ones included.
-  // Callers pass `accountInfo.data` and web3.js hands that over as a Buffer, so
-  // the padded copy has to be one too.
-  //
-  // Reached through `globalThis` rather than named directly: `Buffer` is not in
-  // this package's type surface and should not be, since the SDK targets the
-  // browser. Anchor itself cannot run without the polyfill, so wherever this
-  // decode can succeed the constructor is already present, and the fallback is
-  // belt and braces.
-  const NodeBuffer = (globalThis as { Buffer?: { alloc(size: number): Uint8Array } })
-    .Buffer;
-  const grown = NodeBuffer
-    ? NodeBuffer.alloc(IDENTITY_STATE_LEN)
-    : new Uint8Array(IDENTITY_STATE_LEN);
+  const grown = new Uint8Array(IDENTITY_STATE_LEN);
   grown.set(accountData);
   return grown;
 }
@@ -206,7 +192,10 @@ export async function decodeIdentityState(
   try {
     const data = padToCurrentLayout(accountData);
     if (!data) return null;
-    const anchor = await import("@coral-xyz/anchor");
+    const [anchor, { Buffer }] = await Promise.all([
+      import("@coral-xyz/anchor"),
+      import("buffer"),
+    ]);
     const coder = new anchor.BorshAccountsCoder(entrosAnchorIdl as Idl);
     // Anchor 0.30+ IDL spec: account names are PascalCase and the
     // BorshAccountsCoder lookup is strict — passing camelCase silently
@@ -215,13 +204,10 @@ export async function decodeIdentityState(
     // we destructure with snake_case before mapping to the public
     // camelCase IdentityState type.
     //
-    // `accountData` is the Buffer that web3.js' getAccountInfo returns; the SDK
-    // targets the browser lib (no Node `Buffer` global type), so we assert the
-    // coder's own parameter type rather than naming `Buffer`.
-    const decoded = coder.decode(
-      "IdentityState",
-      data as Parameters<typeof coder.decode>[1],
-    );
+    // Anchor's Borsh layouts call `readUIntLE`, which a plain `Uint8Array`
+    // lacks. The `buffer` module supplies the constructor because bundlers such
+    // as Next.js leave `globalThis.Buffer` undefined in the page.
+    const decoded = coder.decode("IdentityState", Buffer.from(data));
     return {
       owner: decoded.owner.toBase58(),
       creationTimestamp: decoded.creation_timestamp.toNumber(),
