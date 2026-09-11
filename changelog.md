@@ -9,6 +9,19 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+<!-- generated-release:4.12.0 -->
+## [4.12.0] - 2026-09-11
+
+- Comment cleanup (36b3718).
+- Decode legacy Anchor layouts in bundles without a global Buffer (0f603ff).
+- Read agent ownership from the Core asset and the registry agent wallet at one slot (4b5c915).
+- Build agent wallet binding requests and the registry instructions that apply them (17ba17a).
+- Find a wallet's newest qualifying verification transaction (eee3cc8).
+- Read the legacy operator entry as a validated historical snapshot and deprecate the Agent Anchor calls (cf0365a).
+- Document the agent readers (5078949).
+- Place new release notes above earlier generated releases (909511f).
+<!-- /generated-release:4.12.0 -->
+
 <!-- generated-release:4.11.0 -->
 ## [4.11.0] - 2026-09-09
 

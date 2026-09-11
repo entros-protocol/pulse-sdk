@@ -29,9 +29,15 @@ export function renderRelease(history, version, date, commits) {
     throw new Error(
       "An existing release entry requires its original generator",
     );
-  const first = history.indexOf("\n## [");
-  if (first === -1)
+  // A generated release opens with its marker, one line above its heading, so the newest
+  // boundary is whichever comes first.
+  const boundaries = [
+    history.indexOf("\n<!-- generated-release:"),
+    history.indexOf("\n## ["),
+  ].filter((index) => index !== -1);
+  if (!boundaries.length)
     throw new Error("The changelog has no historical release boundary");
+  const first = Math.min(...boundaries);
   return history.slice(0, first + 1) + section + history.slice(first + 1);
 }
 
