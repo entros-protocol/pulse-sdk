@@ -38,6 +38,14 @@ export { fuseFeatures } from "./extraction/statistics";
 export { extractSpeakerFeatures, extractSpeakerFeaturesDetailed, SPEAKER_FEATURE_COUNT } from "./extraction/speaker";
 export { extractMotionFeatures, extractTouchFeatures, extractMouseDynamics, extractAccelerationMagnitude, MOTION_FEATURE_COUNT, TOUCH_FEATURE_COUNT } from "./extraction/kinematic";
 export { fuseRawFeatures } from "./extraction/statistics";
+// The whole per-modality extraction and fusion in one call, which is what the SDK itself runs
+// before it derives a fingerprint. Exported so an analysis can measure one capture against
+// another through the same path a verification takes. A caller that rebuilds the fusion from
+// the per-modality functions above has to reproduce touch canonicalization and the
+// projection-dependent motion branch, and a reconstruction that drifts reports a fingerprint
+// distance that no verification would produce.
+export { extractFeatures } from "./pulse";
+export type { ExtractedFeatures } from "./pulse";
 
 // Proof generation
 export type { SolanaProof, CircuitInput, ProofResult } from "./proof/types";
