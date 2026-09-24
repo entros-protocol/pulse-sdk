@@ -126,7 +126,7 @@ interface PipelineSensorData extends SensorData {
   compatibilityTouch?: TouchSample[];
 }
 
-interface ExtractedFeatures {
+export interface ExtractedFeatures {
   /** Raw features in physical units (Hz, ratios, dB, px/frame). For server-side validation. */
   raw: number[];
   /** Z-score normalized features. For SimHash fingerprint computation. */
@@ -174,7 +174,11 @@ class ValidationChallengeExpiredError extends Error {}
 
 /**
  * Run the complete local feature pipeline against captured sensor data.
- * @internal Source-level parity tests import this function directly.
+ *
+ * This is the path a verification takes before it derives a fingerprint. An analysis that
+ * compares one capture against another must call this rather than rebuild the fusion from the
+ * per-modality extractors, because touch canonicalization and the projection-dependent motion
+ * branch both live here.
  */
 export async function extractFeatures(
   data: SensorData,

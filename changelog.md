@@ -9,6 +9,12 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+<!-- generated-release:4.13.0 -->
+## [4.13.0] - 2026-09-22
+
+- Export the feature extraction path for measurement (093dd7b).
+<!-- /generated-release:4.13.0 -->
+
 <!-- generated-release:4.12.0 -->
 ## [4.12.0] - 2026-09-11
 
