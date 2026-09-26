@@ -33,7 +33,9 @@ export interface SignedReceiptDto {
   /** Hex-encoded 32-byte Ed25519 public key of the validator. */
   validator_pubkey_hex: string;
   /**
-   * Hex-encoded 103-byte version 2 receipt message.
+   * Hex-encoded receipt message: 103 bytes for version 2, or 136 bytes for
+   * version 3, which a paired session receives with its final digest and
+   * assurance tier.
    */
   message_hex: string;
   /** Hex-encoded 64-byte Ed25519 signature over `message_hex`. */

@@ -1,0 +1,5463 @@
+{
+  "schema": "entros-paired-round-vectors-v1",
+  "domains": {
+    "session": "entros/paired-round/v1/session\u0000",
+    "attempt": "entros/paired-round/v1/attempt\u0000",
+    "challenge": "entros/paired-round/v1/challenge\u0000",
+    "audio": "entros/paired-round/v1/audio\u0000",
+    "path": "entros/paired-round/v1/path\u0000",
+    "round": "entros/paired-round/v1/round\u0000",
+    "commitRequest": "entros/paired-round/v1/commit-request\u0000",
+    "final": "entros/paired-round/v1/final\u0000",
+    "attestation": "entros/attestation/v1\u0000",
+    "receiptV2": "entros-validator-receipt-v2\u0000",
+    "receiptV3": "entros-validator-receipt-v3\u0000"
+  },
+  "constants": {
+    "rounds": 3,
+    "protocolVersion": 1,
+    "schemaVersion": 1,
+    "sampleRate": 16000,
+    "audioFormat": "pcm_s16le_16000_mono",
+    "sessionExpirySeconds": 600,
+    "roundExpirySeconds": 120,
+    "maxRoundSamples": 192000,
+    "maxSessionSamples": 576000,
+    "separatorSamples": 1600,
+    "trimTailSamples": 9600,
+    "minPathPoints": 8,
+    "maxPathPoints": 64,
+    "minWaypoints": 3,
+    "maxWaypoints": 5,
+    "coordinateMax": 1000
+  },
+  "tracker": {
+    "frameSamples": 800,
+    "waypointReach": 100,
+    "outlineMargin": 30,
+    "coarsePathPoints": 64,
+    "minVoicedFrames": 4,
+    "maxGapFrames": 2,
+    "voicedToGapRatio": 2,
+    "quietFrames": 12,
+    "stallFrames": 80,
+    "openStallFrames": 300,
+    "floorRatio": 4,
+    "floorPercentile": 0.1,
+    "historyFrames": 2400,
+    "minSpeechRms": 0.01,
+    "minFloorRms": 0.002
+  },
+  "levelling": {
+    "targetRms": 0.05,
+    "minRms": 0.0001,
+    "maxGain": 50.0
+  },
+  "sessions": [
+    {
+      "name": "trace tier, three rounds",
+      "tier": "trace",
+      "sessionNonceHex": "030e19242f3a45505b66717c87929da8b3bec9d4dfeaf5000b16212c37424d58",
+      "serverAttemptIdHex": "28333e49545f6a75808b96a1acb7c2cd",
+      "originalChallengeNonceHex": "4d58636e79848f9aa5b0bbc6d1dce7f2fd08131e29343f4a55606b76818c97a2",
+      "sessionExpiryUnixMs": 1789000007000,
+      "rounds": 3,
+      "attemptBindingDigestHex": "d4f7c0d1636b36fa21beb749e2ce18297300fe79e2c00a213ef4b9dd97928f8a",
+      "sessionCommitmentHex": "3825a98228f5dd7d974d50c5284fd8b4cc2f56c6a26cf023340613c29fac3433",
+      "roundEntries": [
+        {
+          "index": 1,
+          "roundNonceHex": "9aa5b0bbc6d1dce7f2fd08131e29343f4a55606b76818c97a2adb8c3ced9e4ef",
+          "word": "balance",
+          "pathTargetHex": "0104007800c8012c028001e000f0021c0320",
+          "pathTargetWaypoints": [
+            [
+              120,
+              200
+            ],
+            [
+              300,
+              640
+            ],
+            [
+              480,
+              240
+            ],
+            [
+              540,
+              800
+            ]
+          ],
+          "coarsePathHex": "01000c0025003d0032005a003f0077004c0094005900b1006600ce007300eb00800108008d0125009a014200a7015f00b4017c",
+          "coarsePathPoints": [
+            [
+              37,
+              61
+            ],
+            [
+              50,
+              90
+            ],
+            [
+              63,
+              119
+            ],
+            [
+              76,
+              148
+            ],
+            [
+              89,
+              177
+            ],
+            [
+              102,
+              206
+            ],
+            [
+              115,
+              235
+            ],
+            [
+              128,
+              264
+            ],
+            [
+              141,
+              293
+            ],
+            [
+              154,
+              322
+            ],
+            [
+              167,
+              351
+            ],
+            [
+              180,
+              380
+            ]
+          ],
+          "pathPointCount": 12,
+          "audioFormat": "pcm_s16le_16000_mono",
+          "audioSegmentHex": "f0fb06111c27323d48535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c87929da8b3bec9d4dfeaf5000b16212c37424d58636e79848f9aa5b0bbc6d1dce7f2fd08131e29343f4a55606b76818c97a2adb8c3ced9e4effa05",
+          "audioByteLength": 96,
+          "challengeDigestHex": "f4ef2d1e8e2f962cc29fc54919a11eb02b2d59f543a1b7305ceab4f3a10aa8b1",
+          "audioDigestHex": "785f3aa0d0871368e962e37d165f222f785067c2e39ff5ec05898b6ea1c4f875",
+          "pathDigestHex": "7acdddc9d145dceca28813c5cf171b6246a2c3ae53c4f20ca8c2f437f1ba4e86",
+          "previousCommitmentHex": "3825a98228f5dd7d974d50c5284fd8b4cc2f56c6a26cf023340613c29fac3433",
+          "commitmentHex": "f8ae5e6fce3966d05a54aeab652877560766f90286cc59239fe450a7778a00c3",
+          "requestDigestHex": "a9b358b2bbb1c8b6cc52c9f76dcb73d1745ade367613671e92da0baa03a15de2"
+        },
+        {
+          "index": 2,
+          "roundNonceHex": "bfcad5e0ebf6010c17222d38434e59646f7a85909ba6b1bcc7d2dde8f3fe0914",
+          "word": "garden",
+          "pathTargetHex": "010400f000c801a40280025800f002940320",
+          "pathTargetWaypoints": [
+            [
+              240,
+              200
+            ],
+            [
+              420,
+              640
+            ],
+            [
+              600,
+              240
+            ],
+            [
+              660,
+              800
+            ]
+          ],
+          "coarsePathHex": "01000c004a007a00570097006400b4007100d1007e00ee008b010b0098012800a5014500b2016200bf017f00cc019c00d901b9",
+          "coarsePathPoints": [
+            [
+              74,
+              122
+            ],
+            [
+              87,
+              151
+            ],
+            [
+              100,
+              180
+            ],
+            [
+              113,
+              209
+            ],
+            [
+              126,
+              238
+            ],
+            [
+              139,
+              267
+            ],
+            [
+              152,
+              296
+            ],
+            [
+              165,
+              325
+            ],
+            [
+              178,
+              354
+            ],
+            [
+              191,
+              383
+            ],
+            [
+              204,
+              412
+            ],
+            [
+              217,
+              441
+            ]
+          ],
+          "pathPointCount": 12,
+          "audioFormat": "pcm_s16le_16000_mono",
+          "audioSegmentHex": "15202b36414c57626d78838e99a4afbac5d0dbe6f1fc07121d28333e49545f6a75808b96a1acb7c2cdd8e3eef9040f1a25303b46515c67727d88939ea9b4bfcad5e0ebf6010c17222d38434e59646f7a85909ba6b1bcc7d2dde8f3fe09141f2a",
+          "audioByteLength": 96,
+          "challengeDigestHex": "e12187395f964ea380953d457b1711489dd45f86b99491e3d799306ab61e1fcd",
+          "audioDigestHex": "7f3e258a40cbd77ecec8c56d60ed553240ff9e8063a010f2190436e9a2ad1dcd",
+          "pathDigestHex": "a8ec7bf97a0292541ac85432239eb1fe847c03cbf73e1a488647c02e81e74969",
+          "previousCommitmentHex": "f8ae5e6fce3966d05a54aeab652877560766f90286cc59239fe450a7778a00c3",
+          "commitmentHex": "830a756e6a5adac5b9ecc871c8d221540822480be4480dc0fd88eb580976a064",
+          "requestDigestHex": "fd5a5a4c6b4ca6db6d3179dd2897486d13b8d53478016f9552d79ff4552e54fd"
+        },
+        {
+          "index": 3,
+          "roundNonceHex": "e4effa05101b26313c47525d68737e89949faab5c0cbd6e1ecf7020d18232e39",
+          "word": "silver",
+          "pathTargetHex": "0104016800c8021c028002d000f0030c0320",
+          "pathTargetWaypoints": [
+            [
+              360,
+              200
+            ],
+            [
+              540,
+              640
+            ],
+            [
+              720,
+              240
+            ],
+            [
+              780,
+              800
+            ]
+          ],
+          "coarsePathHex": "01000c006f00b7007c00d4008900f10096010e00a3012b00b0014800bd016500ca018200d7019f00e401bc00f101d900fe01f6",
+          "coarsePathPoints": [
+            [
+              111,
+              183
+            ],
+            [
+              124,
+              212
+            ],
+            [
+              137,
+              241
+            ],
+            [
+              150,
+              270
+            ],
+            [
+              163,
+              299
+            ],
+            [
+              176,
+              328
+            ],
+            [
+              189,
+              357
+            ],
+            [
+              202,
+              386
+            ],
+            [
+              215,
+              415
+            ],
+            [
+              228,
+              444
+            ],
+            [
+              241,
+              473
+            ],
+            [
+              254,
+              502
+            ]
+          ],
+          "pathPointCount": 12,
+          "audioFormat": "pcm_s16le_16000_mono",
+          "audioSegmentHex": "3a45505b66717c87929da8b3bec9d4dfeaf5000b16212c37424d58636e79848f9aa5b0bbc6d1dce7f2fd08131e29343f4a55606b76818c97a2adb8c3ced9e4effa05101b26313c47525d68737e89949faab5c0cbd6e1ecf7020d18232e39444f",
+          "audioByteLength": 96,
+          "challengeDigestHex": "14681fbee5d6c8706c84188fd51c220896b5343b95190b78cc33561dbfe5a906",
+          "audioDigestHex": "bc0c4c5277a385008e99823deb4a5a85555bfc599589e2a8607b50d5023f4971",
+          "pathDigestHex": "59eab39d46ea4d4ac50618d31d1e41097122ab2134feb26e8c97f7dddb56b419",
+          "previousCommitmentHex": "830a756e6a5adac5b9ecc871c8d221540822480be4480dc0fd88eb580976a064",
+          "commitmentHex": "c28e7e55314163fa48676b5087ea3aadc8a676a3f6c84393634e8b39e41e9fcb",
+          "requestDigestHex": "4817f1dcf438f1e5eca756171392bb12bd6eca96ce09c3cb7f08c8eaabe7ba61"
+        }
+      ],
+      "evidenceManifestHex": "785f3aa0d0871368e962e37d165f222f785067c2e39ff5ec05898b6ea1c4f8757acdddc9d145dceca28813c5cf171b6246a2c3ae53c4f20ca8c2f437f1ba4e867f3e258a40cbd77ecec8c56d60ed553240ff9e8063a010f2190436e9a2ad1dcda8ec7bf97a0292541ac85432239eb1fe847c03cbf73e1a488647c02e81e74969bc0c4c5277a385008e99823deb4a5a85555bfc599589e2a8607b50d5023f497159eab39d46ea4d4ac50618d31d1e41097122ab2134feb26e8c97f7dddb56b419",
+      "finalDigestHex": "2215276b1536890b9896b3634b825c3e00058b76bbace7ce948dd5eadd0b1540"
+    },
+    {
+      "name": "speech-only tier, three rounds",
+      "tier": "speech_only",
+      "sessionNonceHex": "535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c87929da8",
+      "serverAttemptIdHex": "78838e99a4afbac5d0dbe6f1fc07121d",
+      "originalChallengeNonceHex": "9da8b3bec9d4dfeaf5000b16212c37424d58636e79848f9aa5b0bbc6d1dce7f2",
+      "sessionExpiryUnixMs": 1789000023000,
+      "rounds": 3,
+      "attemptBindingDigestHex": "b185d1cb1c7aba41be4936e770411efd214fb54c9929cc5529a14343713eab51",
+      "sessionCommitmentHex": "b48e39ed2ded7849b34a49a5ad4a137cbd817e44b8eba0bdd488fd11e022890e",
+      "roundEntries": [
+        {
+          "index": 1,
+          "roundNonceHex": "eaf5000b16212c37424d58636e79848f9aa5b0bbc6d1dce7f2fd08131e29343f",
+          "word": "travel",
+          "pathTargetHex": "",
+          "pathTargetWaypoints": [],
+          "coarsePathHex": "",
+          "coarsePathPoints": [],
+          "pathPointCount": 0,
+          "audioFormat": "pcm_s16le_16000_mono",
+          "audioSegmentHex": "404b56616c77828d98a3aeb9c4cfdae5f0fb06111c27323d48535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c87929da8b3bec9d4dfeaf5000b16212c37424d58636e79848f9aa5b0bbc6d1dce7f2fd08131e29343f4a55",
+          "audioByteLength": 96,
+          "challengeDigestHex": "74f3b96511a6a1afdeffbc684971e3646110b7134f11a83b0c1a436d9afc0ee3",
+          "audioDigestHex": "7a07b576cbeead866e31dbad5ea4650e0b73d82d386b534185d75da60172baf1",
+          "pathDigestHex": "bffc195db6bfe6e6413a1981b676f1d0502ad8288f2d18b98b9778a074d59df1",
+          "previousCommitmentHex": "b48e39ed2ded7849b34a49a5ad4a137cbd817e44b8eba0bdd488fd11e022890e",
+          "commitmentHex": "f2b21e5a251e566a2f6d8f66eaac74715e22bb4df8c18a4a48025bee435babe7",
+          "requestDigestHex": "4a0ac5d2891e3498a394e1e0b67ac0aca7653dbf9172df00bc37cbcd244924b1"
+        },
+        {
+          "index": 2,
+          "roundNonceHex": "0f1a25303b46515c67727d88939ea9b4bfcad5e0ebf6010c17222d38434e5964",
+          "word": "signal",
+          "pathTargetHex": "",
+          "pathTargetWaypoints": [],
+          "coarsePathHex": "",
+          "coarsePathPoints": [],
+          "pathPointCount": 0,
+          "audioFormat": "pcm_s16le_16000_mono",
+          "audioSegmentHex": "65707b86919ca7b2bdc8d3dee9f4ff0a15202b36414c57626d78838e99a4afbac5d0dbe6f1fc07121d28333e49545f6a75808b96a1acb7c2cdd8e3eef9040f1a25303b46515c67727d88939ea9b4bfcad5e0ebf6010c17222d38434e59646f7a",
+          "audioByteLength": 96,
+          "challengeDigestHex": "b4438d3e0a96c8d6fc364df10f6dd54caa0ce88c3cb53adaa185c3de0d41bb07",
+          "audioDigestHex": "793baeac57250c965ad506015b1eeff53a127d11c560643158e5f15d622422be",
+          "pathDigestHex": "ecb0bf327aa2048733ac410591a12c91a8daf5b7dca6212958903264a0ea2b04",
+          "previousCommitmentHex": "f2b21e5a251e566a2f6d8f66eaac74715e22bb4df8c18a4a48025bee435babe7",
+          "commitmentHex": "a3934ee5e4146fb900193e8023a00162fb2b5e273857ee08247c8ab71030eb4a",
+          "requestDigestHex": "fd111b9da6cf01b7b8e0bc528f9901fb4afa7112c7fb3cc128651eabcdfb9b83"
+        },
+        {
+          "index": 3,
+          "roundNonceHex": "343f4a55606b76818c97a2adb8c3ced9e4effa05101b26313c47525d68737e89",
+          "word": "action",
+          "pathTargetHex": "",
+          "pathTargetWaypoints": [],
+          "coarsePathHex": "",
+          "coarsePathPoints": [],
+          "pathPointCount": 0,
+          "audioFormat": "pcm_s16le_16000_mono",
+          "audioSegmentHex": "8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c87929da8b3bec9d4dfeaf5000b16212c37424d58636e79848f9aa5b0bbc6d1dce7f2fd08131e29343f4a55606b76818c97a2adb8c3ced9e4effa05101b26313c47525d68737e89949f",
+          "audioByteLength": 96,
+          "challengeDigestHex": "ba894e2ad57891151719edd8143f5aa410cf13280a15379b396bb8c8fc928817",
+          "audioDigestHex": "f0ff999827a2a0f4c701a544a511f819e91761211a7b0eceaed1025236ea17f8",
+          "pathDigestHex": "f6783db741258020f0f8364263500bed9a873e016b3f810d16c7058cd65eea90",
+          "previousCommitmentHex": "a3934ee5e4146fb900193e8023a00162fb2b5e273857ee08247c8ab71030eb4a",
+          "commitmentHex": "848a2d6e4e70a392476f576f7a33ecbe6bc6210122f855bce12183965a9bd9a4",
+          "requestDigestHex": "c2e96b7493d7c159066f2241dcf43f3012c86244d406e5fd899a5b2bed6556a5"
+        }
+      ],
+      "evidenceManifestHex": "7a07b576cbeead866e31dbad5ea4650e0b73d82d386b534185d75da60172baf1bffc195db6bfe6e6413a1981b676f1d0502ad8288f2d18b98b9778a074d59df1793baeac57250c965ad506015b1eeff53a127d11c560643158e5f15d622422beecb0bf327aa2048733ac410591a12c91a8daf5b7dca6212958903264a0ea2b04f0ff999827a2a0f4c701a544a511f819e91761211a7b0eceaed1025236ea17f8f6783db741258020f0f8364263500bed9a873e016b3f810d16c7058cd65eea90",
+      "finalDigestHex": "dc5911577fe3de554e106f7f31b8a3848a92e3e13ca51da5820d3297dbf4494f"
+    }
+  ],
+  "invalidEncodings": [
+    {
+      "name": "path target below the waypoint floor",
+      "encoding": "pathTarget",
+      "waypoints": [
+        [
+          100,
+          100
+        ],
+        [
+          200,
+          200
+        ]
+      ],
+      "reason": "waypoint_count_out_of_range"
+    },
+    {
+      "name": "path target above the waypoint ceiling",
+      "encoding": "pathTarget",
+      "waypoints": [
+        [
+          0,
+          0
+        ],
+        [
+          100,
+          50
+        ],
+        [
+          200,
+          100
+        ],
+        [
+          300,
+          150
+        ],
+        [
+          400,
+          200
+        ],
+        [
+          500,
+          250
+        ]
+      ],
+      "reason": "waypoint_count_out_of_range"
+    },
+    {
+      "name": "coarse path below the point floor",
+      "encoding": "coarsePath",
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          6,
+          6
+        ]
+      ],
+      "reason": "point_count_out_of_range"
+    },
+    {
+      "name": "coarse path above the point ceiling",
+      "encoding": "coarsePath",
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          7
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          9,
+          9
+        ],
+        [
+          10,
+          10
+        ],
+        [
+          11,
+          11
+        ],
+        [
+          12,
+          12
+        ],
+        [
+          13,
+          13
+        ],
+        [
+          14,
+          14
+        ],
+        [
+          15,
+          15
+        ],
+        [
+          16,
+          16
+        ],
+        [
+          17,
+          17
+        ],
+        [
+          18,
+          18
+        ],
+        [
+          19,
+          19
+        ],
+        [
+          20,
+          20
+        ],
+        [
+          21,
+          21
+        ],
+        [
+          22,
+          22
+        ],
+        [
+          23,
+          23
+        ],
+        [
+          24,
+          24
+        ],
+        [
+          25,
+          25
+        ],
+        [
+          26,
+          26
+        ],
+        [
+          27,
+          27
+        ],
+        [
+          28,
+          28
+        ],
+        [
+          29,
+          29
+        ],
+        [
+          30,
+          30
+        ],
+        [
+          31,
+          31
+        ],
+        [
+          32,
+          32
+        ],
+        [
+          33,
+          33
+        ],
+        [
+          34,
+          34
+        ],
+        [
+          35,
+          35
+        ],
+        [
+          36,
+          36
+        ],
+        [
+          37,
+          37
+        ],
+        [
+          38,
+          38
+        ],
+        [
+          39,
+          39
+        ],
+        [
+          40,
+          40
+        ],
+        [
+          41,
+          41
+        ],
+        [
+          42,
+          42
+        ],
+        [
+          43,
+          43
+        ],
+        [
+          44,
+          44
+        ],
+        [
+          45,
+          45
+        ],
+        [
+          46,
+          46
+        ],
+        [
+          47,
+          47
+        ],
+        [
+          48,
+          48
+        ],
+        [
+          49,
+          49
+        ],
+        [
+          50,
+          50
+        ],
+        [
+          51,
+          51
+        ],
+        [
+          52,
+          52
+        ],
+        [
+          53,
+          53
+        ],
+        [
+          54,
+          54
+        ],
+        [
+          55,
+          55
+        ],
+        [
+          56,
+          56
+        ],
+        [
+          57,
+          57
+        ],
+        [
+          58,
+          58
+        ],
+        [
+          59,
+          59
+        ],
+        [
+          60,
+          60
+        ],
+        [
+          61,
+          61
+        ],
+        [
+          62,
+          62
+        ],
+        [
+          63,
+          63
+        ],
+        [
+          64,
+          64
+        ]
+      ],
+      "reason": "point_count_out_of_range"
+    },
+    {
+      "name": "coordinate above the grid",
+      "encoding": "coarsePath",
+      "points": [
+        [
+          1001,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          7
+        ],
+        [
+          8,
+          8
+        ]
+      ],
+      "reason": "coordinate_out_of_range"
+    },
+    {
+      "name": "path under the speech-only tier",
+      "encoding": "tier",
+      "tier": "speech_only",
+      "pointCount": 8,
+      "reason": "tier_violation"
+    },
+    {
+      "name": "no path under the trace tier",
+      "encoding": "tier",
+      "tier": "trace",
+      "pointCount": 0,
+      "reason": "tier_violation"
+    }
+  ],
+  "separation": {
+    "name": "length prefixes separate fields that naive concatenation merges",
+    "leftFields": [
+      "entros",
+      "paired"
+    ],
+    "rightFields": [
+      "entrospaired",
+      ""
+    ],
+    "naiveConcatenationMatches": true,
+    "encodedLeftHex": "00000006656e74726f7300000006706169726564",
+    "encodedRightHex": "0000000c656e74726f7370616972656400000000",
+    "encodedDigestsDiffer": true
+  },
+  "commitRecompute": [
+    {
+      "name": "accepted fields",
+      "sessionNonceHex": "030e19242f3a45505b66717c87929da8b3bec9d4dfeaf5000b16212c37424d58",
+      "roundIndex": 1,
+      "roundNonceHex": "9aa5b0bbc6d1dce7f2fd08131e29343f4a55606b76818c97a2adb8c3ced9e4ef",
+      "challengeDigestHex": "f4ef2d1e8e2f962cc29fc54919a11eb02b2d59f543a1b7305ceab4f3a10aa8b1",
+      "previousCommitmentHex": "3825a98228f5dd7d974d50c5284fd8b4cc2f56c6a26cf023340613c29fac3433",
+      "audioFormat": "pcm_s16le_16000_mono",
+      "audioByteLength": 96,
+      "audioDigestHex": "785f3aa0d0871368e962e37d165f222f785067c2e39ff5ec05898b6ea1c4f875",
+      "pathPointCount": 12,
+      "pathDigestHex": "7acdddc9d145dceca28813c5cf171b6246a2c3ae53c4f20ca8c2f437f1ba4e86",
+      "expectedCommitmentHex": "f8ae5e6fce3966d05a54aeab652877560766f90286cc59239fe450a7778a00c3",
+      "matchesAcceptedCommitment": true
+    },
+    {
+      "name": "audio byte length changed",
+      "sessionNonceHex": "030e19242f3a45505b66717c87929da8b3bec9d4dfeaf5000b16212c37424d58",
+      "roundIndex": 1,
+      "roundNonceHex": "9aa5b0bbc6d1dce7f2fd08131e29343f4a55606b76818c97a2adb8c3ced9e4ef",
+      "challengeDigestHex": "f4ef2d1e8e2f962cc29fc54919a11eb02b2d59f543a1b7305ceab4f3a10aa8b1",
+      "previousCommitmentHex": "3825a98228f5dd7d974d50c5284fd8b4cc2f56c6a26cf023340613c29fac3433",
+      "audioFormat": "pcm_s16le_16000_mono",
+      "audioByteLength": 98,
+      "audioDigestHex": "785f3aa0d0871368e962e37d165f222f785067c2e39ff5ec05898b6ea1c4f875",
+      "pathPointCount": 12,
+      "pathDigestHex": "7acdddc9d145dceca28813c5cf171b6246a2c3ae53c4f20ca8c2f437f1ba4e86",
+      "expectedCommitmentHex": "603a7fe514fbaf4358164c0c229d68f85c27aec816b97d1bf43fbcdc14609560",
+      "matchesAcceptedCommitment": false
+    },
+    {
+      "name": "path point count changed",
+      "sessionNonceHex": "030e19242f3a45505b66717c87929da8b3bec9d4dfeaf5000b16212c37424d58",
+      "roundIndex": 1,
+      "roundNonceHex": "9aa5b0bbc6d1dce7f2fd08131e29343f4a55606b76818c97a2adb8c3ced9e4ef",
+      "challengeDigestHex": "f4ef2d1e8e2f962cc29fc54919a11eb02b2d59f543a1b7305ceab4f3a10aa8b1",
+      "previousCommitmentHex": "3825a98228f5dd7d974d50c5284fd8b4cc2f56c6a26cf023340613c29fac3433",
+      "audioFormat": "pcm_s16le_16000_mono",
+      "audioByteLength": 96,
+      "audioDigestHex": "785f3aa0d0871368e962e37d165f222f785067c2e39ff5ec05898b6ea1c4f875",
+      "pathPointCount": 13,
+      "pathDigestHex": "7acdddc9d145dceca28813c5cf171b6246a2c3ae53c4f20ca8c2f437f1ba4e86",
+      "expectedCommitmentHex": "63b695e507665b3ea9e3d4ee611245b4aeb4b805d7ffa719c4ad6d538a2b35af",
+      "matchesAcceptedCommitment": false
+    },
+    {
+      "name": "audio format changed",
+      "sessionNonceHex": "030e19242f3a45505b66717c87929da8b3bec9d4dfeaf5000b16212c37424d58",
+      "roundIndex": 1,
+      "roundNonceHex": "9aa5b0bbc6d1dce7f2fd08131e29343f4a55606b76818c97a2adb8c3ced9e4ef",
+      "challengeDigestHex": "f4ef2d1e8e2f962cc29fc54919a11eb02b2d59f543a1b7305ceab4f3a10aa8b1",
+      "previousCommitmentHex": "3825a98228f5dd7d974d50c5284fd8b4cc2f56c6a26cf023340613c29fac3433",
+      "audioFormat": "pcm_s16le_48000_mono",
+      "audioByteLength": 96,
+      "audioDigestHex": "785f3aa0d0871368e962e37d165f222f785067c2e39ff5ec05898b6ea1c4f875",
+      "pathPointCount": 12,
+      "pathDigestHex": "7acdddc9d145dceca28813c5cf171b6246a2c3ae53c4f20ca8c2f437f1ba4e86",
+      "expectedCommitmentHex": "d6fd6c10b24b97cd95ac27d2aae12b2b8ddc9950174170fe14d44c963b640052",
+      "matchesAcceptedCommitment": false
+    },
+    {
+      "name": "audio digest changed",
+      "sessionNonceHex": "030e19242f3a45505b66717c87929da8b3bec9d4dfeaf5000b16212c37424d58",
+      "roundIndex": 1,
+      "roundNonceHex": "9aa5b0bbc6d1dce7f2fd08131e29343f4a55606b76818c97a2adb8c3ced9e4ef",
+      "challengeDigestHex": "f4ef2d1e8e2f962cc29fc54919a11eb02b2d59f543a1b7305ceab4f3a10aa8b1",
+      "previousCommitmentHex": "3825a98228f5dd7d974d50c5284fd8b4cc2f56c6a26cf023340613c29fac3433",
+      "audioFormat": "pcm_s16le_16000_mono",
+      "audioByteLength": 96,
+      "audioDigestHex": "785f3aa0d0871368e962e37d165f222f785067c2e39ff5ec05898b6ea1c4f874",
+      "pathPointCount": 12,
+      "pathDigestHex": "7acdddc9d145dceca28813c5cf171b6246a2c3ae53c4f20ca8c2f437f1ba4e86",
+      "expectedCommitmentHex": "efd3ff1d4bc5bad13c12bc55c93b5b404d0938bb8a9ffb46bd6ba7a333c76ac2",
+      "matchesAcceptedCommitment": false
+    },
+    {
+      "name": "path digest changed",
+      "sessionNonceHex": "030e19242f3a45505b66717c87929da8b3bec9d4dfeaf5000b16212c37424d58",
+      "roundIndex": 1,
+      "roundNonceHex": "9aa5b0bbc6d1dce7f2fd08131e29343f4a55606b76818c97a2adb8c3ced9e4ef",
+      "challengeDigestHex": "f4ef2d1e8e2f962cc29fc54919a11eb02b2d59f543a1b7305ceab4f3a10aa8b1",
+      "previousCommitmentHex": "3825a98228f5dd7d974d50c5284fd8b4cc2f56c6a26cf023340613c29fac3433",
+      "audioFormat": "pcm_s16le_16000_mono",
+      "audioByteLength": 96,
+      "audioDigestHex": "785f3aa0d0871368e962e37d165f222f785067c2e39ff5ec05898b6ea1c4f875",
+      "pathPointCount": 12,
+      "pathDigestHex": "7acdddc9d145dceca28813c5cf171b6246a2c3ae53c4f20ca8c2f437f1ba4e87",
+      "expectedCommitmentHex": "72acdc754c809ee5dc80476e3029b42cf7d4ca7f18aa3598241e9855e26688ac",
+      "matchesAcceptedCommitment": false
+    },
+    {
+      "name": "previous commitment changed",
+      "sessionNonceHex": "030e19242f3a45505b66717c87929da8b3bec9d4dfeaf5000b16212c37424d58",
+      "roundIndex": 1,
+      "roundNonceHex": "9aa5b0bbc6d1dce7f2fd08131e29343f4a55606b76818c97a2adb8c3ced9e4ef",
+      "challengeDigestHex": "f4ef2d1e8e2f962cc29fc54919a11eb02b2d59f543a1b7305ceab4f3a10aa8b1",
+      "previousCommitmentHex": "3825a98228f5dd7d974d50c5284fd8b4cc2f56c6a26cf023340613c29fac3432",
+      "audioFormat": "pcm_s16le_16000_mono",
+      "audioByteLength": 96,
+      "audioDigestHex": "785f3aa0d0871368e962e37d165f222f785067c2e39ff5ec05898b6ea1c4f875",
+      "pathPointCount": 12,
+      "pathDigestHex": "7acdddc9d145dceca28813c5cf171b6246a2c3ae53c4f20ca8c2f437f1ba4e86",
+      "expectedCommitmentHex": "ffaacd6192a70da24deb1136322ccad875d890515d7f61b51823c88a2edfe2dc",
+      "matchesAcceptedCommitment": false
+    }
+  ],
+  "roundWindows": [
+    {
+      "name": "a round within the bound keeps every sample",
+      "roundStart": 16000,
+      "roundEnd": 64000,
+      "voicedRuns": [
+        [
+          20000,
+          28000
+        ]
+      ],
+      "windowStart": 16000,
+      "windowEnd": 64000
+    },
+    {
+      "name": "a round of exactly twelve seconds keeps every sample",
+      "roundStart": 0,
+      "roundEnd": 192000,
+      "voicedRuns": [
+        [
+          40000,
+          48000
+        ]
+      ],
+      "windowStart": 0,
+      "windowEnd": 192000
+    },
+    {
+      "name": "a long round keeps the word spoken late",
+      "roundStart": 0,
+      "roundEnd": 320000,
+      "voicedRuns": [
+        [
+          280000,
+          288000
+        ]
+      ],
+      "windowStart": 105600,
+      "windowEnd": 297600
+    },
+    {
+      "name": "a long round keeps an early word over a later cough",
+      "roundStart": 0,
+      "roundEnd": 320000,
+      "voicedRuns": [
+        [
+          16000,
+          28000
+        ],
+        [
+          290000,
+          294000
+        ]
+      ],
+      "windowStart": 0,
+      "windowEnd": 192000
+    },
+    {
+      "name": "a long round keeps a late word over an early filler",
+      "roundStart": 0,
+      "roundEnd": 320000,
+      "voicedRuns": [
+        [
+          16000,
+          20800
+        ],
+        [
+          270000,
+          282000
+        ]
+      ],
+      "windowStart": 99600,
+      "windowEnd": 291600
+    },
+    {
+      "name": "a long round with no voiced run keeps its tail",
+      "roundStart": 0,
+      "roundEnd": 320000,
+      "voicedRuns": [],
+      "windowStart": 128000,
+      "windowEnd": 320000
+    },
+    {
+      "name": "a window that would start early is clamped to the round start",
+      "roundStart": 100000,
+      "roundEnd": 300000,
+      "voicedRuns": [
+        [
+          104000,
+          112000
+        ]
+      ],
+      "windowStart": 100000,
+      "windowEnd": 292000
+    },
+    {
+      "name": "equal coverage prefers the later window",
+      "roundStart": 0,
+      "roundEnd": 320000,
+      "voicedRuns": [
+        [
+          16000,
+          24000
+        ],
+        [
+          300000,
+          308000
+        ]
+      ],
+      "windowStart": 125600,
+      "windowEnd": 317600
+    }
+  ],
+  "pcm16": {
+    "note": "Negatives scale by 32768 and positives by 32767, rounding half toward positive infinity. Decoding divides by 32768.",
+    "samples": [
+      0.0,
+      0.5,
+      -0.5,
+      1.0,
+      -1.0,
+      1.5,
+      -1.5,
+      0.25,
+      -0.25,
+      3.0517578125e-05,
+      -3.0517578125e-05,
+      0.1,
+      -0.1,
+      0.999969482421875,
+      -7.62939453125e-05,
+      -4.57763671875e-05
+    ],
+    "pcm16Hex": "0000004000c0ff7f0080ff7f0080002000e00100ffffcd0c33f3fe7ffeffffff",
+    "decoded": [
+      0.0,
+      0.5,
+      -0.5,
+      0.999969482421875,
+      -1.0,
+      0.999969482421875,
+      -1.0,
+      0.25,
+      -0.25,
+      3.0517578125e-05,
+      -3.0517578125e-05,
+      0.100006103515625,
+      -0.100006103515625,
+      0.99993896484375,
+      -6.103515625e-05,
+      -3.0517578125e-05
+    ]
+  },
+  "analysisSignal": [
+    {
+      "name": "three spoken segments are joined and levelled once",
+      "segmentsPcm16Hex": [
+        "1dfec20067033bfee000850359fefe00a30377fe1c01c10395fe3a01df03b3fe58012cfcd1fe76014afceffe940168fc0dffb20186fc2bffd001a4fc49ffee01c2fc67ff0c02e0fc85ff2a02fefca3ff48021cfdc1ff66023afddfff840258fdfdffa20276fd1b00c00294fd3900de02b2fd5700fc02d0fd75001a03eefd930038030cfeb10056032afecf00740348feed00920366fe0b01b00384fe2901ce03a2fe47011bfcc0fe650139fcdefe830157fcfcfea10175fc1affbf0193fc38ffdd01b1fc56fffb01cffc74ff1902edfc92ff37020bfdb0ff550229fdceff730247fdecff910265fd0a00af0283fd2800cd02a1fd4600eb02bffd64000903ddfd82002703fbfda000450319febe00630337fedc00810355fefa009f0373fe1801bd0391fe3601db03affe540128fccdfe720146fcebfe900164fc09ffae0182fc27ffcc01a0fc45ffea01befc63ff0802dcfc81ff2602fafc9fff440218fdbdff620236fddbff800254fdf9ff9e0272fd1700bc0290fd3500da02aefd5300f802ccfd71001603eafd8f00340308fead00520326fecb00700344fee9008e0362fe0701ac0380fe2501ca039efe4301e803bcfe610135fcdafe7f0153fcf8fe9d0171fc16ffbb018ffc34ffd901adfc52fff701cbfc70ff1502e9fc8eff330207fdacff510225fdcaff6f0243fde8ff8d0261fd0600ab027ffd2400c9029dfd4200e702bbfd60000503d9fd7e002303f7fd9c00410315feba005f0333fed8007d0351fef6009b036ffe1401b9038dfe3201d703abfe500124fcc9fe6e0142fce7fe8c0160fc05ffaa017efc23ffc8019cfc41ffe601bafc5fff0402d8fc7dff2202f6fc9bff400214fdb9ff5e0232fdd7ff7c0250fdf5ff9a026efd1300b8028cfd3100d602aafd4f00f402c8fd6d001203e6fd8b00300304fea9004e0322fec7006c0340fee5008a035efe0301a8037cfe2101c6039afe3f01e403b8fe5d0131fcd6fe7b014ffcf4fe99016dfc12ffb7018bfc30ffd501a9fc4efff301c7fc6cff1102e5fc8aff2f0203fda8ff4d0221fdc6ff6b023ffde4ff89025dfd0200a7027bfd2000c50299fd3e00e302b7fd5c000103d5fd7a001f03f3fd98003d0311fe",
+        "2d02f904c507910a5d0de8f0b4f380f64cf918fce4feb0017c044807140ae00c6bf037f303f6cff89bfb67fe3301ff03cb069709630c2f0fbaf286f552f81efbeafdb60082034e061a09e60bb20e3df209f5d5f7a1fa6dfd39000503d1059d08690b350ec0f18cf458f724faf0fcbcff880254052008ec0ab80d43f10ff4dbf6a7f973fc3fff0b02d704a3076f0a3b0dc6f092f35ef62af9f6fbc2fe8e015a042607f209be0c8a0f15f3e1f5adf879fb45fe1101dd03a9067509410c0d0f98f264f530f8fcfac8fd940060032c06f808c40b900e1bf2e7f4b3f77ffa4bfd1700e302af057b08470b130e9ef16af436f702facefc9aff66023205fe07ca0a960d21f1edf3b9f685f951fc1dffe901b50481074d0a190da4f070f33cf608f9d4fba0fe6c0138040407d0099c0c680ff3f2bff58bf857fb23feef00bb03870653091f0ceb0e76f242f50ef8dafaa6fd72003e030a06d608a20b6e0ef9f1c5f491f75dfa29fdf5ffc1028d055908250bf10d7cf148f414f7e0f9acfc78ff44021005dc07a80a740dfff0cbf397f663f92ffcfbfec70193045f072b0af70c82f04ef31af6e6f8b2fb7efe4a011604e206ae097a0c460fd1f29df569f835fb01fecd00990365063109fd0bc90e54f220f5ecf7b8fa84fd50001c03e805b408800b4c0ed7f1a3f46ff73bfa07fdd3ff9f026b053708030bcf0d5af126f4f2f6bef98afc56ff2202ee04ba07860a520dddf0a9f375f641f90dfcd9fea50171043d07090ad50c60f02cf3f8f5c4f890fb5cfe2801f403c0068c09580c240faff27bf547f813fbdffdab00770343060f09db0ba70e32f2fef4caf796fa62fd2e00fa02c60592085e0b2a0eb5f181f44df719fae5fcb1ff7d0249051508e10aad0d38f104f4d0f69cf968fc34ff0002cc049807640a300dbbf087f353f61ff9ebfbb7fe83014f041b07e709b30c7f0f0af3d6f5a2f86efb3afe0601d2039e066a09360c020f8df259f525f8f1fabdfd890055032106ed08b90b850e10f2dcf4a8f774fa40fd0c00d802a40570083c0b080e93f15ff42bf7f7f9c3fc8fff5b022705f307bf0a8b0d16f1e2f3aef67af946fc12ffde01aa047607420a0e0d99f065f331f6fdf8c9fb95fe61012d04f906c509910c5d0fe8f2b4f580f84cfb18fee400b0037c064809140ce00e6bf237f503f8cffa9bfd67003303ff05cb08970b630eeef1baf486f752fa1efdeaffb60282054e081a0be60d71f13df409f7d5f9a1fc6dff39020505d1079d0a690df4f0c0f38cf658f924fcf0febc0188045407200aec0c77f043f30ff6dbf8a7fb73fe3f010b04d706a3096f0c3b0fc6f292f55ef82afbf6fd",
+        "e0f99ffc5eff1d02dc049b07b9fa78fd3700f602b505d3f892fb51fe1001cf038e06acf96bfc2affe901a804670785fa44fd0300c20281059ff85efb1dfedc009b035a0678f937fcf6feb5017404330751fa10fdcfff8e024d056bf82afbe9fda8006703260644f903fcc2fe81014004ff061dfadcfc9bff5a02190537f8f6fab5fd74003303f20510f9cffb8efe4d010c04cb06e9f9a8fc67ff2602e504a407c2fa81fd4000ff02be05dcf89bfb5afe1901d8039706b5f974fc33fff201b10470078efa4dfd0c00cb028a05a8f867fb26fee500a403630681f940fcfffebe017d043c075afa19fdd8ff9702560574f833fbf2fdb10070032f064df90cfccbfe8a014904080726fae5fca4ff6302220540f8fffabefd7d003c03fb0519f9d8fb97fe56011504d406f2f9b1fc70ff2f02ee04ad07cbfa8afd49000803c705e5f8a4fb63fe2201e103a006bef97dfc3cfffb01ba04790797fa56fd1500d4029305b1f870fb2ffeee00ad036c068af949fc08ffc7018604450763fa22fde1ffa0025f057df83cfbfbfdba007903380656f915fcd4fe9301520411072ffaeefcadff6c022b0549f808fbc7fd86004503040622f9e1fba0fe5f011e04dd06fbf9bafc79ff3802f704b607d4fa93fd52001103d005eef8adfb6cfe2b01ea03a906c7f986fc45ff0402c3048207a0fa5ffd1e00dd029c05baf879fb38fef700b603750693f952fc11ffd0018f044e076cfa2bfdeaffa902680586f845fb04fec300820341065ff91efcddfe9c015b041a0738faf7fcb6ff7502340552f811fbd0fd8f004e030d062bf9eafba9fe68012704e60604fac3fc82ff41020005bf07ddfa9cfd5b001a03d905f7f8b6fb75fe3401f303b206d0f98ffc4eff0d02cc048b07a9fa"
+      ],
+      "sampleCount": 1200,
+      "rms": 0.049255509665860335,
+      "gain": 1.0151148640870868,
+      "signalF32LeSha256Hex": "cf02e515915ba136b4b5941c8be6eb4fbefb7040280aef6fc601f62092322050"
+    },
+    {
+      "name": "a signal below the levelling floor passes through",
+      "segmentsPcm16Hex": [
+        "020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff",
+        "01000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff020001000000fffffeff0200"
+      ],
+      "sampleCount": 800,
+      "rms": 4.315837287515549e-05,
+      "gain": 1.0,
+      "signalF32LeSha256Hex": "d9505e5d16085ad0b49b3ebdc44891fc770529d13657173a548e696c6c4b4ca7"
+    },
+    {
+      "name": "a quiet signal is capped at the largest gain",
+      "segmentsPcm16Hex": [
+        "fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff",
+        "fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff0a00fdfff0ff0400f7ff0b00fefff1ff0500f8ff0c00fffff2ff0600f9ff0d000000f3ff0700faff0e000100f4ff0800fbff0f000200f5ff0900fcff10000300f6ff"
+      ],
+      "sampleCount": 800,
+      "rms": 0.00029062085289713725,
+      "gain": 50.0,
+      "signalF32LeSha256Hex": "e1f82884b40e298cc44590fa340c6bb32e417237f044e6c34af1e1ec3d3d367a"
+    },
+    {
+      "name": "a peak pushed past full scale is clamped",
+      "segmentsPcm16Hex": [
+        "9c00defe79ff1400af00f1fe8cff2700c20004ff9fff3a00d50017ffb2ff4d00e8002affc5ff6000fb003dffd8ff73000e0150ffebff8600210163fffeff9900dbfe76ff1100ac00eefe89ff2400bf0001ff9cff3700d20014ffafff4a00e50027ffc2ff5d00f8003affd5ff70000b014dffe8ff83001e0160fffbff9600d8fe73ff0e00a900ebfe86ff2100bc00fefe99ff3400cf0011ffacff4700e20024ffbfff5a00f50037ffd2ff6d0008014affe5ff80001b015dfff8ff9300d5fe70ff0b00a600e8fe83ff1e00b900fbfe96ff3100cc000effa9ff4400df0021ffbcff5700f20034ffcfff6a00050147ffe2ff7d0018015afff5ff90002b016dff0800a300e5fe80ff1b00b600f8fe93ff2e00c9000bffa6ff4100dc001effb9ff5400ef0031ffccff6700020144ffdfff7a00150157fff2ff8d0028016aff0500a000e2fe7dff1800b300f5fe90ff2b00c60008ffa3ff3e00d9001bffb6ff5100ec002effc9ff6400ff0041ffdcff7700120154ffefff8a00250167ff02009d00dffe7aff1500b000f2fe8dff2800c30005ff3075d08ad60018ffb3ff4e00e9002bffc6ff6100fc003effd9ff74000f0151ffecff8700220164ffffff9a00dcfe77ff1200ad00effe8aff2500c00002ff9dff3800d30015ffb0ff4b00e60028ffc3ff5e00f9003bffd6ff71000c014effe9ff84001f0161fffcff9700d9fe74ff0f00aa00ecfe87ff2200bd00fffe9aff3500d00012ffadff4800e30025ffc0ff5b00f60038ffd3ff6e0009014bffe6ff81001c015efff9ff9400d6fe71ff0c00a700e9fe84ff1f00ba00fcfe97ff3200cd000fffaaff4500e00022ffbdff5800f30035ffd0ff6b00060148ffe3ff7e0019015bfff6ff91002c016eff0900a400e6fe81ff1c00b700f9fe94ff2f00ca000cffa7ff4200dd001fffbaff5500f00032ffcdff6800030145ffe0ff7b00160158fff3ff8e0029016bff0600a100e3fe7eff1900b400f6fe91ff2c00c70009ffa4ff3f00da001cffb7ff5200ed002fffcaff6500000142ffddff7800130155fff0ff8b00260168ff03009e00e0fe7bff1600b100f3fe8eff2900c40006ffa1ff3c00d70019ffb4ff4f00ea002cffc7ff6200",
+        "060148ffe3ff7e0019015bfff6ff91002c016eff0900a400e6fe81ff1c00b700f9fe94ff2f00ca000cffa7ff4200dd001fffbaff5500f00032ffcdff6800030145ffe0ff7b00160158fff3ff8e0029016bff0600a100e3fe7eff1900b400f6fe91ff2c00c70009ffa4ff3f00da001cffb7ff5200ed002fffcaff6500000142ffddff7800130155fff0ff8b00260168ff03009e00e0fe7bff1600b100f3fe8eff2900c40006ffa1ff3c00d70019ffb4ff4f00ea002cffc7ff6200fd003fffdaff7500100152ffedff8800230165ff00009b00ddfe78ff1300ae00f0fe8bff2600c10003ff9eff3900d40016ffb1ff4c00e70029ffc4ff5f00fa003cffd7ff72000d014fffeaff8500200162fffdff9800dafe75ff1000ab00edfe88ff2300be0000ff9bff3600d10013ffaeff4900e40026ffc1ff5c00f70039ffd4ff6f000a014cffe7ff82001d015ffffaff9500d7fe72ff0d00a800eafe85ff2000bb00fdfe98ff3300ce0010ffabff4600e10023ffbeff5900f40036ffd1ff6c00070149ffe4ff7f001a015cfff7ff9200d4fe6fff0a00a500e7fe82ff1d00b800fafe95ff3000cb000dffa8ff4300de0020ffbbff5600f10033ffceff6900040146ffe1ff7c00170159fff4ff8f002a016cff0700a200e4fe7fff1a00b500f7fe92ff2d00c8000affa5ff4000db001dffb8ff5300ee0030ffcbff6600010143ffdeff7900140156fff1ff8c00270169ff04009f00e1fe7cff1700b200f4fe8fff2a00c50007ffa2ff3d00d8001affb5ff5000eb002dffc8ff6300fe0040ffdbff7600110153ffeeff8900240166ff01009c00defe79ff1400af00f1fe8cff2700c20004ff9fff3a00d50017ffb2ff4d00e8002affc5ff6000fb003dffd8ff73000e0150ffebff8600210163fffeff9900dbfe76ff1100ac00eefe89ff2400bf0001ff9cff3700d20014ffafff4a00e50027ffc2ff5d00f8003affd5ff70000b014dffe8ff83001e0160fffbff9600d8fe73ff0e00a900ebfe86ff2100bc00fefe99ff3400cf0011ffacff4700e20024ffbfff5a00f50037ffd2ff6d0008014affe5ff80001b015dfff8ff9300d5fe70ff0b00a600e8fe83ff1e00b900fbfe96ff3100cc00"
+      ],
+      "sampleCount": 800,
+      "rms": 0.04608160553226898,
+      "gain": 1.0850316394680983,
+      "signalF32LeSha256Hex": "0c098d2f25b645d8a95112ef27fca258d9e8be6c217c468ce230197ac40a5f34"
+    }
+  ],
+  "trackerSequences": [
+    {
+      "name": "a spoken word then quiet completes the round",
+      "priorLevels": [
+        [
+          0.001,
+          40
+        ]
+      ],
+      "traceRequired": true,
+      "waypoints": [
+        [
+          200,
+          200
+        ],
+        [
+          500,
+          700
+        ],
+        [
+          800,
+          300
+        ]
+      ],
+      "levels": [
+        [
+          0.001,
+          10
+        ],
+        [
+          0.05,
+          6
+        ],
+        [
+          0.001,
+          20
+        ]
+      ],
+      "reaches": [
+        [
+          2,
+          200,
+          200
+        ],
+        [
+          4,
+          500,
+          700
+        ],
+        [
+          6,
+          800,
+          300
+        ]
+      ],
+      "decisions": [
+        [
+          "open",
+          27
+        ],
+        [
+          "complete",
+          1
+        ],
+        [
+          "stalled",
+          8
+        ]
+      ],
+      "completedAtFrame": 27,
+      "finalRuns": [
+        {
+          "startFrame": 10,
+          "endFrame": 16,
+          "voicedFrames": 6,
+          "gapFrames": 0,
+          "qualifies": true
+        }
+      ]
+    },
+    {
+      "name": "a click train never counts as speech",
+      "priorLevels": [
+        [
+          0.001,
+          40
+        ]
+      ],
+      "traceRequired": true,
+      "waypoints": [
+        [
+          200,
+          200
+        ],
+        [
+          500,
+          700
+        ],
+        [
+          800,
+          300
+        ]
+      ],
+      "levels": [
+        [
+          0.001,
+          10
+        ],
+        [
+          0.05,
+          1
+        ],
+        [
+          0.001,
+          1
+        ],
+        [
+          0.05,
+          1
+        ],
+        [
+          0.001,
+          1
+        ],
+        [
+          0.05,
+          1
+        ],
+        [
+          0.001,
+          1
+        ],
+        [
+          0.05,
+          1
+        ],
+        [
+          0.001,
+          1
+        ],
+        [
+          0.05,
+          1
+        ],
+        [
+          0.001,
+          1
+        ],
+        [
+          0.05,
+          1
+        ],
+        [
+          0.001,
+          1
+        ],
+        [
+          0.05,
+          1
+        ],
+        [
+          0.001,
+          1
+        ],
+        [
+          0.05,
+          1
+        ],
+        [
+          0.001,
+          1
+        ],
+        [
+          0.05,
+          1
+        ],
+        [
+          0.001,
+          1
+        ],
+        [
+          0.05,
+          1
+        ],
+        [
+          0.001,
+          1
+        ],
+        [
+          0.001,
+          70
+        ]
+      ],
+      "reaches": [
+        [
+          2,
+          200,
+          200
+        ],
+        [
+          4,
+          500,
+          700
+        ],
+        [
+          6,
+          800,
+          300
+        ]
+      ],
+      "decisions": [
+        [
+          "open",
+          86
+        ],
+        [
+          "stalled",
+          14
+        ]
+      ],
+      "completedAtFrame": null,
+      "finalRuns": [
+        {
+          "startFrame": 10,
+          "endFrame": 29,
+          "voicedFrames": 10,
+          "gapFrames": 9,
+          "qualifies": false
+        }
+      ]
+    },
+    {
+      "name": "a word with a short stop inside stays one run",
+      "priorLevels": [
+        [
+          0.001,
+          40
+        ]
+      ],
+      "traceRequired": true,
+      "waypoints": [
+        [
+          200,
+          200
+        ],
+        [
+          500,
+          700
+        ],
+        [
+          800,
+          300
+        ]
+      ],
+      "levels": [
+        [
+          0.001,
+          10
+        ],
+        [
+          0.05,
+          4
+        ],
+        [
+          0.001,
+          2
+        ],
+        [
+          0.05,
+          4
+        ],
+        [
+          0.001,
+          20
+        ]
+      ],
+      "reaches": [
+        [
+          2,
+          200,
+          200
+        ],
+        [
+          4,
+          500,
+          700
+        ],
+        [
+          6,
+          800,
+          300
+        ]
+      ],
+      "decisions": [
+        [
+          "open",
+          31
+        ],
+        [
+          "complete",
+          1
+        ],
+        [
+          "stalled",
+          8
+        ]
+      ],
+      "completedAtFrame": 31,
+      "finalRuns": [
+        {
+          "startFrame": 10,
+          "endFrame": 20,
+          "voicedFrames": 8,
+          "gapFrames": 2,
+          "qualifies": true
+        }
+      ]
+    },
+    {
+      "name": "an unfinished trace offers to continue after fifteen seconds",
+      "priorLevels": [
+        [
+          0.001,
+          40
+        ]
+      ],
+      "traceRequired": true,
+      "waypoints": [
+        [
+          200,
+          200
+        ],
+        [
+          500,
+          700
+        ],
+        [
+          800,
+          300
+        ]
+      ],
+      "levels": [
+        [
+          0.001,
+          10
+        ],
+        [
+          0.05,
+          6
+        ],
+        [
+          0.001,
+          290
+        ]
+      ],
+      "reaches": [
+        [
+          2,
+          200,
+          200
+        ],
+        [
+          4,
+          500,
+          700
+        ]
+      ],
+      "decisions": [
+        [
+          "open",
+          300
+        ],
+        [
+          "stalled",
+          6
+        ]
+      ],
+      "completedAtFrame": null,
+      "finalRuns": [
+        {
+          "startFrame": 10,
+          "endFrame": 16,
+          "voicedFrames": 6,
+          "gapFrames": 0,
+          "qualifies": true
+        }
+      ]
+    },
+    {
+      "name": "speech before the trace finishes completes when the trace does",
+      "priorLevels": [
+        [
+          0.001,
+          40
+        ]
+      ],
+      "traceRequired": true,
+      "waypoints": [
+        [
+          200,
+          200
+        ],
+        [
+          500,
+          700
+        ],
+        [
+          800,
+          300
+        ]
+      ],
+      "levels": [
+        [
+          0.001,
+          5
+        ],
+        [
+          0.05,
+          6
+        ],
+        [
+          0.001,
+          40
+        ]
+      ],
+      "reaches": [
+        [
+          20,
+          200,
+          200
+        ],
+        [
+          30,
+          500,
+          700
+        ],
+        [
+          40,
+          800,
+          300
+        ]
+      ],
+      "decisions": [
+        [
+          "open",
+          40
+        ],
+        [
+          "complete",
+          1
+        ],
+        [
+          "stalled",
+          10
+        ]
+      ],
+      "completedAtFrame": 40,
+      "finalRuns": [
+        {
+          "startFrame": 5,
+          "endFrame": 11,
+          "voicedFrames": 6,
+          "gapFrames": 0,
+          "qualifies": true
+        }
+      ]
+    },
+    {
+      "name": "a noisy room raises the bar above quiet speech",
+      "priorLevels": [
+        [
+          0.02,
+          200
+        ]
+      ],
+      "traceRequired": true,
+      "waypoints": [
+        [
+          200,
+          200
+        ],
+        [
+          500,
+          700
+        ],
+        [
+          800,
+          300
+        ]
+      ],
+      "levels": [
+        [
+          0.02,
+          10
+        ],
+        [
+          0.05,
+          6
+        ],
+        [
+          0.02,
+          90
+        ]
+      ],
+      "reaches": [
+        [
+          2,
+          200,
+          200
+        ],
+        [
+          4,
+          500,
+          700
+        ],
+        [
+          6,
+          800,
+          300
+        ]
+      ],
+      "decisions": [
+        [
+          "open",
+          86
+        ],
+        [
+          "stalled",
+          20
+        ]
+      ],
+      "completedAtFrame": null,
+      "finalRuns": []
+    },
+    {
+      "name": "a noisy room still hears loud speech",
+      "priorLevels": [
+        [
+          0.02,
+          200
+        ]
+      ],
+      "traceRequired": true,
+      "waypoints": [
+        [
+          200,
+          200
+        ],
+        [
+          500,
+          700
+        ],
+        [
+          800,
+          300
+        ]
+      ],
+      "levels": [
+        [
+          0.02,
+          10
+        ],
+        [
+          0.2,
+          6
+        ],
+        [
+          0.02,
+          20
+        ]
+      ],
+      "reaches": [
+        [
+          2,
+          200,
+          200
+        ],
+        [
+          4,
+          500,
+          700
+        ],
+        [
+          6,
+          800,
+          300
+        ]
+      ],
+      "decisions": [
+        [
+          "open",
+          27
+        ],
+        [
+          "complete",
+          1
+        ],
+        [
+          "stalled",
+          8
+        ]
+      ],
+      "completedAtFrame": 27,
+      "finalRuns": [
+        {
+          "startFrame": 10,
+          "endFrame": 16,
+          "voicedFrames": 6,
+          "gapFrames": 0,
+          "qualifies": true
+        }
+      ]
+    },
+    {
+      "name": "the speech-only tier needs no trace",
+      "priorLevels": [
+        [
+          0.001,
+          40
+        ]
+      ],
+      "traceRequired": false,
+      "waypoints": [],
+      "levels": [
+        [
+          0.001,
+          10
+        ],
+        [
+          0.05,
+          6
+        ],
+        [
+          0.001,
+          20
+        ]
+      ],
+      "reaches": [],
+      "decisions": [
+        [
+          "open",
+          27
+        ],
+        [
+          "complete",
+          1
+        ],
+        [
+          "stalled",
+          8
+        ]
+      ],
+      "completedAtFrame": 27,
+      "finalRuns": [
+        {
+          "startFrame": 10,
+          "endFrame": 16,
+          "voicedFrames": 6,
+          "gapFrames": 0,
+          "qualifies": true
+        }
+      ]
+    },
+    {
+      "name": "a burst shorter than a word does not count",
+      "priorLevels": [
+        [
+          0.001,
+          40
+        ]
+      ],
+      "traceRequired": true,
+      "waypoints": [
+        [
+          200,
+          200
+        ],
+        [
+          500,
+          700
+        ],
+        [
+          800,
+          300
+        ]
+      ],
+      "levels": [
+        [
+          0.001,
+          10
+        ],
+        [
+          0.05,
+          3
+        ],
+        [
+          0.001,
+          90
+        ]
+      ],
+      "reaches": [
+        [
+          2,
+          200,
+          200
+        ],
+        [
+          4,
+          500,
+          700
+        ],
+        [
+          6,
+          800,
+          300
+        ]
+      ],
+      "decisions": [
+        [
+          "open",
+          86
+        ],
+        [
+          "stalled",
+          17
+        ]
+      ],
+      "completedAtFrame": null,
+      "finalRuns": [
+        {
+          "startFrame": 10,
+          "endFrame": 13,
+          "voicedFrames": 3,
+          "gapFrames": 0,
+          "qualifies": false
+        }
+      ]
+    },
+    {
+      "name": "a word spoken before the floor is known counts once quiet arrives",
+      "priorLevels": [],
+      "traceRequired": true,
+      "waypoints": [
+        [
+          200,
+          200
+        ],
+        [
+          500,
+          700
+        ],
+        [
+          800,
+          300
+        ]
+      ],
+      "levels": [
+        [
+          0.05,
+          6
+        ],
+        [
+          0.001,
+          20
+        ]
+      ],
+      "reaches": [
+        [
+          1,
+          200,
+          200
+        ],
+        [
+          2,
+          500,
+          700
+        ],
+        [
+          3,
+          800,
+          300
+        ]
+      ],
+      "decisions": [
+        [
+          "open",
+          17
+        ],
+        [
+          "complete",
+          1
+        ],
+        [
+          "stalled",
+          8
+        ]
+      ],
+      "completedAtFrame": 17,
+      "finalRuns": [
+        {
+          "startFrame": 0,
+          "endFrame": 6,
+          "voicedFrames": 6,
+          "gapFrames": 0,
+          "qualifies": true
+        }
+      ]
+    },
+    {
+      "name": "waypoints reached in reverse leave the trace unfinished",
+      "priorLevels": [
+        [
+          0.001,
+          40
+        ]
+      ],
+      "traceRequired": true,
+      "waypoints": [
+        [
+          200,
+          200
+        ],
+        [
+          500,
+          700
+        ],
+        [
+          800,
+          300
+        ]
+      ],
+      "levels": [
+        [
+          0.001,
+          10
+        ],
+        [
+          0.05,
+          6
+        ],
+        [
+          0.001,
+          290
+        ]
+      ],
+      "reaches": [
+        [
+          2,
+          800,
+          300
+        ],
+        [
+          4,
+          500,
+          700
+        ],
+        [
+          6,
+          200,
+          200
+        ]
+      ],
+      "decisions": [
+        [
+          "open",
+          300
+        ],
+        [
+          "stalled",
+          6
+        ]
+      ],
+      "completedAtFrame": null,
+      "finalRuns": [
+        {
+          "startFrame": 10,
+          "endFrame": 16,
+          "voicedFrames": 6,
+          "gapFrames": 0,
+          "qualifies": true
+        }
+      ]
+    },
+    {
+      "name": "a waypoint reached early counts once the trace returns to it in order",
+      "priorLevels": [
+        [
+          0.001,
+          40
+        ]
+      ],
+      "traceRequired": true,
+      "waypoints": [
+        [
+          200,
+          200
+        ],
+        [
+          500,
+          700
+        ],
+        [
+          800,
+          300
+        ]
+      ],
+      "levels": [
+        [
+          0.001,
+          10
+        ],
+        [
+          0.05,
+          6
+        ],
+        [
+          0.001,
+          20
+        ]
+      ],
+      "reaches": [
+        [
+          1,
+          800,
+          300
+        ],
+        [
+          2,
+          200,
+          200
+        ],
+        [
+          3,
+          500,
+          700
+        ],
+        [
+          4,
+          800,
+          300
+        ]
+      ],
+      "decisions": [
+        [
+          "open",
+          27
+        ],
+        [
+          "complete",
+          1
+        ],
+        [
+          "stalled",
+          8
+        ]
+      ],
+      "completedAtFrame": 27,
+      "finalRuns": [
+        {
+          "startFrame": 10,
+          "endFrame": 16,
+          "voicedFrames": 6,
+          "gapFrames": 0,
+          "qualifies": true
+        }
+      ]
+    }
+  ],
+  "coarsePaths": [
+    {
+      "name": "an even trace",
+      "surface": [
+        400.0,
+        300.0
+      ],
+      "trace": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          10.0,
+          5.0,
+          16.0
+        ],
+        [
+          20.0,
+          10.0,
+          32.0
+        ],
+        [
+          30.0,
+          15.0,
+          48.0
+        ],
+        [
+          40.0,
+          20.0,
+          64.0
+        ],
+        [
+          50.0,
+          25.0,
+          80.0
+        ],
+        [
+          60.0,
+          30.0,
+          96.0
+        ],
+        [
+          70.0,
+          35.0,
+          112.0
+        ],
+        [
+          80.0,
+          40.0,
+          128.0
+        ],
+        [
+          90.0,
+          45.0,
+          144.0
+        ],
+        [
+          100.0,
+          50.0,
+          160.0
+        ],
+        [
+          110.0,
+          55.0,
+          176.0
+        ],
+        [
+          120.0,
+          60.0,
+          192.0
+        ],
+        [
+          130.0,
+          65.0,
+          208.0
+        ],
+        [
+          140.0,
+          70.0,
+          224.0
+        ],
+        [
+          150.0,
+          75.0,
+          240.0
+        ],
+        [
+          160.0,
+          80.0,
+          256.0
+        ],
+        [
+          170.0,
+          85.0,
+          272.0
+        ],
+        [
+          180.0,
+          90.0,
+          288.0
+        ],
+        [
+          190.0,
+          95.0,
+          304.0
+        ],
+        [
+          200.0,
+          100.0,
+          320.0
+        ],
+        [
+          210.0,
+          105.0,
+          336.0
+        ],
+        [
+          220.0,
+          110.0,
+          352.0
+        ],
+        [
+          230.0,
+          115.0,
+          368.0
+        ],
+        [
+          240.0,
+          120.0,
+          384.0
+        ],
+        [
+          250.0,
+          125.0,
+          400.0
+        ],
+        [
+          260.0,
+          130.0,
+          416.0
+        ],
+        [
+          270.0,
+          135.0,
+          432.0
+        ],
+        [
+          280.0,
+          140.0,
+          448.0
+        ],
+        [
+          290.0,
+          145.0,
+          464.0
+        ],
+        [
+          300.0,
+          150.0,
+          480.0
+        ],
+        [
+          310.0,
+          155.0,
+          496.0
+        ],
+        [
+          320.0,
+          160.0,
+          512.0
+        ],
+        [
+          330.0,
+          165.0,
+          528.0
+        ],
+        [
+          340.0,
+          170.0,
+          544.0
+        ],
+        [
+          350.0,
+          175.0,
+          560.0
+        ],
+        [
+          360.0,
+          180.0,
+          576.0
+        ],
+        [
+          370.0,
+          185.0,
+          592.0
+        ],
+        [
+          380.0,
+          190.0,
+          608.0
+        ],
+        [
+          390.0,
+          195.0,
+          624.0
+        ]
+      ],
+      "outline": [
+        [
+          0,
+          0
+        ],
+        [
+          15,
+          10
+        ],
+        [
+          31,
+          21
+        ],
+        [
+          46,
+          31
+        ],
+        [
+          62,
+          41
+        ],
+        [
+          77,
+          52
+        ],
+        [
+          93,
+          62
+        ],
+        [
+          108,
+          72
+        ],
+        [
+          124,
+          83
+        ],
+        [
+          139,
+          93
+        ],
+        [
+          155,
+          103
+        ],
+        [
+          170,
+          113
+        ],
+        [
+          186,
+          124
+        ],
+        [
+          201,
+          134
+        ],
+        [
+          217,
+          144
+        ],
+        [
+          232,
+          155
+        ],
+        [
+          248,
+          165
+        ],
+        [
+          263,
+          175
+        ],
+        [
+          279,
+          186
+        ],
+        [
+          294,
+          196
+        ],
+        [
+          310,
+          206
+        ],
+        [
+          325,
+          217
+        ],
+        [
+          340,
+          227
+        ],
+        [
+          356,
+          237
+        ],
+        [
+          371,
+          248
+        ],
+        [
+          387,
+          258
+        ],
+        [
+          402,
+          268
+        ],
+        [
+          418,
+          279
+        ],
+        [
+          433,
+          289
+        ],
+        [
+          449,
+          299
+        ],
+        [
+          464,
+          310
+        ],
+        [
+          480,
+          320
+        ],
+        [
+          495,
+          330
+        ],
+        [
+          511,
+          340
+        ],
+        [
+          526,
+          351
+        ],
+        [
+          542,
+          361
+        ],
+        [
+          557,
+          371
+        ],
+        [
+          573,
+          382
+        ],
+        [
+          588,
+          392
+        ],
+        [
+          604,
+          402
+        ],
+        [
+          619,
+          413
+        ],
+        [
+          635,
+          423
+        ],
+        [
+          650,
+          433
+        ],
+        [
+          665,
+          444
+        ],
+        [
+          681,
+          454
+        ],
+        [
+          696,
+          464
+        ],
+        [
+          712,
+          475
+        ],
+        [
+          727,
+          485
+        ],
+        [
+          743,
+          495
+        ],
+        [
+          758,
+          506
+        ],
+        [
+          774,
+          516
+        ],
+        [
+          789,
+          526
+        ],
+        [
+          805,
+          537
+        ],
+        [
+          820,
+          547
+        ],
+        [
+          836,
+          557
+        ],
+        [
+          851,
+          567
+        ],
+        [
+          867,
+          578
+        ],
+        [
+          882,
+          588
+        ],
+        [
+          898,
+          598
+        ],
+        [
+          913,
+          609
+        ],
+        [
+          929,
+          619
+        ],
+        [
+          944,
+          629
+        ],
+        [
+          960,
+          640
+        ],
+        [
+          975,
+          650
+        ]
+      ]
+    },
+    {
+      "name": "points out of time order are sorted first",
+      "surface": [
+        320.0,
+        240.0
+      ],
+      "trace": [
+        [
+          300.0,
+          10.0,
+          90.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          150.0,
+          200.0,
+          45.0
+        ],
+        [
+          75.0,
+          50.0,
+          20.0
+        ]
+      ],
+      "outline": [
+        [
+          0,
+          0
+        ],
+        [
+          23,
+          20
+        ],
+        [
+          45,
+          40
+        ],
+        [
+          68,
+          60
+        ],
+        [
+          90,
+          80
+        ],
+        [
+          113,
+          100
+        ],
+        [
+          135,
+          120
+        ],
+        [
+          158,
+          140
+        ],
+        [
+          180,
+          160
+        ],
+        [
+          203,
+          180
+        ],
+        [
+          226,
+          200
+        ],
+        [
+          241,
+          226
+        ],
+        [
+          251,
+          254
+        ],
+        [
+          262,
+          282
+        ],
+        [
+          273,
+          310
+        ],
+        [
+          283,
+          339
+        ],
+        [
+          294,
+          367
+        ],
+        [
+          304,
+          395
+        ],
+        [
+          315,
+          423
+        ],
+        [
+          326,
+          452
+        ],
+        [
+          336,
+          480
+        ],
+        [
+          347,
+          508
+        ],
+        [
+          357,
+          536
+        ],
+        [
+          368,
+          565
+        ],
+        [
+          379,
+          593
+        ],
+        [
+          389,
+          621
+        ],
+        [
+          400,
+          649
+        ],
+        [
+          410,
+          678
+        ],
+        [
+          421,
+          706
+        ],
+        [
+          432,
+          734
+        ],
+        [
+          442,
+          762
+        ],
+        [
+          453,
+          791
+        ],
+        [
+          463,
+          819
+        ],
+        [
+          476,
+          821
+        ],
+        [
+          492,
+          795
+        ],
+        [
+          507,
+          769
+        ],
+        [
+          522,
+          743
+        ],
+        [
+          538,
+          717
+        ],
+        [
+          553,
+          691
+        ],
+        [
+          569,
+          665
+        ],
+        [
+          584,
+          639
+        ],
+        [
+          599,
+          613
+        ],
+        [
+          615,
+          587
+        ],
+        [
+          630,
+          561
+        ],
+        [
+          645,
+          535
+        ],
+        [
+          661,
+          509
+        ],
+        [
+          676,
+          483
+        ],
+        [
+          692,
+          457
+        ],
+        [
+          707,
+          431
+        ],
+        [
+          722,
+          405
+        ],
+        [
+          738,
+          379
+        ],
+        [
+          753,
+          353
+        ],
+        [
+          768,
+          327
+        ],
+        [
+          784,
+          301
+        ],
+        [
+          799,
+          275
+        ],
+        [
+          815,
+          249
+        ],
+        [
+          830,
+          223
+        ],
+        [
+          845,
+          197
+        ],
+        [
+          861,
+          171
+        ],
+        [
+          876,
+          146
+        ],
+        [
+          891,
+          120
+        ],
+        [
+          907,
+          94
+        ],
+        [
+          922,
+          68
+        ],
+        [
+          938,
+          42
+        ]
+      ]
+    },
+    {
+      "name": "two points at one instant keep their arrival order",
+      "surface": [
+        250.0,
+        250.0
+      ],
+      "trace": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          50.0,
+          50.0,
+          10.0
+        ],
+        [
+          60.0,
+          40.0,
+          10.0
+        ],
+        [
+          200.0,
+          100.0,
+          30.0
+        ],
+        [
+          210.0,
+          90.0,
+          40.0
+        ]
+      ],
+      "outline": [
+        [
+          0,
+          0
+        ],
+        [
+          11,
+          11
+        ],
+        [
+          23,
+          23
+        ],
+        [
+          34,
+          34
+        ],
+        [
+          45,
+          45
+        ],
+        [
+          56,
+          56
+        ],
+        [
+          68,
+          68
+        ],
+        [
+          79,
+          79
+        ],
+        [
+          90,
+          90
+        ],
+        [
+          102,
+          102
+        ],
+        [
+          113,
+          113
+        ],
+        [
+          124,
+          124
+        ],
+        [
+          135,
+          135
+        ],
+        [
+          147,
+          147
+        ],
+        [
+          158,
+          158
+        ],
+        [
+          169,
+          169
+        ],
+        [
+          181,
+          181
+        ],
+        [
+          192,
+          192
+        ],
+        [
+          203,
+          197
+        ],
+        [
+          214,
+          186
+        ],
+        [
+          226,
+          174
+        ],
+        [
+          237,
+          163
+        ],
+        [
+          251,
+          165
+        ],
+        [
+          265,
+          171
+        ],
+        [
+          280,
+          177
+        ],
+        [
+          295,
+          183
+        ],
+        [
+          309,
+          190
+        ],
+        [
+          324,
+          196
+        ],
+        [
+          339,
+          202
+        ],
+        [
+          353,
+          209
+        ],
+        [
+          368,
+          215
+        ],
+        [
+          383,
+          221
+        ],
+        [
+          397,
+          227
+        ],
+        [
+          412,
+          234
+        ],
+        [
+          427,
+          240
+        ],
+        [
+          441,
+          246
+        ],
+        [
+          456,
+          253
+        ],
+        [
+          471,
+          259
+        ],
+        [
+          485,
+          265
+        ],
+        [
+          500,
+          271
+        ],
+        [
+          515,
+          278
+        ],
+        [
+          529,
+          284
+        ],
+        [
+          544,
+          290
+        ],
+        [
+          559,
+          297
+        ],
+        [
+          573,
+          303
+        ],
+        [
+          588,
+          309
+        ],
+        [
+          603,
+          315
+        ],
+        [
+          617,
+          322
+        ],
+        [
+          632,
+          328
+        ],
+        [
+          647,
+          334
+        ],
+        [
+          661,
+          341
+        ],
+        [
+          676,
+          347
+        ],
+        [
+          691,
+          353
+        ],
+        [
+          705,
+          359
+        ],
+        [
+          720,
+          366
+        ],
+        [
+          735,
+          372
+        ],
+        [
+          749,
+          378
+        ],
+        [
+          764,
+          385
+        ],
+        [
+          779,
+          391
+        ],
+        [
+          793,
+          397
+        ],
+        [
+          806,
+          394
+        ],
+        [
+          817,
+          383
+        ],
+        [
+          829,
+          371
+        ],
+        [
+          840,
+          360
+        ]
+      ]
+    },
+    {
+      "name": "a long pause at the first point takes no points from the rest",
+      "surface": [
+        240.0,
+        240.0
+      ],
+      "trace": [
+        [
+          20.0,
+          20.0,
+          0.0
+        ],
+        [
+          20.0,
+          20.0,
+          10.0
+        ],
+        [
+          20.0,
+          20.0,
+          20.0
+        ],
+        [
+          20.0,
+          20.0,
+          30.0
+        ],
+        [
+          20.0,
+          20.0,
+          40.0
+        ],
+        [
+          20.0,
+          20.0,
+          50.0
+        ],
+        [
+          20.0,
+          20.0,
+          60.0
+        ],
+        [
+          20.0,
+          20.0,
+          70.0
+        ],
+        [
+          20.0,
+          20.0,
+          80.0
+        ],
+        [
+          20.0,
+          20.0,
+          90.0
+        ],
+        [
+          20.0,
+          20.0,
+          100.0
+        ],
+        [
+          20.0,
+          20.0,
+          110.0
+        ],
+        [
+          20.0,
+          20.0,
+          120.0
+        ],
+        [
+          20.0,
+          20.0,
+          130.0
+        ],
+        [
+          20.0,
+          20.0,
+          140.0
+        ],
+        [
+          20.0,
+          20.0,
+          150.0
+        ],
+        [
+          20.0,
+          20.0,
+          160.0
+        ],
+        [
+          20.0,
+          20.0,
+          170.0
+        ],
+        [
+          20.0,
+          20.0,
+          180.0
+        ],
+        [
+          20.0,
+          20.0,
+          190.0
+        ],
+        [
+          20.0,
+          20.0,
+          200.0
+        ],
+        [
+          20.0,
+          20.0,
+          210.0
+        ],
+        [
+          20.0,
+          20.0,
+          220.0
+        ],
+        [
+          20.0,
+          20.0,
+          230.0
+        ],
+        [
+          20.0,
+          20.0,
+          240.0
+        ],
+        [
+          20.0,
+          20.0,
+          250.0
+        ],
+        [
+          20.0,
+          20.0,
+          260.0
+        ],
+        [
+          20.0,
+          20.0,
+          270.0
+        ],
+        [
+          20.0,
+          20.0,
+          280.0
+        ],
+        [
+          20.0,
+          20.0,
+          290.0
+        ],
+        [
+          20.0,
+          20.0,
+          300.0
+        ],
+        [
+          20.0,
+          20.0,
+          310.0
+        ],
+        [
+          20.0,
+          20.0,
+          320.0
+        ],
+        [
+          20.0,
+          20.0,
+          330.0
+        ],
+        [
+          20.0,
+          20.0,
+          340.0
+        ],
+        [
+          20.0,
+          20.0,
+          350.0
+        ],
+        [
+          20.0,
+          20.0,
+          360.0
+        ],
+        [
+          20.0,
+          20.0,
+          370.0
+        ],
+        [
+          20.0,
+          20.0,
+          380.0
+        ],
+        [
+          20.0,
+          20.0,
+          390.0
+        ],
+        [
+          20.0,
+          20.0,
+          400.0
+        ],
+        [
+          20.0,
+          20.0,
+          410.0
+        ],
+        [
+          20.0,
+          20.0,
+          420.0
+        ],
+        [
+          20.0,
+          20.0,
+          430.0
+        ],
+        [
+          20.0,
+          20.0,
+          440.0
+        ],
+        [
+          20.0,
+          20.0,
+          450.0
+        ],
+        [
+          20.0,
+          20.0,
+          460.0
+        ],
+        [
+          20.0,
+          20.0,
+          470.0
+        ],
+        [
+          20.0,
+          20.0,
+          480.0
+        ],
+        [
+          20.0,
+          20.0,
+          490.0
+        ],
+        [
+          20.0,
+          20.0,
+          500.0
+        ],
+        [
+          20.0,
+          20.0,
+          510.0
+        ],
+        [
+          20.0,
+          20.0,
+          520.0
+        ],
+        [
+          20.0,
+          20.0,
+          530.0
+        ],
+        [
+          20.0,
+          20.0,
+          540.0
+        ],
+        [
+          20.0,
+          20.0,
+          550.0
+        ],
+        [
+          20.0,
+          20.0,
+          560.0
+        ],
+        [
+          20.0,
+          20.0,
+          570.0
+        ],
+        [
+          20.0,
+          20.0,
+          580.0
+        ],
+        [
+          20.0,
+          20.0,
+          590.0
+        ],
+        [
+          20.0,
+          20.0,
+          600.0
+        ],
+        [
+          20.0,
+          20.0,
+          610.0
+        ],
+        [
+          20.0,
+          20.0,
+          620.0
+        ],
+        [
+          20.0,
+          20.0,
+          630.0
+        ],
+        [
+          20.0,
+          20.0,
+          640.0
+        ],
+        [
+          20.0,
+          20.0,
+          650.0
+        ],
+        [
+          20.0,
+          20.0,
+          660.0
+        ],
+        [
+          20.0,
+          20.0,
+          670.0
+        ],
+        [
+          20.0,
+          20.0,
+          680.0
+        ],
+        [
+          20.0,
+          20.0,
+          690.0
+        ],
+        [
+          20.0,
+          20.0,
+          700.0
+        ],
+        [
+          20.0,
+          20.0,
+          710.0
+        ],
+        [
+          20.0,
+          20.0,
+          720.0
+        ],
+        [
+          20.0,
+          20.0,
+          730.0
+        ],
+        [
+          20.0,
+          20.0,
+          740.0
+        ],
+        [
+          20.0,
+          20.0,
+          750.0
+        ],
+        [
+          20.0,
+          20.0,
+          760.0
+        ],
+        [
+          20.0,
+          20.0,
+          770.0
+        ],
+        [
+          20.0,
+          20.0,
+          780.0
+        ],
+        [
+          20.0,
+          20.0,
+          790.0
+        ],
+        [
+          20.0,
+          20.0,
+          800.0
+        ],
+        [
+          20.0,
+          20.0,
+          810.0
+        ],
+        [
+          20.0,
+          20.0,
+          820.0
+        ],
+        [
+          20.0,
+          20.0,
+          830.0
+        ],
+        [
+          20.0,
+          20.0,
+          840.0
+        ],
+        [
+          20.0,
+          20.0,
+          850.0
+        ],
+        [
+          20.0,
+          20.0,
+          860.0
+        ],
+        [
+          20.0,
+          20.0,
+          870.0
+        ],
+        [
+          20.0,
+          20.0,
+          880.0
+        ],
+        [
+          20.0,
+          20.0,
+          890.0
+        ],
+        [
+          20.0,
+          20.0,
+          900.0
+        ],
+        [
+          20.0,
+          20.0,
+          910.0
+        ],
+        [
+          20.0,
+          20.0,
+          920.0
+        ],
+        [
+          20.0,
+          20.0,
+          930.0
+        ],
+        [
+          20.0,
+          20.0,
+          940.0
+        ],
+        [
+          20.0,
+          20.0,
+          950.0
+        ],
+        [
+          20.0,
+          20.0,
+          960.0
+        ],
+        [
+          20.0,
+          20.0,
+          970.0
+        ],
+        [
+          20.0,
+          20.0,
+          980.0
+        ],
+        [
+          20.0,
+          20.0,
+          990.0
+        ],
+        [
+          20.0,
+          20.0,
+          1000.0
+        ],
+        [
+          20.0,
+          20.0,
+          1010.0
+        ],
+        [
+          20.0,
+          20.0,
+          1020.0
+        ],
+        [
+          20.0,
+          20.0,
+          1030.0
+        ],
+        [
+          20.0,
+          20.0,
+          1040.0
+        ],
+        [
+          20.0,
+          20.0,
+          1050.0
+        ],
+        [
+          20.0,
+          20.0,
+          1060.0
+        ],
+        [
+          20.0,
+          20.0,
+          1070.0
+        ],
+        [
+          20.0,
+          20.0,
+          1080.0
+        ],
+        [
+          20.0,
+          20.0,
+          1090.0
+        ],
+        [
+          20.0,
+          20.0,
+          1100.0
+        ],
+        [
+          20.0,
+          20.0,
+          1110.0
+        ],
+        [
+          20.0,
+          20.0,
+          1120.0
+        ],
+        [
+          20.0,
+          20.0,
+          1130.0
+        ],
+        [
+          20.0,
+          20.0,
+          1140.0
+        ],
+        [
+          20.0,
+          20.0,
+          1150.0
+        ],
+        [
+          20.0,
+          20.0,
+          1160.0
+        ],
+        [
+          20.0,
+          20.0,
+          1170.0
+        ],
+        [
+          20.0,
+          20.0,
+          1180.0
+        ],
+        [
+          20.0,
+          20.0,
+          1190.0
+        ],
+        [
+          20.0,
+          20.0,
+          1200.0
+        ],
+        [
+          20.0,
+          20.0,
+          1210.0
+        ],
+        [
+          20.0,
+          20.0,
+          1220.0
+        ],
+        [
+          20.0,
+          20.0,
+          1230.0
+        ],
+        [
+          20.0,
+          20.0,
+          1240.0
+        ],
+        [
+          20.0,
+          20.0,
+          1250.0
+        ],
+        [
+          20.0,
+          20.0,
+          1260.0
+        ],
+        [
+          20.0,
+          20.0,
+          1270.0
+        ],
+        [
+          20.0,
+          20.0,
+          1280.0
+        ],
+        [
+          20.0,
+          20.0,
+          1290.0
+        ],
+        [
+          20.0,
+          20.0,
+          1300.0
+        ],
+        [
+          20.0,
+          20.0,
+          1310.0
+        ],
+        [
+          20.0,
+          20.0,
+          1320.0
+        ],
+        [
+          20.0,
+          20.0,
+          1330.0
+        ],
+        [
+          20.0,
+          20.0,
+          1340.0
+        ],
+        [
+          20.0,
+          20.0,
+          1350.0
+        ],
+        [
+          20.0,
+          20.0,
+          1360.0
+        ],
+        [
+          20.0,
+          20.0,
+          1370.0
+        ],
+        [
+          20.0,
+          20.0,
+          1380.0
+        ],
+        [
+          20.0,
+          20.0,
+          1390.0
+        ],
+        [
+          20.0,
+          20.0,
+          1400.0
+        ],
+        [
+          20.0,
+          20.0,
+          1410.0
+        ],
+        [
+          20.0,
+          20.0,
+          1420.0
+        ],
+        [
+          20.0,
+          20.0,
+          1430.0
+        ],
+        [
+          20.0,
+          20.0,
+          1440.0
+        ],
+        [
+          20.0,
+          20.0,
+          1450.0
+        ],
+        [
+          20.0,
+          20.0,
+          1460.0
+        ],
+        [
+          20.0,
+          20.0,
+          1470.0
+        ],
+        [
+          20.0,
+          20.0,
+          1480.0
+        ],
+        [
+          20.0,
+          20.0,
+          1490.0
+        ],
+        [
+          20.0,
+          20.0,
+          1500.0
+        ],
+        [
+          20.0,
+          20.0,
+          1510.0
+        ],
+        [
+          20.0,
+          20.0,
+          1520.0
+        ],
+        [
+          20.0,
+          20.0,
+          1530.0
+        ],
+        [
+          20.0,
+          20.0,
+          1540.0
+        ],
+        [
+          20.0,
+          20.0,
+          1550.0
+        ],
+        [
+          20.0,
+          20.0,
+          1560.0
+        ],
+        [
+          20.0,
+          20.0,
+          1570.0
+        ],
+        [
+          20.0,
+          20.0,
+          1580.0
+        ],
+        [
+          20.0,
+          20.0,
+          1590.0
+        ],
+        [
+          20.0,
+          20.0,
+          1600.0
+        ],
+        [
+          20.0,
+          20.0,
+          1610.0
+        ],
+        [
+          20.0,
+          20.0,
+          1620.0
+        ],
+        [
+          20.0,
+          20.0,
+          1630.0
+        ],
+        [
+          20.0,
+          20.0,
+          1640.0
+        ],
+        [
+          20.0,
+          20.0,
+          1650.0
+        ],
+        [
+          20.0,
+          20.0,
+          1660.0
+        ],
+        [
+          20.0,
+          20.0,
+          1670.0
+        ],
+        [
+          20.0,
+          20.0,
+          1680.0
+        ],
+        [
+          20.0,
+          20.0,
+          1690.0
+        ],
+        [
+          20.0,
+          20.0,
+          1700.0
+        ],
+        [
+          20.0,
+          20.0,
+          1710.0
+        ],
+        [
+          20.0,
+          20.0,
+          1720.0
+        ],
+        [
+          20.0,
+          20.0,
+          1730.0
+        ],
+        [
+          20.0,
+          20.0,
+          1740.0
+        ],
+        [
+          20.0,
+          20.0,
+          1750.0
+        ],
+        [
+          20.0,
+          20.0,
+          1760.0
+        ],
+        [
+          20.0,
+          20.0,
+          1770.0
+        ],
+        [
+          20.0,
+          20.0,
+          1780.0
+        ],
+        [
+          20.0,
+          20.0,
+          1790.0
+        ],
+        [
+          20.0,
+          20.0,
+          1800.0
+        ],
+        [
+          20.0,
+          20.0,
+          1810.0
+        ],
+        [
+          20.0,
+          20.0,
+          1820.0
+        ],
+        [
+          20.0,
+          20.0,
+          1830.0
+        ],
+        [
+          20.0,
+          20.0,
+          1840.0
+        ],
+        [
+          20.0,
+          20.0,
+          1850.0
+        ],
+        [
+          20.0,
+          20.0,
+          1860.0
+        ],
+        [
+          20.0,
+          20.0,
+          1870.0
+        ],
+        [
+          20.0,
+          20.0,
+          1880.0
+        ],
+        [
+          20.0,
+          20.0,
+          1890.0
+        ],
+        [
+          20.0,
+          20.0,
+          1900.0
+        ],
+        [
+          20.0,
+          20.0,
+          1910.0
+        ],
+        [
+          20.0,
+          20.0,
+          1920.0
+        ],
+        [
+          20.0,
+          20.0,
+          1930.0
+        ],
+        [
+          20.0,
+          20.0,
+          1940.0
+        ],
+        [
+          20.0,
+          20.0,
+          1950.0
+        ],
+        [
+          20.0,
+          20.0,
+          1960.0
+        ],
+        [
+          20.0,
+          20.0,
+          1970.0
+        ],
+        [
+          20.0,
+          20.0,
+          1980.0
+        ],
+        [
+          20.0,
+          20.0,
+          1990.0
+        ],
+        [
+          120.0,
+          180.0,
+          2010.0
+        ],
+        [
+          220.0,
+          40.0,
+          2020.0
+        ]
+      ],
+      "outline": [
+        [
+          83,
+          83
+        ],
+        [
+          96,
+          104
+        ],
+        [
+          109,
+          124
+        ],
+        [
+          121,
+          144
+        ],
+        [
+          134,
+          164
+        ],
+        [
+          147,
+          184
+        ],
+        [
+          159,
+          205
+        ],
+        [
+          172,
+          225
+        ],
+        [
+          184,
+          245
+        ],
+        [
+          197,
+          265
+        ],
+        [
+          210,
+          286
+        ],
+        [
+          222,
+          306
+        ],
+        [
+          235,
+          326
+        ],
+        [
+          248,
+          346
+        ],
+        [
+          260,
+          367
+        ],
+        [
+          273,
+          387
+        ],
+        [
+          286,
+          407
+        ],
+        [
+          298,
+          427
+        ],
+        [
+          311,
+          447
+        ],
+        [
+          324,
+          468
+        ],
+        [
+          336,
+          488
+        ],
+        [
+          349,
+          508
+        ],
+        [
+          362,
+          528
+        ],
+        [
+          374,
+          549
+        ],
+        [
+          387,
+          569
+        ],
+        [
+          399,
+          589
+        ],
+        [
+          412,
+          609
+        ],
+        [
+          425,
+          630
+        ],
+        [
+          437,
+          650
+        ],
+        [
+          450,
+          670
+        ],
+        [
+          463,
+          690
+        ],
+        [
+          475,
+          710
+        ],
+        [
+          488,
+          731
+        ],
+        [
+          501,
+          749
+        ],
+        [
+          515,
+          730
+        ],
+        [
+          528,
+          710
+        ],
+        [
+          542,
+          691
+        ],
+        [
+          556,
+          671
+        ],
+        [
+          570,
+          652
+        ],
+        [
+          584,
+          633
+        ],
+        [
+          598,
+          613
+        ],
+        [
+          612,
+          594
+        ],
+        [
+          625,
+          574
+        ],
+        [
+          639,
+          555
+        ],
+        [
+          653,
+          536
+        ],
+        [
+          667,
+          516
+        ],
+        [
+          681,
+          497
+        ],
+        [
+          695,
+          477
+        ],
+        [
+          709,
+          458
+        ],
+        [
+          723,
+          438
+        ],
+        [
+          736,
+          419
+        ],
+        [
+          750,
+          400
+        ],
+        [
+          764,
+          380
+        ],
+        [
+          778,
+          361
+        ],
+        [
+          792,
+          341
+        ],
+        [
+          806,
+          322
+        ],
+        [
+          820,
+          303
+        ],
+        [
+          833,
+          283
+        ],
+        [
+          847,
+          264
+        ],
+        [
+          861,
+          244
+        ],
+        [
+          875,
+          225
+        ],
+        [
+          889,
+          205
+        ],
+        [
+          903,
+          186
+        ],
+        [
+          917,
+          167
+        ]
+      ]
+    },
+    {
+      "name": "a point repeated in place adds no length",
+      "surface": [
+        200.0,
+        200.0
+      ],
+      "trace": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          100.0,
+          0.0,
+          10.0
+        ],
+        [
+          100.0,
+          0.0,
+          20.0
+        ],
+        [
+          100.0,
+          100.0,
+          30.0
+        ]
+      ],
+      "outline": [
+        [
+          0,
+          0
+        ],
+        [
+          16,
+          0
+        ],
+        [
+          32,
+          0
+        ],
+        [
+          48,
+          0
+        ],
+        [
+          63,
+          0
+        ],
+        [
+          79,
+          0
+        ],
+        [
+          95,
+          0
+        ],
+        [
+          111,
+          0
+        ],
+        [
+          127,
+          0
+        ],
+        [
+          143,
+          0
+        ],
+        [
+          159,
+          0
+        ],
+        [
+          175,
+          0
+        ],
+        [
+          190,
+          0
+        ],
+        [
+          206,
+          0
+        ],
+        [
+          222,
+          0
+        ],
+        [
+          238,
+          0
+        ],
+        [
+          254,
+          0
+        ],
+        [
+          270,
+          0
+        ],
+        [
+          286,
+          0
+        ],
+        [
+          302,
+          0
+        ],
+        [
+          317,
+          0
+        ],
+        [
+          333,
+          0
+        ],
+        [
+          349,
+          0
+        ],
+        [
+          365,
+          0
+        ],
+        [
+          381,
+          0
+        ],
+        [
+          397,
+          0
+        ],
+        [
+          413,
+          0
+        ],
+        [
+          429,
+          0
+        ],
+        [
+          444,
+          0
+        ],
+        [
+          460,
+          0
+        ],
+        [
+          476,
+          0
+        ],
+        [
+          492,
+          0
+        ],
+        [
+          500,
+          8
+        ],
+        [
+          500,
+          24
+        ],
+        [
+          500,
+          40
+        ],
+        [
+          500,
+          56
+        ],
+        [
+          500,
+          71
+        ],
+        [
+          500,
+          87
+        ],
+        [
+          500,
+          103
+        ],
+        [
+          500,
+          119
+        ],
+        [
+          500,
+          135
+        ],
+        [
+          500,
+          151
+        ],
+        [
+          500,
+          167
+        ],
+        [
+          500,
+          183
+        ],
+        [
+          500,
+          198
+        ],
+        [
+          500,
+          214
+        ],
+        [
+          500,
+          230
+        ],
+        [
+          500,
+          246
+        ],
+        [
+          500,
+          262
+        ],
+        [
+          500,
+          278
+        ],
+        [
+          500,
+          294
+        ],
+        [
+          500,
+          310
+        ],
+        [
+          500,
+          325
+        ],
+        [
+          500,
+          341
+        ],
+        [
+          500,
+          357
+        ],
+        [
+          500,
+          373
+        ],
+        [
+          500,
+          389
+        ],
+        [
+          500,
+          405
+        ],
+        [
+          500,
+          421
+        ],
+        [
+          500,
+          437
+        ],
+        [
+          500,
+          452
+        ],
+        [
+          500,
+          468
+        ],
+        [
+          500,
+          484
+        ],
+        [
+          500,
+          500
+        ]
+      ]
+    },
+    {
+      "name": "points past the surface edge clamp to the grid",
+      "surface": [
+        240.0,
+        240.0
+      ],
+      "trace": [
+        [
+          -20.0,
+          10.0,
+          0.0
+        ],
+        [
+          120.0,
+          300.0,
+          25.0
+        ],
+        [
+          260.0,
+          -5.0,
+          50.0
+        ]
+      ],
+      "outline": [
+        [
+          0,
+          42
+        ],
+        [
+          0,
+          81
+        ],
+        [
+          0,
+          120
+        ],
+        [
+          0,
+          159
+        ],
+        [
+          0,
+          198
+        ],
+        [
+          11,
+          238
+        ],
+        [
+          30,
+          277
+        ],
+        [
+          49,
+          316
+        ],
+        [
+          68,
+          355
+        ],
+        [
+          87,
+          394
+        ],
+        [
+          106,
+          433
+        ],
+        [
+          125,
+          473
+        ],
+        [
+          144,
+          512
+        ],
+        [
+          162,
+          551
+        ],
+        [
+          181,
+          590
+        ],
+        [
+          200,
+          629
+        ],
+        [
+          219,
+          668
+        ],
+        [
+          238,
+          708
+        ],
+        [
+          257,
+          747
+        ],
+        [
+          276,
+          786
+        ],
+        [
+          295,
+          825
+        ],
+        [
+          314,
+          864
+        ],
+        [
+          333,
+          903
+        ],
+        [
+          352,
+          943
+        ],
+        [
+          370,
+          982
+        ],
+        [
+          389,
+          1000
+        ],
+        [
+          408,
+          1000
+        ],
+        [
+          427,
+          1000
+        ],
+        [
+          446,
+          1000
+        ],
+        [
+          465,
+          1000
+        ],
+        [
+          484,
+          1000
+        ],
+        [
+          503,
+          1000
+        ],
+        [
+          521,
+          1000
+        ],
+        [
+          539,
+          1000
+        ],
+        [
+          557,
+          1000
+        ],
+        [
+          575,
+          1000
+        ],
+        [
+          593,
+          1000
+        ],
+        [
+          612,
+          1000
+        ],
+        [
+          630,
+          967
+        ],
+        [
+          648,
+          928
+        ],
+        [
+          666,
+          888
+        ],
+        [
+          684,
+          849
+        ],
+        [
+          702,
+          809
+        ],
+        [
+          720,
+          770
+        ],
+        [
+          739,
+          730
+        ],
+        [
+          757,
+          691
+        ],
+        [
+          775,
+          651
+        ],
+        [
+          793,
+          612
+        ],
+        [
+          811,
+          572
+        ],
+        [
+          829,
+          533
+        ],
+        [
+          847,
+          493
+        ],
+        [
+          866,
+          454
+        ],
+        [
+          884,
+          414
+        ],
+        [
+          902,
+          374
+        ],
+        [
+          920,
+          335
+        ],
+        [
+          938,
+          295
+        ],
+        [
+          956,
+          256
+        ],
+        [
+          974,
+          216
+        ],
+        [
+          993,
+          177
+        ],
+        [
+          1000,
+          137
+        ],
+        [
+          1000,
+          98
+        ],
+        [
+          1000,
+          58
+        ],
+        [
+          1000,
+          19
+        ],
+        [
+          1000,
+          0
+        ]
+      ]
+    }
+  ],
+  "pathScoring": [
+    {
+      "name": "a path through every waypoint in order",
+      "waypoints": [
+        [
+          100,
+          100
+        ],
+        [
+          500,
+          500
+        ],
+        [
+          900,
+          100
+        ]
+      ],
+      "outline": [
+        [
+          105,
+          95
+        ],
+        [
+          300,
+          300
+        ],
+        [
+          505,
+          480
+        ],
+        [
+          890,
+          120
+        ]
+      ],
+      "reached": 3,
+      "inOrder": true
+    },
+    {
+      "name": "an outline chord between two points reaches the waypoint",
+      "waypoints": [
+        [
+          100,
+          500
+        ],
+        [
+          500,
+          500
+        ],
+        [
+          900,
+          500
+        ]
+      ],
+      "outline": [
+        [
+          100,
+          500
+        ],
+        [
+          300,
+          600
+        ],
+        [
+          700,
+          600
+        ],
+        [
+          900,
+          500
+        ]
+      ],
+      "reached": 3,
+      "inOrder": true
+    },
+    {
+      "name": "a path at the edge of the widened reach",
+      "waypoints": [
+        [
+          100,
+          500
+        ],
+        [
+          500,
+          500
+        ],
+        [
+          900,
+          500
+        ]
+      ],
+      "outline": [
+        [
+          100,
+          630
+        ],
+        [
+          500,
+          630
+        ],
+        [
+          900,
+          630
+        ]
+      ],
+      "reached": 3,
+      "inOrder": true
+    },
+    {
+      "name": "a path just past the widened reach",
+      "waypoints": [
+        [
+          100,
+          500
+        ],
+        [
+          500,
+          500
+        ],
+        [
+          900,
+          500
+        ]
+      ],
+      "outline": [
+        [
+          100,
+          631
+        ],
+        [
+          500,
+          631
+        ],
+        [
+          900,
+          631
+        ]
+      ],
+      "reached": 0,
+      "inOrder": false
+    },
+    {
+      "name": "a reversed path",
+      "waypoints": [
+        [
+          100,
+          100
+        ],
+        [
+          500,
+          500
+        ],
+        [
+          900,
+          100
+        ]
+      ],
+      "outline": [
+        [
+          900,
+          100
+        ],
+        [
+          500,
+          500
+        ],
+        [
+          100,
+          100
+        ]
+      ],
+      "reached": 1,
+      "inOrder": false
+    },
+    {
+      "name": "a path that stays at the first waypoint",
+      "waypoints": [
+        [
+          100,
+          100
+        ],
+        [
+          500,
+          500
+        ],
+        [
+          900,
+          100
+        ]
+      ],
+      "outline": [
+        [
+          100,
+          100
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          100,
+          100
+        ]
+      ],
+      "reached": 1,
+      "inOrder": false
+    },
+    {
+      "name": "a path elsewhere on the surface",
+      "waypoints": [
+        [
+          100,
+          100
+        ],
+        [
+          500,
+          500
+        ],
+        [
+          900,
+          100
+        ]
+      ],
+      "outline": [
+        [
+          100,
+          900
+        ],
+        [
+          500,
+          950
+        ],
+        [
+          900,
+          900
+        ]
+      ],
+      "reached": 0,
+      "inOrder": false
+    },
+    {
+      "name": "a path that passes the last waypoint early, then covers them all in order",
+      "waypoints": [
+        [
+          100,
+          100
+        ],
+        [
+          500,
+          500
+        ],
+        [
+          900,
+          100
+        ]
+      ],
+      "outline": [
+        [
+          900,
+          100
+        ],
+        [
+          100,
+          100
+        ],
+        [
+          500,
+          500
+        ],
+        [
+          900,
+          100
+        ]
+      ],
+      "reached": 3,
+      "inOrder": true
+    },
+    {
+      "name": "one outline step that passes two waypoints backwards",
+      "waypoints": [
+        [
+          100,
+          500
+        ],
+        [
+          300,
+          500
+        ],
+        [
+          900,
+          900
+        ]
+      ],
+      "outline": [
+        [
+          400,
+          500
+        ],
+        [
+          0,
+          500
+        ],
+        [
+          0,
+          900
+        ],
+        [
+          900,
+          900
+        ]
+      ],
+      "reached": 1,
+      "inOrder": false
+    },
+    {
+      "name": "a path that doubles back through a waypoint it passed backwards",
+      "waypoints": [
+        [
+          100,
+          500
+        ],
+        [
+          300,
+          500
+        ],
+        [
+          900,
+          500
+        ]
+      ],
+      "outline": [
+        [
+          400,
+          500
+        ],
+        [
+          0,
+          500
+        ],
+        [
+          900,
+          500
+        ]
+      ],
+      "reached": 3,
+      "inOrder": true
+    }
+  ],
+  "attestation": [
+    {
+      "name": "trace tier, three rounds, projection 1",
+      "protocolVersion": 1,
+      "sessionNonceHex": "030e19242f3a45505b66717c87929da8b3bec9d4dfeaf5000b16212c37424d58",
+      "attemptBindingDigestHex": "d4f7c0d1636b36fa21beb749e2ce18297300fe79e2c00a213ef4b9dd97928f8a",
+      "finalDigestHex": "2215276b1536890b9896b3634b825c3e00058b76bbace7ce948dd5eadd0b1540",
+      "projectionVersion": 1,
+      "digestHex": "0da47679cc5fa4fe3c02362526a7b3f9ce24f78f10cc9415fe04c650a4646fa8",
+      "requestHash": "0da47679cc5fa4fe3c02362526a7b3f9ce24f78f10cc9415fe04c650a4646fa8"
+    },
+    {
+      "name": "speech-only tier, three rounds, projection 1",
+      "protocolVersion": 1,
+      "sessionNonceHex": "535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c87929da8",
+      "attemptBindingDigestHex": "b185d1cb1c7aba41be4936e770411efd214fb54c9929cc5529a14343713eab51",
+      "finalDigestHex": "dc5911577fe3de554e106f7f31b8a3848a92e3e13ca51da5820d3297dbf4494f",
+      "projectionVersion": 1,
+      "digestHex": "6505ad645a483eb0982cf605e3d75fd72e1c1d2bf094b8abdc52a919d352843a",
+      "requestHash": "6505ad645a483eb0982cf605e3d75fd72e1c1d2bf094b8abdc52a919d352843a"
+    },
+    {
+      "name": "trace tier, three rounds, projection 2",
+      "protocolVersion": 1,
+      "sessionNonceHex": "030e19242f3a45505b66717c87929da8b3bec9d4dfeaf5000b16212c37424d58",
+      "attemptBindingDigestHex": "d4f7c0d1636b36fa21beb749e2ce18297300fe79e2c00a213ef4b9dd97928f8a",
+      "finalDigestHex": "2215276b1536890b9896b3634b825c3e00058b76bbace7ce948dd5eadd0b1540",
+      "projectionVersion": 2,
+      "digestHex": "718755aff2f35b389583303dbee53ad9af05aba2ea978f83ccb33696eb0ab2b7",
+      "requestHash": "718755aff2f35b389583303dbee53ad9af05aba2ea978f83ccb33696eb0ab2b7"
+    }
+  ],
+  "receipts": {
+    "walletHex": "27323d48535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c",
+    "commitmentHex": "4c57626d78838e99a4afbac5d0dbe6f1fc07121d28333e49545f6a75808b96a1",
+    "validatedAt": 1790000000,
+    "projectionVersion": 1,
+    "finalDigestHex": "2215276b1536890b9896b3634b825c3e00058b76bbace7ce948dd5eadd0b1540",
+    "v3": [
+      {
+        "purpose": 1,
+        "assuranceTier": 0,
+        "messageHex": "656e74726f732d76616c696461746f722d726563656970742d76330001010027323d48535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c4c57626d78838e99a4afbac5d0dbe6f1fc07121d28333e49545f6a75808b96a1803bb16a000000002215276b1536890b9896b3634b825c3e00058b76bbace7ce948dd5eadd0b154000"
+      },
+      {
+        "purpose": 1,
+        "assuranceTier": 1,
+        "messageHex": "656e74726f732d76616c696461746f722d726563656970742d76330001010027323d48535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c4c57626d78838e99a4afbac5d0dbe6f1fc07121d28333e49545f6a75808b96a1803bb16a000000002215276b1536890b9896b3634b825c3e00058b76bbace7ce948dd5eadd0b154001"
+      },
+      {
+        "purpose": 1,
+        "assuranceTier": 2,
+        "messageHex": "656e74726f732d76616c696461746f722d726563656970742d76330001010027323d48535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c4c57626d78838e99a4afbac5d0dbe6f1fc07121d28333e49545f6a75808b96a1803bb16a000000002215276b1536890b9896b3634b825c3e00058b76bbace7ce948dd5eadd0b154002"
+      },
+      {
+        "purpose": 2,
+        "assuranceTier": 0,
+        "messageHex": "656e74726f732d76616c696461746f722d726563656970742d76330002010027323d48535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c4c57626d78838e99a4afbac5d0dbe6f1fc07121d28333e49545f6a75808b96a1803bb16a000000002215276b1536890b9896b3634b825c3e00058b76bbace7ce948dd5eadd0b154000"
+      },
+      {
+        "purpose": 2,
+        "assuranceTier": 1,
+        "messageHex": "656e74726f732d76616c696461746f722d726563656970742d76330002010027323d48535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c4c57626d78838e99a4afbac5d0dbe6f1fc07121d28333e49545f6a75808b96a1803bb16a000000002215276b1536890b9896b3634b825c3e00058b76bbace7ce948dd5eadd0b154001"
+      },
+      {
+        "purpose": 2,
+        "assuranceTier": 2,
+        "messageHex": "656e74726f732d76616c696461746f722d726563656970742d76330002010027323d48535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c4c57626d78838e99a4afbac5d0dbe6f1fc07121d28333e49545f6a75808b96a1803bb16a000000002215276b1536890b9896b3634b825c3e00058b76bbace7ce948dd5eadd0b154002"
+      },
+      {
+        "purpose": 3,
+        "assuranceTier": 0,
+        "messageHex": "656e74726f732d76616c696461746f722d726563656970742d76330003010027323d48535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c4c57626d78838e99a4afbac5d0dbe6f1fc07121d28333e49545f6a75808b96a1803bb16a000000002215276b1536890b9896b3634b825c3e00058b76bbace7ce948dd5eadd0b154000"
+      },
+      {
+        "purpose": 3,
+        "assuranceTier": 1,
+        "messageHex": "656e74726f732d76616c696461746f722d726563656970742d76330003010027323d48535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c4c57626d78838e99a4afbac5d0dbe6f1fc07121d28333e49545f6a75808b96a1803bb16a000000002215276b1536890b9896b3634b825c3e00058b76bbace7ce948dd5eadd0b154001"
+      },
+      {
+        "purpose": 3,
+        "assuranceTier": 2,
+        "messageHex": "656e74726f732d76616c696461746f722d726563656970742d76330003010027323d48535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c4c57626d78838e99a4afbac5d0dbe6f1fc07121d28333e49545f6a75808b96a1803bb16a000000002215276b1536890b9896b3634b825c3e00058b76bbace7ce948dd5eadd0b154002"
+      }
+    ],
+    "v2": {
+      "purpose": 1,
+      "messageHex": "656e74726f732d76616c696461746f722d726563656970742d76320001010027323d48535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c4c57626d78838e99a4afbac5d0dbe6f1fc07121d28333e49545f6a75808b96a1803bb16a00000000"
+    },
+    "invalid": [
+      {
+        "name": "assurance tier above attested",
+        "messageHex": "656e74726f732d76616c696461746f722d726563656970742d76330001010027323d48535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c4c57626d78838e99a4afbac5d0dbe6f1fc07121d28333e49545f6a75808b96a1803bb16a000000002215276b1536890b9896b3634b825c3e00058b76bbace7ce948dd5eadd0b154003"
+      },
+      {
+        "name": "version 3 domain at the version 2 length",
+        "messageHex": "656e74726f732d76616c696461746f722d726563656970742d76330001010027323d48535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c4c57626d78838e99a4afbac5d0dbe6f1fc07121d28333e49545f6a75808b96a1803bb16a00000000"
+      },
+      {
+        "name": "version 2 domain at the version 3 length",
+        "messageHex": "656e74726f732d76616c696461746f722d726563656970742d76320001010027323d48535e69747f8a95a0abb6c1ccd7e2edf8030e19242f3a45505b66717c4c57626d78838e99a4afbac5d0dbe6f1fc07121d28333e49545f6a75808b96a1803bb16a000000002215276b1536890b9896b3634b825c3e00058b76bbace7ce948dd5eadd0b154002"
+      }
+    ]
+  }
+}
