@@ -189,6 +189,43 @@ export function describeInputLevel(samples: Float32Array): {
   };
 }
 
+const VIRTUAL_INPUT_KEYWORDS = [
+  "blackhole",
+  "vb-audio",
+  "loopback",
+  "virtual",
+  "soundflower",
+  "cable",
+  "vac ",
+  "audio cable",
+];
+
+/**
+ * Whether the stream's track, or any audio input the browser lists, carries a
+ * virtual-device label. Reported as a client signal only. A failed query reads
+ * as false, so it never blocks capture.
+ */
+export async function detectVirtualAudioInput(stream: MediaStream): Promise<boolean> {
+  try {
+    const track = stream.getAudioTracks()[0];
+    if (track) {
+      const label = track.label.toLowerCase();
+      if (VIRTUAL_INPUT_KEYWORDS.some((kw) => label.includes(kw))) return true;
+    }
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.enumerateDevices) {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      for (const d of devices) {
+        if (d.kind !== "audioinput") continue;
+        const label = d.label.toLowerCase();
+        if (VIRTUAL_INPUT_KEYWORDS.some((kw) => label.includes(kw))) return true;
+      }
+    }
+  } catch {
+    // Ignore any device enumeration/label query errors to prevent capture blocker
+  }
+  return false;
+}
+
 /**
  * Capture audio at 16kHz until signaled to stop.
  * Uses ScriptProcessorNode for raw PCM sample access.
@@ -234,33 +271,7 @@ export async function captureAudio(
     }));
 
   const voiceIsolationApplied = readVoiceIsolationApplied(stream);
-
-  let isVirtual = false;
-  try {
-    const track = stream.getAudioTracks()[0];
-    if (track) {
-      const label = track.label.toLowerCase();
-      const virtualKeywords = ["blackhole", "vb-audio", "loopback", "virtual", "soundflower", "cable", "vac ", "audio cable"];
-      if (virtualKeywords.some(kw => label.includes(kw))) {
-        isVirtual = true;
-      }
-    }
-    if (!isVirtual && typeof navigator !== "undefined" && navigator.mediaDevices?.enumerateDevices) {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const virtualKeywords = ["blackhole", "vb-audio", "loopback", "virtual", "soundflower", "cable", "vac ", "audio cable"];
-      for (const d of devices) {
-        if (d.kind === "audioinput") {
-          const label = d.label.toLowerCase();
-          if (virtualKeywords.some(kw => label.includes(kw))) {
-            isVirtual = true;
-            break;
-          }
-        }
-      }
-    }
-  } catch {
-    // Ignore any device enumeration/label query errors to prevent capture blocker
-  }
+  const isVirtual = await detectVirtualAudioInput(stream);
 
   // If anything between `getUserMedia` and the Promise constructor throws
   // (AudioContext construction, ctx.resume(), createMediaStreamSource) the
