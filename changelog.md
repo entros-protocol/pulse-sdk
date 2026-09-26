@@ -9,6 +9,17 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+<!-- generated-release:4.14.0 -->
+## [4.14.0] - 2026-09-26
+
+- Move the test suite to vitest 4.1 and Node 24 types. (7a60d2e).
+- Pin the single-capture request body to its bytes. (a985a4f).
+- Split PCM16 encoding and canonicalise audio as a stream. (32a9997).
+- Read version 3 validator receipts. (0dd08d6).
+- Add paired sessions to the SDK. (aa83fc4).
+- Pin the single-capture request body by its shape instead of its bytes. (89219e6).
+<!-- /generated-release:4.14.0 -->
+
 <!-- generated-release:4.13.0 -->
 ## [4.13.0] - 2026-09-22
 

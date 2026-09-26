@@ -284,3 +284,110 @@ export async function resampleTo(
   }
   return output;
 }
+
+/** Canonicalises audio as it arrives, one chunk at a time. */
+export interface StreamingCanonicalizer {
+  /** Feeds source samples. Returns the canonical samples that became final. */
+  push(chunk: Float32Array): Float32Array;
+  /** Ends the stream and returns the canonical samples still pending. */
+  flush(): Float32Array;
+}
+
+/** Consumed source samples kept before the buffer is compacted. */
+const STREAM_COMPACT_THRESHOLD = 65_536;
+
+/**
+ * The streaming form of {@link resampleTo}, with the same filter and the same
+ * arithmetic in the same order. The concatenated output equals `resampleTo`
+ * over the whole input, value for value, whatever the chunking.
+ *
+ * Paired capture needs this. Each round's audio must be final when the round
+ * ends, and filtering each round on its own would damp both of its edges.
+ *
+ * Throws for a rate below the canonical rate, which paired capture refuses
+ * rather than passing through.
+ */
+export function createStreamingCanonicalizer(fromRate: number): StreamingCanonicalizer {
+  if (!(fromRate >= CANONICAL_SAMPLE_RATE) || !Number.isFinite(fromRate)) {
+    throw new RangeError(`audio rate ${fromRate} is below the canonical rate`);
+  }
+  const ratio = fromRate / CANONICAL_SAMPLE_RATE;
+  const numTaps = tapsForRate(fromRate);
+  const taps = designLowpassFir(fromRate, CANONICAL_SAMPLE_RATE * CUTOFF_FRACTION, numTaps);
+  const delay = (numTaps - 1) / 2;
+
+  let buffer = new Float32Array(1024);
+  let bufferStart = 0;
+  let received = 0;
+  let nextOutput = 0;
+  let ended = false;
+
+  const convolve = (base: number, total: number): number => {
+    let sum = 0;
+    for (let j = 0; j < numTaps; j++) {
+      const idx = base + delay - j;
+      if (idx >= 0 && idx < total) sum += buffer[idx - bufferStart]! * taps[j]!;
+    }
+    return sum;
+  };
+
+  const output = (index: number, total: number): number => {
+    const pos = index * ratio;
+    const base = Math.floor(pos);
+    const frac = pos - base;
+    let sum = convolve(base, total);
+    if (frac !== 0) {
+      const next = convolve(base + 1, total);
+      sum += (next - sum) * frac;
+    }
+    return sum;
+  };
+
+  const append = (chunk: Float32Array): void => {
+    const used = received - bufferStart;
+    if (used + chunk.length > buffer.length) {
+      const grown = new Float32Array(Math.max(buffer.length * 2, used + chunk.length));
+      grown.set(buffer.subarray(0, used));
+      buffer = grown;
+    }
+    buffer.set(chunk, used);
+    received += chunk.length;
+  };
+
+  const compact = (): void => {
+    const oldestNeeded = Math.floor(nextOutput * ratio) - delay - 1;
+    const discard = oldestNeeded - bufferStart;
+    if (discard < STREAM_COMPACT_THRESHOLD) return;
+    buffer.copyWithin(0, discard, received - bufferStart);
+    bufferStart += discard;
+  };
+
+  return {
+    push(chunk) {
+      if (ended) throw new Error("the stream has ended");
+      append(chunk);
+      const ready: number[] = [];
+      for (;;) {
+        const pos = nextOutput * ratio;
+        const base = Math.floor(pos);
+        const lastInput = base + delay + (pos - base !== 0 ? 1 : 0);
+        if (lastInput >= received) break;
+        ready.push(output(nextOutput, received));
+        nextOutput++;
+      }
+      compact();
+      return Float32Array.from(ready);
+    },
+    flush() {
+      if (ended) return new Float32Array(0);
+      ended = true;
+      const outputLength = Math.round(received / ratio);
+      const rest = new Float32Array(Math.max(0, outputLength - nextOutput));
+      for (let i = 0; i < rest.length; i++) {
+        rest[i] = output(nextOutput + i, received);
+      }
+      nextOutput = outputLength;
+      return rest;
+    },
+  };
+}

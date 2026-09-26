@@ -2425,6 +2425,19 @@
         49,
         139
       ]
+    },
+    {
+      "name": "ReceiptSessionBound",
+      "discriminator": [
+        40,
+        185,
+        60,
+        133,
+        138,
+        183,
+        242,
+        43
+      ]
     }
   ],
   "errors": [
@@ -2607,6 +2620,11 @@
       "code": 6035,
       "name": "InvalidRequestContext",
       "msg": "Invalid proof request context"
+    },
+    {
+      "code": 6036,
+      "name": "InvalidAssuranceTier",
+      "msg": "Receipt assurance tier is not a known tier"
     }
   ],
   "types": [
@@ -2929,6 +2947,43 @@
           },
           {
             "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ReceiptSessionBound",
+      "docs": [
+        "The paired session whose final digest a validator receipt consumed, and the assurance tier",
+        "the validator signed."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "purpose",
+            "type": "u8"
+          },
+          {
+            "name": "projection_version",
+            "type": "u16"
+          },
+          {
+            "name": "final_digest",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "assurance_tier",
             "type": "u8"
           }
         ]

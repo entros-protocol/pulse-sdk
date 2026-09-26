@@ -169,6 +169,43 @@ For staged capture, call `session.bindValidationChallenge(challenge.nonce, chall
 
 The touch element defines the projection 2 coordinate surface by default. Use `startTouch({ eventTarget, coordinateSurface })` when those elements differ.
 
+### Paired sessions
+
+A paired session runs three rounds of one word and one short path. The server reveals each round
+only after it accepts a commitment to the audio and trace of the round before. This shows that the
+client fixed its round evidence before it saw the next challenge. It does not prove when or where
+the evidence was captured, that a person produced it, or that the person is unique.
+
+The executor serves paired sessions only when its operator enables them. They run under
+projection 1.
+
+```typescript
+import { PulseSDK } from '@entros/pulse-sdk';
+
+const pulse = new PulseSDK({ cluster: 'devnet', relayerUrl: 'https://api.entros.io/relay' });
+const session = pulse.createPairedSession({
+  onReveal: (round) => showRound(round.word, round.waypoints),
+  onStall: () => offerContinue(),
+  onPhase: (phase) => {
+    if (phase === 'ready') void finish();
+  },
+  onFailure: (error) => startOver(error.reason),
+});
+
+// Call from the tap that begins verification.
+await session.start(walletAdapter.publicKey.toBase58(), traceSurface, connection);
+
+async function finish() {
+  const result = await session.complete(walletAdapter, connection);
+}
+```
+
+A round advances on its own once speech is heard and the trace has reached every waypoint in
+order. The surface records only pressed points. `continueRound()` ends a stalled round, for speech
+the SDK did not pick up, once the trace has reached every waypoint in order. The finalize request
+carries every committed segment. A relayer that is busy gets the same finalize again, and the SDK
+refuses a receipt that does not bind this session before it asks the wallet to sign.
+
 ### Walletless (liveness-check tier)
 
 For liveness checking without wallet onboarding. The integrator can fund verification through the relayer API. This path submits protocol transactions through the relayer. It does not issue SAS attestations.

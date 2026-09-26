@@ -544,8 +544,11 @@ describe("reason taxonomy", () => {
       "ip_rate_limited",
       "cross_wallet_cooldown",
       "payload_too_large",
+      "automated_browser_detected",
     ] as const) {
       expect(isVerificationReason(reason)).toBe(true);
     }
+    // The same automated window meets the same refusal on every attempt.
+    expect(reasonDisposition("automated_browser_detected")).toBe("fatal");
   });
 });

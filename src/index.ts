@@ -1,5 +1,17 @@
 // Main SDK
 export { PulseSDK, PulseSession, MIN_AUDIO_SAMPLES, MIN_MOTION_SAMPLES, MIN_TOUCH_SAMPLES } from "./pulse";
+export { PairedSession } from "./paired/session";
+export type {
+  PairedPhase,
+  PairedRoundView,
+  PairedSessionOptions,
+  PairedVerificationResult,
+} from "./paired/session";
+export { PairedProtocolError } from "./paired/client";
+/** Paired waypoints and paths live on a square grid from 0 to this value. */
+export { COORDINATE_MAX as PAIRED_GRID_MAX } from "./paired/transcript";
+/** A trace reaches a waypoint within this grid distance. */
+export { WAYPOINT_REACH as PAIRED_WAYPOINT_REACH } from "./paired/tracker";
 export type { TouchStartOptions, ValidationChallengeOptions } from "./pulse";
 
 // Configuration
