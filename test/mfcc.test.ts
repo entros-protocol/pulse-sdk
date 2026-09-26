@@ -4,8 +4,8 @@ import { extractMfccFeatures, MFCC_FEATURE_COUNT } from "../src/extraction/mfcc"
 // `computeDelta` is intentionally not exported from mfcc.ts (internal
 // helper). Re-derive the standard regression-based delta from the same
 // formula the implementation uses, and assert the absolute scale against
-// a series with known slope — guards against the off-by-2× class of bugs
-// the original implementation had during the red-team audit.
+// a series with known slope — guards against an off-by-2× scale error in
+// the delta computation.
 function referenceDelta(series: number[], halfWidth: number): number[] {
   const n = series.length;
   const fullDenom = (halfWidth * (halfWidth + 1) * (2 * halfWidth + 1)) / 3;

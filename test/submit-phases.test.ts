@@ -6,9 +6,9 @@ import { submitResetViaWallet } from "../src/submit/wallet";
  * Phase attribution across the signing / submission / confirmation seam.
  *
  * Wallet adapters merge signing and sending into one `sendTransaction` call,
- * and that seam is where both 2026-07-31 production failures lived: a wallet
- * prompt that never appeared was reported as a proving timeout, and an
- * on-chain revert was reported as a validator rejection. The rules below are
+ * and that seam is where misattributed failures live: a wallet prompt that
+ * never appears can be reported as a proving timeout, and an on-chain revert
+ * as a validator rejection. The rules below are
  * what let a host describe each outcome correctly, so they are pinned here
  * rather than left to the call site.
  *

@@ -1,9 +1,8 @@
 /**
  * Which stage of a verification failed, and what a host may conclude from it.
  *
- * This module exists because two production failures on 2026-07-31 were
- * reported as the wrong thing, and in both cases the phase was the missing
- * fact:
+ * Without an explicit phase, failures get reported as the wrong thing, and in
+ * both of these cases the phase is the missing fact:
  *
  *   - An on-chain revert rendered as "Validation rejected this attempt". The
  *     host inferred the stage from English prose, and its opaque-rejection

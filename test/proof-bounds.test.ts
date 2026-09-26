@@ -18,7 +18,7 @@ describe("classifyHammingDistance: circuit accept band [minDistance, threshold)"
     expect(classifyHammingDistance(96, T, M)).toBe("drift_too_high");
   });
 
-  it("returns drift_too_high above the threshold (the dist=111 incident)", () => {
+  it("returns drift_too_high well above the threshold", () => {
     expect(classifyHammingDistance(111, T, M)).toBe("drift_too_high");
   });
 

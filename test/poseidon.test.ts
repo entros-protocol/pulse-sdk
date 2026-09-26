@@ -99,8 +99,8 @@ describe("poseidon", () => {
  * manual reset. That is the failure mode projection versioning exists to prevent,
  * and it would arrive here disguised as a dependency bump.
  *
- * The values below were produced by the implementation in place on 2026-08-03,
- * which resolves Poseidon through `circomlibjs@0.1.7`. They are the contract
+ * The values below were produced by the implementation that resolves Poseidon
+ * through `circomlibjs@0.1.7`. They are the contract
  * that any replacement has to satisfy before it can ship.
  *
  * The other tests in this file check properties (determinism, difference,

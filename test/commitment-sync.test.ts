@@ -20,8 +20,8 @@ function decimalOf(b: Uint8Array): string {
   return v.toString();
 }
 
-// Exact commitments from the production 6011 incident (2026-06-06): the chain
-// head had advanced to C6 but this origin's local copy was one link stale at C5.
+// Two consecutive commitments from one real chain: the chain head has advanced
+// to C6 but this origin's local copy is one link stale at C5.
 const C6 = bytes32(
   "144557968f0e85ae02ab15f188b837bb1291656488efe2c03dfa4ec660b62e31",
 );
@@ -34,7 +34,7 @@ describe("localCommitmentMatchesChain", () => {
     expect(localCommitmentMatchesChain(decimalOf(C6), C6)).toBe(true);
   });
 
-  it("does NOT match a one-link-stale local commitment (the production 6011 case)", () => {
+  it("does NOT match a one-link-stale local commitment", () => {
     // C5 (local) vs C6 (chain head) is precisely what submitted a doomed
     // commitment_prev and reverted on-chain with PrevCommitmentMismatch.
     expect(localCommitmentMatchesChain(decimalOf(C5), C6)).toBe(false);

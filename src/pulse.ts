@@ -362,9 +362,8 @@ function remainingValidationChallengeMs(
  * Used by both PulseSDK.verify() and PulseSession.complete().
  */
 // Minimum sample counts for meaningful feature extraction.
-// Exported so consumers (including the internal-build-only red team harness)
-// can enforce the same thresholds upstream and surface clearer errors than
-// the SDK's data-quality gate would.
+// Exported so consumers can enforce the same minimums upstream and surface
+// clearer errors than the SDK's data-quality gate would.
 export const MIN_AUDIO_SAMPLES = 16000; // ~1 second at 16 kHz
 export const MIN_MOTION_SAMPLES = 10;
 export const MIN_TOUCH_SAMPLES = 10;
@@ -715,8 +714,7 @@ async function extractFingerprintAndValidate(
       // Encode captured audio for server-side phrase verification. The
       // validator transcribes the audio and matches it against the
       // server-issued challenge phrase (which the executor looks up by
-      // nonce). If audio is absent, the validation service skips the
-      // phrase check — preserving backward compatibility for older SDKs.
+      // nonce).
       //
       // We also transmit the `sampleRate` of the buffer. Browsers treat the
       // 16kHz AudioContext request as a hint and some (Safari with Bluetooth
@@ -925,10 +923,9 @@ async function extractFingerprintAndValidate(
         );
       }
     } catch (err) {
-      // The request never produced a response. Previously this path silently
-      // continued and skipped server-side validation, which let a
-      // network-failure attacker bypass server-side checks entirely, so it
-      // returns a recoverable error and the host surfaces a retry CTA.
+      // The request never produced a response. Server-side validation is
+      // mandatory, so this returns a recoverable error and the host surfaces a
+      // retry CTA rather than continuing without it.
       //
       // The four transport failures used to collapse into one string, which
       // is how a slow uplink came to be reported as an unreachable service.

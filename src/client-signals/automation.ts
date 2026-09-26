@@ -5,7 +5,7 @@
  * request. Today it carries one signal group, `automation` — whether the
  * verification session is being driven by a browser AUTOMATION framework
  * (Selenium/WebDriver, Puppeteer, Playwright, PhantomJS, Nightmare, Cypress, or
- * a live Chrome DevTools-Protocol harness) — detected from the artifacts those
+ * a live Chrome DevTools Protocol session) — detected from the artifacts those
  * tools inject into the page. This is the signal class that separates a
  * scripted/headless bot from a real person in a real browser.
  *
@@ -15,7 +15,7 @@
  *
  * PRIVACY CONTRACT — load-bearing, do not weaken:
  *   - Detects AUTOMATION, not the USER. Every signal here is a property of the
- *     automation harness driving the page, never of the human or their device.
+ *     automation tool driving the page, never of the human or their device.
  *   - NO fingerprinting. No canvas/WebGL/audio fingerprint, no font or plugin
  *     enumeration, no User-Agent parsing, no device enumeration, no
  *     locale/timezone/screen probing. A privacy-hardened browser — Tor Browser,

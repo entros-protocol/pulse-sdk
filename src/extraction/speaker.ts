@@ -50,9 +50,7 @@ function getHopSize(sampleRate: number): number {
 }
 
 // Existing legacy 44 features (preserved at the start of the audio block so
-// the validator's named sub-range constants — JITTER, SHIMMER,
-// LTAS_FLATNESS_VAR, VOICING_RATIO, etc. — keep pointing at the same
-// indices and the TTS detector's threshold checks remain unchanged).
+// server-side readers of named sub-ranges keep pointing at the same indices).
 const LEGACY_SPEAKER_FEATURE_COUNT = 44;
 
 // LPC coefficient statistics: 12 coefficients × {mean, variance} per

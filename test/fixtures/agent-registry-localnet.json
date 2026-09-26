@@ -1,5 +1,5 @@
 {
-  "source": "scripts/agent-permit/localnet.mjs in entros-docs, run 2026-09-10 against Metaplex Core and the 8004 registry cloned from devnet",
+  "source": "Localnet fixture: program output from Metaplex Core and the 8004 registry cloned from devnet",
   "agent": "5yiS9LjKUJ2ZXfJxKXEki5aQ3oY6LTsd5MfJ6UPjtTic",
   "agentAccount": "7i7M1UrGrGjdhaxK11BWhVj2st4dJ5hAp45ccps5UpvE",
   "ownerA": "3msSv8FAHVjx6tFHWx6R5MuYu7Z7dekFbRHH1itxNHTc",

@@ -6,22 +6,18 @@ import type { MotionSample } from "../src/sensor/types";
  * Aligning the motion contour to the audio window.
  *
  * `accel_magnitude` is correlated against the F0 contour server-side, so the
- * two have to describe the same stretch of wall-clock time. Nothing enforced
- * that. The contour was built by mapping motion's array index proportionally
- * onto audio's frame count, which is only correct while both streams happen to
- * cover the same window.
+ * two have to describe the same stretch of wall-clock time. Mapping motion's
+ * array index proportionally onto audio's frame count is only correct while
+ * both streams happen to cover the same window.
  *
- * On 2026-07-31 they stopped. `pulse-sdk@4.0.0` added a capture-window mark
- * that discards the pre-prompt lead-in from the audio and wired it into the
- * audio path alone, so motion kept the challenge fetch and the three-second
- * countdown that audio now drops. Index mapping cannot see a span mismatch, so
- * it stretched motion across audio instead of failing, and the validator's
- * +-50ms lag search hunted a peak displaced by seconds. Cross-modal coupling
- * fell from r=0.31 to r=0.03 and every mobile verification was rejected.
- * Desktop was unaffected throughout: no IMU means the check skips entirely.
+ * The capture-window mark breaks that assumption. It discards the pre-prompt
+ * lead-in from the audio alone, so motion keeps the challenge fetch and the
+ * countdown that audio drops. Index mapping cannot see a span mismatch, so it
+ * would stretch motion across audio instead of failing, and the correlation
+ * would compare signals displaced by seconds, rejecting real people.
  *
  * Both streams already timestamp themselves off `performance.now()`, so the
- * fix is to use the clock they share rather than their array lengths.
+ * contour uses the clock they share rather than their array lengths.
  */
 
 /** Pearson correlation, for asserting that two contours describe one signal. */

@@ -137,9 +137,7 @@ describe("speaker feature extraction", () => {
   it("preserves the legacy 44-feature layout at the head of the audio block", async () => {
     // The first 44 features must be the original F0/jitter/shimmer/HNR/
     // formant-ratios/LTAS/voicing/amplitude blocks, in the same order, so
-    // entros-validation's named sub-range constants (JITTER, SHIMMER,
-    // LTAS_FLATNESS_VAR, etc. — at indices 9, 13, 35, …) keep pointing at
-    // the same data and the TTS detector's threshold checks remain valid.
+    // server-side readers of named sub-ranges keep pointing at the same data.
     const audio = makeAudio({ length: 32000, sampleRate: 16000 });
     const features = await extractSpeakerFeatures(audio);
     // We can't assert specific values without a known-input reference, but
@@ -193,7 +191,7 @@ describe("motion feature extraction", () => {
   });
 
   it("preserves the legacy 54-feature layout at the head of the motion block", () => {
-    // entros-validation reads named indices inside the legacy motion block;
+    // The validator reads named indices inside the legacy motion block;
     // appending v2 features must NOT reorder anything in [0..54).
     const samples = makeMotionSamples(100);
     const features = extractMotionFeatures(samples);
@@ -268,10 +266,10 @@ describe("mouse dynamics extraction", () => {
   });
 
   it("populates the v2 trailing slots with mouse-derived signals (no zero leak)", () => {
-    // Wave 2 fix contract: indices 54..80 now carry per-session signal
-    // computed from mouse data (cross-axis covariance, FFT band energy on
-    // speed/acc/jerk, tremor peak, reversal stats, mean angular speed,
-    // and speed autocorrelation). On a varied path most slots end up
+    // Indices 54..80 carry per-session signal computed from mouse data
+    // (cross-axis covariance, FFT band energy on speed/acc/jerk, tremor
+    // peak, reversal stats, mean angular speed, and speed
+    // autocorrelation). On a varied path most slots end up
     // non-zero; some (e.g. autocorr on smooth input) may legitimately
     // sit at exactly zero, so the test asserts a healthy majority are
     // populated rather than EVERY slot.

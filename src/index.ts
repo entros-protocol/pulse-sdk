@@ -172,11 +172,10 @@ export type {
 // for server-side verification).
 export { encodeAudioAsBase64 } from "./sensor/encode";
 
-// Canonical capture format. Exported so the red-team harness can band-limit its
-// synthesized corpora exactly as a browser now does, rather than with the plain
-// linear interpolation it used to, which left far more energy above the cutoff
-// than any real client can produce and made the corpus distinguishable by
-// resampling artefact rather than by anything a campaign is trying to measure.
+// Canonical capture format. Exported so offline tooling can band-limit audio
+// exactly as a browser capture is. Plain linear interpolation leaves far more
+// energy above the cutoff than any real client produces, so audio prepared
+// that way differs from real captures by resampling artefact alone.
 export {
   CANONICAL_SAMPLE_RATE,
   toCanonicalCapture,

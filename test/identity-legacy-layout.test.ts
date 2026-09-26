@@ -17,7 +17,7 @@ import {
  * The cost was not a missing field. `recoverBaselineFromChain` reads the
  * identity before it fetches the encrypted baseline, so a decode failure made
  * cross-device recovery impossible for every legacy anchor, including twelve
- * on devnet that hold a valid blob. Measured on 2026-07-31: 107 accounts, of
+ * on devnet that hold a valid blob. A devnet survey found 107 accounts, of
  * which 2 at 207 bytes, 56 at 543, 11 at 551, 37 at 583 and 1 at 593.
  */
 

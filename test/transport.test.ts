@@ -531,9 +531,9 @@ describe("reason taxonomy", () => {
   });
 
   it("covers every reason the executor and validator actually emit", () => {
-    // Sourced from `executor-node::AppError::into_response` and
-    // `entros-validation::ReasonCode::safe_label`. A reason added on either
-    // side without landing here would silently classify as fatal.
+    // Every reason the executor and the validator return to clients. A reason
+    // added on either side without landing here would silently classify as
+    // fatal.
     for (const reason of [
       "variance_floor",
       "entropy_bounds",

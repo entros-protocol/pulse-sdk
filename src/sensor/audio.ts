@@ -18,16 +18,16 @@ const TARGET_CAPTURE_RMS = 0.05;
 /**
  * Below this RMS, the capture is treated as effective silence and the
  * normalization step is skipped — never amplify the noise floor of a
- * muted or unplugged mic into apparent signal. Mirrors
- * `entros-validation::vad::VAD_NORMALIZE_MIN_RMS`.
+ * muted or unplugged mic into apparent signal. Must equal the validator's
+ * own silence floor for normalization.
  */
 const MIN_RMS_FOR_NORMALIZATION = 1e-4;
 
 /**
- * Cap on the gain factor applied during normalization. Mirrors
- * `entros-validation::vad::VAD_NORMALIZE_MAX_GAIN` so a capture that the
- * SDK can't fully normalize also gets the same partial-gain treatment
- * server-side without further amplification surprises.
+ * Cap on the gain factor applied during normalization. Must equal the
+ * validator's own gain cap, so a capture that the SDK can't fully normalize
+ * also gets the same partial-gain treatment server-side without further
+ * amplification surprises.
  */
 const MAX_NORMALIZATION_GAIN = 50;
 
