@@ -34,15 +34,53 @@ export type VerificationReason =
   | "entropy_bounds"
   | "temporal_coupling_low"
   | "phrase_content_mismatch"
+  | "trace_incomplete"
   | "captcha_required"
   // Executor transport-level. Trying again immediately makes things worse.
   | "rate_limited"
   | "ip_rate_limited"
   | "cross_wallet_cooldown"
   | "payload_too_large"
+  // Executor capture gate. Automation software controls the browser, so every
+  // attempt from that window meets the same refusal.
+  | "automated_browser_detected"
   // SDK-originated. No server ever rendered a verdict on this attempt.
   | "validation_unavailable"
-  | "validation_timeout";
+  | "validation_timeout"
+  // Paired session state. No verdict was rendered, and a new session can
+  // succeed where this one cannot continue.
+  | "technical_failure"
+  | "session_expired"
+  | "round_expired"
+  | "session_superseded"
+  | "session_consumed"
+  | "session_unknown"
+  | "session_not_ready"
+  | "round_not_outstanding"
+  | "session_busy"
+  // Paired session limits. Opening another session now is refused.
+  | "finalize_in_progress"
+  | "session_active"
+  | "session_budget_exhausted"
+  | "capacity_reached"
+  // Paired protocol violations. The client and the server disagree about the
+  // contract, so the same client fails the same way again.
+  | "commitment_mismatch"
+  | "challenge_mismatch"
+  | "previous_commitment_mismatch"
+  | "round_nonce_mismatch"
+  | "idempotency_conflict"
+  | "evidence_digest_mismatch"
+  | "evidence_length_mismatch"
+  | "evidence_bounds_invalid"
+  | "final_digest_mismatch"
+  | "audio_format_invalid"
+  | "tier_violation"
+  | "subject_mismatch"
+  | "projection_not_supported"
+  | "invalid_request"
+  | "unsupported_session"
+  | "malformed_response";
 
 /**
  * What a host should do with a reason.
@@ -63,6 +101,7 @@ const DISPOSITIONS = {
   entropy_bounds: "retry",
   temporal_coupling_low: "retry",
   phrase_content_mismatch: "retry",
+  trace_incomplete: "retry",
   captcha_required: "retry",
   rate_limited: "wait",
   ip_rate_limited: "wait",
@@ -70,8 +109,38 @@ const DISPOSITIONS = {
   // An identical body produces an identical rejection, so a retry is pure
   // cost. The capture has to change, which means starting over.
   payload_too_large: "fatal",
+  automated_browser_detected: "fatal",
   validation_unavailable: "retry",
   validation_timeout: "retry",
+  technical_failure: "retry",
+  session_expired: "retry",
+  round_expired: "retry",
+  session_superseded: "retry",
+  session_consumed: "retry",
+  session_unknown: "retry",
+  session_not_ready: "retry",
+  round_not_outstanding: "retry",
+  session_busy: "retry",
+  finalize_in_progress: "wait",
+  session_active: "wait",
+  session_budget_exhausted: "wait",
+  capacity_reached: "wait",
+  commitment_mismatch: "fatal",
+  challenge_mismatch: "fatal",
+  previous_commitment_mismatch: "fatal",
+  round_nonce_mismatch: "fatal",
+  idempotency_conflict: "fatal",
+  evidence_digest_mismatch: "fatal",
+  evidence_length_mismatch: "fatal",
+  evidence_bounds_invalid: "fatal",
+  final_digest_mismatch: "fatal",
+  audio_format_invalid: "fatal",
+  tier_violation: "fatal",
+  subject_mismatch: "fatal",
+  projection_not_supported: "fatal",
+  invalid_request: "fatal",
+  unsupported_session: "fatal",
+  malformed_response: "fatal",
 } as const satisfies Readonly<Record<VerificationReason, ReasonDisposition>>;
 
 /**
@@ -157,6 +226,20 @@ export const COOLDOWN_REASONS: ReadonlySet<VerificationReason> = new Set(
 export const CLIENT_ORIGIN_REASONS: ReadonlySet<VerificationReason> = new Set([
   "validation_unavailable",
   "validation_timeout",
+  // A paired session that ended, or never opened, before any verdict.
+  "technical_failure",
+  "session_expired",
+  "round_expired",
+  "session_superseded",
+  "session_consumed",
+  "session_unknown",
+  "session_not_ready",
+  "round_not_outstanding",
+  "session_busy",
+  "finalize_in_progress",
+  "session_active",
+  "session_budget_exhausted",
+  "capacity_reached",
 ]);
 
 /** True when the failure happened before any server rendered a verdict. */

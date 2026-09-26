@@ -95,6 +95,7 @@ import {
 } from "./identity/anchor";
 import type { ProjectionPolicy } from "./identity/anchor";
 import type { ProjectionPolicyConnection } from "./identity/anchor";
+import { PairedSession, type PairedSessionOptions } from "./paired/session";
 import { getProjectionDefinition } from "./projection";
 import type { ClientSignals } from "./client-signals/automation";
 import {
@@ -501,7 +502,9 @@ function rejectionFromStatus(response: PostJsonResponse): ExtractionResult {
     return {
       ok: false,
       error: "Validation service is temporarily unavailable. Please try again.",
-      reason: "validation_unavailable",
+      // A paired session that faulted after it was consumed says so, because
+      // the next attempt has to open a new session rather than resend.
+      reason: serverReason === "technical_failure" ? "technical_failure" : "validation_unavailable",
       failedAt: "validation",
       studyRecordStatus,
     };
@@ -534,6 +537,69 @@ function parseStudyRecordStatus(value: unknown): StudyRecordStatus | undefined {
     : undefined;
 }
 
+/** What a capture offers a validation request once its features exist. */
+export interface ValidationEvidence {
+  walletAddress: string;
+  features: number[];
+  f0Contour: number[];
+  accelMagnitude: number[];
+  captureTiming: unknown;
+  clientSignals: ReturnType<typeof collectClientSignals>;
+  receiptPurpose?: "mint" | "rebaseline" | "reset";
+}
+
+/**
+ * Where a validation request goes and what it carries. Without one, a capture
+ * posts the single-capture request to `/validate-features`.
+ */
+export interface ValidationTarget {
+  /** The executor path, such as `/validate-session`. */
+  path: string;
+  /** Builds the request body. */
+  body(evidence: ValidationEvidence): Record<string, unknown>;
+  /** How long the request, resends included, may still run, in milliseconds. */
+  deadlineMs(): number;
+  /**
+   * How long to wait before sending the same request again, or null to stop.
+   * `response` is null when the request produced none. Without this rule the
+   * request is sent once.
+   */
+  retryAfterMs?(response: PostJsonResponse | null, attempt: number): number | null;
+  /**
+   * Checks the validator's success body before anything asks the wallet to
+   * sign. Returns a message to refuse it, or null to accept it.
+   */
+  accept?(body: Record<string, unknown>): string | null;
+}
+
+/**
+ * Sends a validation request, and sends it again while the target's retry
+ * rule allows and its deadline has room. Without a rule it sends once.
+ */
+async function sendValidation(
+  send: (deadlineMs: number) => Promise<PostJsonResponse>,
+  deadlineMs: number,
+  target?: ValidationTarget,
+): Promise<PostJsonResponse> {
+  const retryAfterMs = target?.retryAfterMs;
+  if (!target || !retryAfterMs) return send(deadlineMs);
+  for (let attempt = 0; ; attempt++) {
+    let response: PostJsonResponse | null = null;
+    let failure: unknown = null;
+    try {
+      response = await send(Math.min(VALIDATE_DEADLINE_MS, target.deadlineMs()));
+    } catch (error) {
+      failure = error;
+    }
+    const wait = retryAfterMs(response, attempt);
+    if (wait === null || wait >= target.deadlineMs()) {
+      if (response) return response;
+      throw failure;
+    }
+    await new Promise((resolve) => setTimeout(resolve, wait));
+  }
+}
+
 /**
  * Shared front half of the verification pipeline, covering feature
  * extraction, server-side feature validation (if configured), and
@@ -556,6 +622,7 @@ async function extractFingerprintAndValidate(
   studyContext?: StudyContext,
   projectionVersion = 0,
   receiptPurpose?: "mint" | "rebaseline" | "reset",
+  target?: ValidationTarget,
 ): Promise<ExtractionResult> {
   onProgress?.("Extracting features...");
   // Let React render the new stage label before we re-enter the heavy
@@ -640,7 +707,7 @@ async function extractFingerprintAndValidate(
     let validationDeadlineSource: "validation" | "challenge" = "validation";
     try {
       const baseUrl = new URL(config.relayerUrl);
-      const validateUrl = `${baseUrl.origin}/validate-features`;
+      const validateUrl = `${baseUrl.origin}${target?.path ?? "/validate-features"}`;
       const validateHeaders: Record<string, string> = { "Content-Type": "application/json" };
       if (config.relayerApiKey) {
         validateHeaders["X-API-Key"] = config.relayerApiKey;
@@ -661,9 +728,10 @@ async function extractFingerprintAndValidate(
       // any device that did not; it is transmitted rather than assumed so an
       // older client that predates that decimation still describes itself
       // accurately to the validator.
-      const audioSamplesB64 = sensorData.audio?.samples
-        ? encodeAudioAsBase64(sensorData.audio.samples)
-        : undefined;
+      const audioSamplesB64 =
+        !target && sensorData.audio?.samples
+          ? encodeAudioAsBase64(sensorData.audio.samples)
+          : undefined;
       const audioSampleRateHz = sensorData.audio?.sampleRate;
 
       // Touch-curve outline (wallet-connected verify only). Resampled to a
@@ -698,6 +766,15 @@ async function extractFingerprintAndValidate(
         };
       }
 
+      const targetBody = target?.body({
+        walletAddress,
+        features,
+        f0Contour,
+        accelMagnitude,
+        captureTiming,
+        clientSignals,
+        receiptPurpose,
+      });
       const requestBody: ValidateFeaturesRequestBody = {
         features,
         projection_version: projectionVersion,
@@ -731,7 +808,7 @@ async function extractFingerprintAndValidate(
       if (compatibilityEvidence) {
         requestBody.compatibility_evidence = compatibilityEvidence;
       }
-      if (projectionVersion === 2) {
+      if (projectionVersion === 2 && !target) {
         onProgress?.("Authorizing validation...");
         try {
           requestBody.wallet_authorization = await authorizeValidationRequest(
@@ -748,8 +825,11 @@ async function extractFingerprintAndValidate(
         }
         onProgress?.("Validating...");
       }
+      const body = targetBody ?? requestBody;
 
-      let validationDeadlineMs = VALIDATE_DEADLINE_MS;
+      let validationDeadlineMs = target
+        ? Math.min(VALIDATE_DEADLINE_MS, target.deadlineMs())
+        : VALIDATE_DEADLINE_MS;
       if (validationChallenge) {
         const challengeDeadlineMs =
           remainingValidationChallengeMs(validationChallenge);
@@ -759,24 +839,29 @@ async function extractFingerprintAndValidate(
         }
       }
 
-      const validateResponse = await postJson(
-        validateUrl,
-        requestBody,
-        {
-          headers: validateHeaders,
-          stallMs: VALIDATE_UPLOAD_STALL_MS,
-          deadlineMs: validationDeadlineMs,
-          onUploadProgress: (loaded, total) => {
-            // Same stage label as before. `popup-content.tsx` matches on
-            // these strings to drive the embed wire protocol's heartbeat, so
-            // the text is API. The progress argument is additive.
-            onProgress?.("Validating...", total > 0 ? { loaded, total } : undefined);
-          },
-        },
+      const validateResponse = await sendValidation(
+        (deadlineMs) =>
+          postJson(validateUrl, body, {
+            headers: validateHeaders,
+            stallMs: VALIDATE_UPLOAD_STALL_MS,
+            deadlineMs,
+            onUploadProgress: (loaded, total) => {
+              // Same stage label as before. `popup-content.tsx` matches on
+              // these strings to drive the embed wire protocol's heartbeat, so
+              // the text is API. The progress argument is additive.
+              onProgress?.("Validating...", total > 0 ? { loaded, total } : undefined);
+            },
+          }),
+        validationDeadlineMs,
+        target,
       );
 
       if (validateResponse.status < 200 || validateResponse.status >= 300) {
         return rejectionFromStatus(validateResponse);
+      }
+      const refusal = target?.accept?.(validateResponse.body) ?? null;
+      if (refusal !== null) {
+        return { ok: false, error: refusal, failedAt: "validation" };
       }
 
       // Parse the validator's success body for the signed receipt and the
@@ -1014,6 +1099,7 @@ async function processSensorData(
   studyContext?: StudyContext,
   projectionPolicy: ProjectionPolicy = { current: 0, minimum: 0 },
   validationChallenge?: BoundValidationChallenge,
+  target?: ValidationTarget,
 ): Promise<VerificationResult> {
   // Data quality gate: reject if insufficient behavioral data captured
   const audioSamples = sensorData.audio?.samples.length ?? 0;
@@ -1155,6 +1241,7 @@ async function processSensorData(
     studyContext,
     projectionPolicy.current,
     needsProjectionMigration ? "rebaseline" : isFirstVerification ? "mint" : undefined,
+    target,
   );
   if (!extraction.ok) {
     return {
@@ -1615,6 +1702,7 @@ async function processResetSensorData(
   onProgress?: ProgressCallback,
   projectionPolicy: ProjectionPolicy = { current: 0, minimum: 0 },
   validationChallenge?: BoundValidationChallenge,
+  target?: ValidationTarget,
 ): Promise<VerificationResult> {
   const audioSamples = sensorData.audio?.samples.length ?? 0;
   const motionSamples = sensorData.motion.length;
@@ -1684,6 +1772,7 @@ async function processResetSensorData(
     getProjectionDefinition(projectionPolicy.current).authenticatedTransitions
       ? "reset"
       : undefined,
+    target,
   );
   if (!extraction.ok) {
     return {
@@ -2459,6 +2548,54 @@ export class PulseSDK {
    */
   createSession(touchElement?: HTMLElement, studyContext?: StudyContext): PulseSession {
     return new PulseSession(this.config, touchElement, studyContext);
+  }
+
+  /**
+   * Create a paired session: three rounds of one word and one short path.
+   * The server reveals each round only after it accepts the commitment for
+   * the one before. Runs under projection 1 only.
+   */
+  createPairedSession(options: PairedSessionOptions = {}): PairedSession {
+    const config = this.config;
+    const readProjectionPolicy = async (connection?: unknown): Promise<ProjectionPolicy> => {
+      if (connection) return fetchProjectionPolicy(connection as ProjectionPolicyConnection);
+      const { clusterApiUrl, Connection } = await import("@solana/web3.js");
+      const endpoint =
+        config.rpcEndpoint ??
+        (config.cluster === "localnet" ? "http://127.0.0.1:8899" : clusterApiUrl(config.cluster));
+      return fetchProjectionPolicy(new Connection(endpoint, "confirmed"));
+    };
+    return new PairedSession(
+      {
+        readProjectionPolicy,
+        process: (sensorData, wallet, connection, onProgress, policy, target) =>
+          processSensorData(
+            sensorData,
+            config,
+            wallet,
+            connection,
+            onProgress,
+            undefined,
+            policy,
+            undefined,
+            target,
+          ),
+        processReset: (sensorData, wallet, connection, onProgress, policy, target) =>
+          processResetSensorData(
+            sensorData,
+            config,
+            wallet,
+            connection,
+            onProgress,
+            policy,
+            undefined,
+            target,
+          ),
+        relayerUrl: config.relayerUrl,
+        relayerApiKey: config.relayerApiKey,
+      },
+      options,
+    );
   }
 
   /**
