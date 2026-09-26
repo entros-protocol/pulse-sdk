@@ -18,7 +18,12 @@
     // Relaxed for tests only. Indexing a fixture array of known length is
     // idiomatic here and the strict form buys nothing. The property worth
     // enforcing is that fixtures match the types they claim to build.
-    "noUncheckedIndexedAccess": false
+    "noUncheckedIndexedAccess": false,
+    // Tests run in current Node, which has the ES2022 library. The package itself
+    // still compiles against ES2020 through `tsconfig.json`.
+    "lib": ["ES2022", "DOM"],
+    // The test runner's own types no longer bring Node's in.
+    "types": ["node"]
   },
   "include": [
     "src/**/*.ts",
