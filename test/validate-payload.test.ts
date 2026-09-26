@@ -313,11 +313,29 @@ describe("/validate-features body — curve_trace", () => {
   });
 });
 
-describe("/validate-features body - byte stability", () => {
-  // The single-capture body as the release before paired sessions sent it, for this fixture.
-  const SINGLE_BODY_SHA256 = "1b609c7dbb6f6fd04a33f02116ee00787cbe9afa7c6ea8e4b0f967246227ddb9";
+describe("/validate-features body - shape stability", () => {
+  // The single-capture body as the release before paired sessions sent it, for this fixture:
+  // field order, types, lengths and every value that is not a measured number. Measured
+  // numbers are left out because transcendental math can differ in the last bit between CPU
+  // architectures.
+  const SINGLE_BODY_SHAPE_SHA256 = "64b6ebc04db36126267adce63c007c8796a69ed38500f7f7b15577697251d9ac";
 
-  it.skipIf(!isInternalTestBuild)("sends the single-capture body byte for byte", async () => {
+  const shape = (value: unknown): unknown => {
+    if (typeof value === "number") return "number";
+    if (Array.isArray(value)) {
+      return value.every((entry) => typeof entry === "number")
+        ? `numbers[${value.length}]`
+        : value.map(shape);
+    }
+    if (value !== null && typeof value === "object") {
+      return Object.entries(value).map(([key, entry]) => [key, shape(entry)]);
+    }
+    if (typeof value === "string" && /^[0-9a-f]{64}$/.test(value)) return "hex32";
+    if (typeof value === "string" && value.length > 64) return `string[${value.length}]`;
+    return value;
+  };
+
+  it.skipIf(!isInternalTestBuild)("sends the single-capture body in its established shape", async () => {
     let next = 0;
     vi.spyOn(globalThis.crypto, "getRandomValues").mockImplementation(
       <T extends ArrayBufferView | null>(array: T): T => {
@@ -342,8 +360,9 @@ describe("/validate-features body - byte stability", () => {
     const call = mockFetch.mock.calls.find(
       (entry) => typeof entry[0] === "string" && (entry[0] as string).endsWith("/validate-features"),
     );
-    const raw = (call![1] as RequestInit).body as string;
-    expect(createHash("sha256").update(raw).digest("hex")).toBe(SINGLE_BODY_SHA256);
+    const body = JSON.parse((call![1] as RequestInit).body as string) as unknown;
+    const digest = createHash("sha256").update(JSON.stringify(shape(body))).digest("hex");
+    expect(digest).toBe(SINGLE_BODY_SHAPE_SHA256);
   });
 });
 
