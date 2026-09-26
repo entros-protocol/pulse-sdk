@@ -313,6 +313,40 @@ describe("/validate-features body — curve_trace", () => {
   });
 });
 
+describe("/validate-features body - byte stability", () => {
+  // The single-capture body as the release before paired sessions sent it, for this fixture.
+  const SINGLE_BODY_SHA256 = "1b609c7dbb6f6fd04a33f02116ee00787cbe9afa7c6ea8e4b0f967246227ddb9";
+
+  it.skipIf(!isInternalTestBuild)("sends the single-capture body byte for byte", async () => {
+    let next = 0;
+    vi.spyOn(globalThis.crypto, "getRandomValues").mockImplementation(
+      <T extends ArrayBufferView | null>(array: T): T => {
+        if (array) {
+          const view = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
+          for (let index = 0; index < view.length; index++) view[index] = (next++ * 29 + 7) & 0xff;
+        }
+        return array;
+      },
+    );
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: "stubbed" }),
+    } as Response);
+    vi.stubGlobal("fetch", mockFetch);
+    const session = newSession();
+    session.__injectSensorData({ audio: validAudio(), motion: validMotion(), touch: validTouch() });
+
+    await session.complete(fakeWallet, versionOneConnection, undefined, rawOutline());
+
+    const call = mockFetch.mock.calls.find(
+      (entry) => typeof entry[0] === "string" && (entry[0] as string).endsWith("/validate-features"),
+    );
+    const raw = (call![1] as RequestInit).body as string;
+    expect(createHash("sha256").update(raw).digest("hex")).toBe(SINGLE_BODY_SHA256);
+  });
+});
+
 describe("/validate-features body - study context", () => {
   it.skipIf(!isInternalTestBuild)("omits study for every normal request", async () => {
     const session = newSession();
