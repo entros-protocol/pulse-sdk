@@ -113,11 +113,10 @@ import {
   getOrDeriveBaselineKey,
 } from "./identity/baseline";
 
-// Build-time constant. Replaced by tsup `define` (true when IAM_INTERNAL_TEST=1)
-// and by vitest `define`. In default builds (npm publish path) this is `false`
-// and any test hook short-circuits to throw — guaranteeing the harness-only
+// Build-time constant, replaced by tsup and vitest `define`. It is `false` in
+// default builds (the npm publish path), where every test hook throws, so the
 // injection path is unreachable in published artifacts.
-declare const __IAM_INTERNAL_TEST__: boolean;
+declare const __ENTROS_INTERNAL_TEST__: boolean;
 
 type ResolvedConfig = Required<Pick<PulseConfig, "cluster" | "threshold">> &
   PulseConfig;
@@ -2300,12 +2299,10 @@ export class PulseSession {
   // --- Test hooks (internal builds only) ---
 
   /**
-   * @internal Test-only. Primes the session with pre-captured sensor data,
-   * bypassing browser capture APIs. Throws unless built with IAM_INTERNAL_TEST=1.
-   * Stripped from the published .d.ts so npm consumers never see it. Used by the
-   * red team harness to drive the real verification pipeline (extraction →
-   * SimHash → TBH → proof → submit) against synthetic sensor data — never
-   * available to npm consumers.
+   * @internal Test-only. Primes the session with pre-captured sensor data in
+   * place of browser capture, so internal test builds can drive the real
+   * verification pipeline (extraction, SimHash, TBH, proof, submit). Throws in
+   * every other build and is stripped from the published .d.ts.
    */
   __injectSensorData(data: {
     audio: AudioCapture;
@@ -2317,11 +2314,8 @@ export class PulseSession {
     // direct ts-node/tsx execution that bypasses tsup/vitest `define`).
     // Without this, a missing build-time replacement throws ReferenceError
     // before the user-facing message can fire.
-    if (typeof __IAM_INTERNAL_TEST__ !== "boolean" || !__IAM_INTERNAL_TEST__) {
-      throw new Error(
-        "PulseSession.__injectSensorData is only available in internal test builds. " +
-          "Set IAM_INTERNAL_TEST=1 when building pulse-sdk from source.",
-      );
+    if (typeof __ENTROS_INTERNAL_TEST__ !== "boolean" || !__ENTROS_INTERNAL_TEST__) {
+      throw new Error("PulseSession.__injectSensorData is not available in this build.");
     }
     const conflicts: string[] = [];
     if (this.audioStageState === "capturing") conflicts.push("audio");
