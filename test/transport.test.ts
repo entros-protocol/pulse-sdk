@@ -473,6 +473,8 @@ describe("reason taxonomy", () => {
     // does not understand.
     expect(reasonDisposition("something_invented_later")).toBe("fatal");
     expect(reasonDisposition(undefined)).toBe("fatal");
+    expect(isVerificationReason("audio_evidence_insufficient")).toBe(true);
+    expect(reasonDisposition("audio_evidence_insufficient")).toBe("retry");
     expect(isVerificationReason("something_invented_later")).toBe(false);
     expect(isVerificationReason(undefined)).toBe(false);
     expect(isVerificationReason(42)).toBe(false);

@@ -235,3 +235,48 @@ describe("paired-round vectors", () => {
     }
   });
 });
+
+
+it("reports the same active frame used by the adaptive tracker", () => {
+  const tracker = createRoundTracker();
+  for (let i = 0; i < 60; i++) tracker.observe(0.001);
+  tracker.begin([], false);
+  tracker.frame(0.009);
+  expect(tracker.speechActive()).toBe(false);
+  tracker.frame(0.01);
+  expect(tracker.speechActive()).toBe(true);
+  tracker.begin([], false);
+  expect(tracker.speechActive()).toBe(false);
+  for (let i = 0; i < 2400; i++) tracker.observe(0.02);
+  tracker.frame(0.05);
+  expect(tracker.speechActive()).toBe(false);
+  tracker.frame(0.08);
+  expect(tracker.speechActive()).toBe(true);
+});
+
+it("keeps speech readiness when the room changes before tracing", () => {
+  const tracker = createRoundTracker();
+  tracker.observe(0.001); tracker.observe(0.001);
+  const points = [{x:150,y:150},{x:150,y:700},{x:750,y:700}];
+  tracker.begin(points,true);
+  for (let i=0;i<6;i++) tracker.frame(0.05);
+  for (let i=0;i<12;i++) tracker.frame(0.001);
+  for (let i=0;i<160;i++) tracker.frame(0.04);
+  points.forEach(point => tracker.reach(point));
+  expect(tracker.frame(0.04)).toBe("complete");
+});
+
+
+describe("readiness after a refined capture boundary", () => {
+  it("keeps the later completed speech run when the first one is excluded", () => {
+    const tracker=createRoundTracker();
+    tracker.observe(.001);tracker.observe(.001);
+    tracker.begin([{x:200,y:200}],true);
+    for (const level of [...Array(6).fill(.05),...Array(12).fill(.001),...Array(6).fill(.05),...Array(12).fill(.001)]) tracker.frame(level);
+    expect(tracker.speechReady()).toBe(true);
+    tracker.discardPrefix(1);
+    tracker.reach({x:200,y:200});
+    expect(tracker.frame(.04)).toBe("complete");
+    expect(tracker.speechReady()).toBe(true);
+  });
+});

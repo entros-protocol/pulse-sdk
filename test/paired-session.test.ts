@@ -1,5 +1,5 @@
 import { PublicKey } from "@solana/web3.js";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PROGRAM_IDS } from "../src/config";
 import type { PostJsonResponse } from "../src/transport/post-json";
 
@@ -10,6 +10,7 @@ const recorderState = vi.hoisted(() => ({
   stopped: 0,
   gate: null as null | Promise<void>,
   refuse: null as null | Error,
+  slices: [] as { start: number; end: number }[],
 }));
 
 vi.mock("../src/paired/recorder", () => ({
@@ -19,12 +20,15 @@ vi.mock("../src/paired/recorder", () => ({
     recorderState.frame = onFrame;
     recorderState.framed = 0;
     return {
+      ready: Promise.resolve(),
+      markNow: () => recorderState.framed,
       virtualDevice: false,
       voiceIsolationApplied: null,
       framedSamples: () => recorderState.framed,
-      sampleIndexAt: () => recorderState.framed,
+      sampleIndexAt: (time: number) => Math.floor(time * 16),
       timeAt: (sample: number) => sample / 16,
       slice: (start: number, end: number) => {
+        recorderState.slices.push({ start, end });
         const out = new Float32Array(end - start);
         for (let index = 0; index < out.length; index++) {
           out[index] = 0.1 * Math.sin((2 * Math.PI * 200 * (start + index)) / 16_000);
@@ -48,12 +52,15 @@ vi.mock("../src/sensor/motion", () => ({
 
 const server = vi.hoisted(() => ({
   commits: [] as Record<string, unknown>[],
+  cues: [] as Record<string, unknown>[],
   refuseRound: 0,
   holdRound: 0,
   release: null as null | (() => void),
+  holdCue: false,
+  cueRelease: null as null | (() => void),
   opens: 0,
   openFailures: [] as { status: number; body: Record<string, unknown> }[],
-  revealExpiresMs: 120_000,
+  revealExpiresMs: 12_000,
   readyExpiresMs: 120_000,
   finalizes: [] as Record<string, unknown>[],
   finalizeReplies: [] as { status: number; body: Record<string, unknown> }[],
@@ -76,8 +83,9 @@ vi.mock("../src/transport/post-json", async () => {
       round_nonce: transcript.toHex(nonce),
       word: words[index - 1],
       path_target_hex: transcript.toHex(target),
+      cue_commitment: transcript.toHex(transcript.cueCommitment(sessionNonce,index,nonce,new Uint8Array(32).fill(100+index),{x:200,y:800})),
       challenge_digest: transcript.toHex(
-        transcript.challengeDigest(sessionNonce, index, nonce, words[index - 1]!, target),
+        transcript.challengeDigestV2(sessionNonce,index,nonce,words[index-1]!,target,transcript.cueCommitment(sessionNonce,index,nonce,new Uint8Array(32).fill(100+index),{x:200,y:800})),
       ),
       expires_in_ms: server.revealExpiresMs,
     };
@@ -96,7 +104,7 @@ vi.mock("../src/transport/post-json", async () => {
         if (failure) return reply(failure.status, failure.body);
         return reply(200, {
           protocol: "paired",
-          protocol_version: 1,
+          protocol_version: 2,
           session_id: "00112233445566778899aabbccddeeff",
           session_nonce: transcript.toHex(sessionNonce),
           attempt_binding: transcript.toHex(attempt),
@@ -113,6 +121,11 @@ vi.mock("../src/transport/post-json", async () => {
           },
           reveal: reveal(1),
         });
+      }
+      if (url.endsWith("/paired/cue")) {
+        server.cues.push(payload);
+        if (server.holdCue) await new Promise<void>((resolve) => (server.cueRelease = resolve));
+        return reply(200,{session_id:payload.session_id,round_index:payload.round_index,round_nonce:payload.round_nonce,challenge_digest:payload.challenge_digest,point:{x:200,y:800},salt:transcript.toHex(new Uint8Array(32).fill(100+Number(payload.round_index))),expires_in_ms:6000});
       }
       if (url.endsWith("/paired/commit")) {
         server.commits.push(payload);
@@ -142,6 +155,7 @@ vi.mock("../src/transport/post-json", async () => {
 });
 
 import { PairedSession, type PairedRoundView } from "../src/paired/session";
+import {PairedProtocolError} from "../src/paired/client";
 import { PulseSDK, type ValidationTarget } from "../src/pulse";
 
 const WALLET = "11111111111111111111111111111111";
@@ -184,6 +198,16 @@ async function landed(session: PairedSession) {
   while (session.currentPhase === "committing" && Date.now() < end) await settle();
 }
 
+async function playCue(trace: ReturnType<typeof surface>, session: PairedSession) {
+  await settle();
+  if (session.currentPhase === "cue") {
+    trace.press("pointermove",200,800);
+    frames(0.001,1);
+    await settle();
+    await landed(session);
+  }
+}
+
 async function playRound(trace: ReturnType<typeof surface>, session: PairedSession) {
   trace.press("pointerdown", 190, 210);
   for (const [x, y] of [
@@ -199,15 +223,17 @@ async function playRound(trace: ReturnType<typeof surface>, session: PairedSessi
   frames(0.001, 5);
   frames(0.05, 6);
   frames(0.001, 13);
+  await playCue(trace,session);
   await settle();
   await landed(session);
 }
 
-function pipeline(capture: { target?: ValidationTarget }) {
+function pipeline(capture: { target?: ValidationTarget; body?: Record<string,unknown> }) {
   return {
     readProjectionPolicy: async () => ({ current: 1, minimum: 0 }),
     process: async (_data: unknown, _wallet: unknown, _connection: unknown, _progress: unknown, _policy: unknown, target: ValidationTarget) => {
       capture.target = target;
+      capture.body = target.body({walletAddress:WALLET,features:[0.5],f0Contour:[],accelMagnitude:[],captureTiming:undefined,clientSignals:{v:1} as never,receiptPurpose:"mint"});
       return { success: true, commitment: new Uint8Array(32), isFirstVerification: true };
     },
     processReset: async () => ({ success: true, commitment: new Uint8Array(32), isFirstVerification: false }),
@@ -216,20 +242,29 @@ function pipeline(capture: { target?: ValidationTarget }) {
   };
 }
 
+beforeEach(() => {
+  vi.spyOn(performance,"now").mockImplementation(() => recorderState.framed / 16);
+});
+
 afterEach(() => {
+  vi.restoreAllMocks();
   server.commits = [];
+  server.cues = [];
   server.refuseRound = 0;
   server.holdRound = 0;
   server.release = null;
+  server.holdCue = false;
+  server.cueRelease = null;
   server.opens = 0;
   server.openFailures = [];
-  server.revealExpiresMs = 120_000;
+  server.revealExpiresMs = 12_000;
   server.readyExpiresMs = 120_000;
   server.finalizes = [];
   server.finalizeReplies = [];
   recorderState.stopped = 0;
   recorderState.gate = null;
   recorderState.refuse = null;
+  recorderState.slices = [];
 });
 
 function receiptFor(finalDigestHex: string, tier = 2) {
@@ -256,9 +291,67 @@ async function playSession(session: PairedSession, trace: ReturnType<typeof surf
 }
 
 describe("paired session", () => {
+  it("offers Continue immediately after a valid visible trace and commits only after a fresh cue response", async () => {
+    const readiness:boolean[]=[];
+    const session=new PairedSession(pipeline({}),{onContinueAvailable:value=>readiness.push(value)});
+    const trace=surface();
+    await session.start(WALLET,trace.element);
+    for (const [x,y] of [[200,200],[500,700],[800,300],[200,800]]) trace.press("pointermove",x!,y!);
+    frames(0.001,1);
+    expect(readiness.at(-1)).toBe(true);
+    expect(session.continueRound()).toBe(true);
+    expect(session.continueRound()).toBe(false);
+    await settle();
+    expect(server.cues).toHaveLength(1);
+    frames(0.001,2);
+    expect(server.commits).toHaveLength(0);
+    await playCue(trace,session);
+    expect(server.commits).toHaveLength(1);
+    session.abort();
+  });
+
+  it("refuses excess audio without trimming its earlier samples", async () => {
+    const failures:PairedProtocolError[]=[];
+    const session=new PairedSession(pipeline({}),{onFailure:error=>failures.push(error)});
+    await session.start(WALLET,surface().element);
+    recorderState.framed = 192_000;
+    frames(0.001,1);
+    expect(failures[0]?.reason).toBe("evidence_bounds_invalid");
+    expect(recorderState.slices).toEqual([]);
+    expect(server.commits).toEqual([]);
+    expect(recorderState.stopped).toBe(1);
+  });
+
+  it("excludes waiting for the next reveal from its retained audio", async () => {
+    server.holdRound=1;
+    const session=new PairedSession(pipeline({}));
+    const trace=surface();
+    await session.start(WALLET,trace.element);
+    const playing=playRound(trace,session);
+    while (!server.release) await settle();
+    const firstEnd=recorderState.slices[0]!.end;
+    frames(0.001,40);
+    server.release();
+    await playing;
+    await playRound(trace,session);
+    expect(recorderState.slices[1]!.start).toBe(firstEnd+32000);
+    session.abort();
+  });
+
+  it("reports tracker activity after processing the frame", async () => {
+    const levels: [number, boolean][] = [];
+    const session = new PairedSession(pipeline({}), { onLevel: (rms, active) => levels.push([rms, active]) });
+    await session.start(WALLET, surface().element);
+    frames(0.001, 20);
+    frames(0.009, 1);
+    frames(0.02, 1);
+    expect(levels.slice(-2)).toEqual([[0.009, false], [0.02, true]]);
+    session.abort();
+  });
+
   it("runs three rounds in order and commits each before the next reveal", async () => {
     const reveals: PairedRoundView[] = [];
-    const capture: { target?: ValidationTarget } = {};
+    const capture: { target?: ValidationTarget; body?: Record<string,unknown> } = {};
     const session = new PairedSession(pipeline(capture), { onReveal: (round) => reveals.push(round) });
     const trace = surface();
     await session.start(WALLET, trace.element);
@@ -279,15 +372,7 @@ describe("paired session", () => {
 
     const result = await session.complete({}, {});
     expect(result.success).toBe(true);
-    const body = capture.target!.body({
-      walletAddress: WALLET,
-      features: [0.5],
-      f0Contour: [],
-      accelMagnitude: [],
-      captureTiming: undefined,
-      clientSignals: { v: 1 } as never,
-      receiptPurpose: "mint",
-    });
+    const body = capture.body!;
     const segments = body.segments as { round_index: number; audio_b64: string }[];
     expect(segments.map((segment) => segment.round_index)).toEqual([1, 2, 3]);
     expect(capture.target!.path).toBe("/validate-session");
@@ -417,11 +502,12 @@ describe("paired session", () => {
     trace.press("pointermove", 200, 200);
     frames(0.001, 5);
     frames(0.05, 6);
-    frames(0.001, 300);
+    frames(0.001, 100);
     await settle();
     expect(server.commits).toHaveLength(0);
     expect(session.currentPhase).toBe("round");
-    expect(stalls).toEqual([1]);
+    expect(stalls).toEqual([]);
+    expect(session.currentRoundStatus).toEqual({ speechReady: true, traceReady: false });
     expect(session.continueRound()).toBe(false);
 
     for (const [x, y] of [
@@ -431,8 +517,47 @@ describe("paired session", () => {
       trace.press("pointermove", x!, y!);
     }
     expect(session.continueRound()).toBe(true);
+    await playCue(trace,session);
     await settle();
     expect(server.commits).toHaveLength(1);
+  });
+
+  it.each([0, 160])("finishes a repaired outline after %i extra frames and retains the word", async (delay) => {
+    const stalls: number[] = [];
+    const session = new PairedSession(pipeline({}), { onStall: (index) => stalls.push(index) });
+    const trace = surface();
+    await session.start(WALLET, trace.element);
+    const waypoints = [[200, 200], [500, 700], [800, 300]] as const;
+    trace.press("pointerdown", 200, 200);
+    for (const [x, y] of waypoints) trace.press("pointermove", x, y);
+    for (let index = 0; index < 28; index++) {
+      trace.press("pointermove", 950, index % 2 ? 900 : 100);
+    }
+    frames(0.001, 5);
+    frames(0.02, 6);
+    frames(0.001, 20);
+    await settle();
+    expect(stalls).toEqual([1]);
+    expect(server.commits).toHaveLength(0);
+    expect(session.continueRound()).toBe(false);
+
+    frames(0.008, delay);
+    for (const [x, y] of waypoints) trace.press("pointermove", x, y);
+    frames(0.001, 4);
+    await settle();
+    await playCue(trace,session);
+    await landed(session);
+    expect(server.commits).toHaveLength(1);
+    expect(session.currentPhase).toBe("round");
+    expect(recorderState.slices[0]!.start).toBe(0);
+    if (delay > 0) expect(recorderState.slices[0]!.end).toBeGreaterThan(150_000);
+
+    // Readiness from the preceding round cannot complete a silent next round.
+    for (const [x, y] of waypoints) trace.press("pointermove", x, y);
+    frames(0.001, 100);
+    await settle();
+    expect(server.commits).toHaveLength(1);
+    session.abort();
   });
 
   it("keeps a round whose trace paused at the first dot", async () => {
@@ -446,6 +571,7 @@ describe("paired session", () => {
     for (let step = 0; step < 200; step++) {
       at.mockReturnValue(start + step * 10);
       trace.press("pointermove", 200, 200);
+      if (step % 5 === 4) frames(0.001,1);
     }
     [
       [350, 450],
@@ -455,14 +581,18 @@ describe("paired session", () => {
     ].forEach(([x, y], index) => {
       at.mockReturnValue(start + 2_000 + index * 50);
       trace.press("pointermove", x!, y!);
+      frames(0.001,1);
     });
-    at.mockRestore();
+    at.mockImplementation(() => recorderState.framed / 16);
     frames(0.001, 5);
     frames(0.05, 6);
     frames(0.001, 13);
     await settle();
+    await playCue(trace,session);
     await landed(session);
     expect(server.commits).toHaveLength(1);
+    at.mockRestore();
+    session.abort();
   });
 
   it("counts waypoints only in the issued order", async () => {
@@ -481,10 +611,10 @@ describe("paired session", () => {
       frames(0.001, 1);
     }
     frames(0.05, 6);
-    frames(0.001, 300);
+    frames(0.001, 100);
     await settle();
     expect(server.commits).toHaveLength(0);
-    expect(stalls).toEqual([1]);
+    expect(stalls).toEqual([]);
     // Speech the tracker heard does not stand in for a trace in the wrong order.
     expect(session.continueRound()).toBe(false);
   });
@@ -523,6 +653,75 @@ describe("paired session", () => {
     expect(capture.target).toBeUndefined();
   });
 
+  it("releases copied evidence when cancelled after a committed round", async () => {
+    const session = new PairedSession(pipeline({}));
+    const trace = surface();
+    await session.start(WALLET, trace.element);
+    await playRound(trace, session);
+    const retained = session as unknown as {
+      committed: {segment: Uint8Array}[]; touch: unknown[]; roundTrace: unknown[];
+      motionPromise: unknown; released: unknown; recorder: unknown;
+    };
+    const audio = retained.committed[0]!.segment;
+    expect(audio.some(value => value !== 0)).toBe(true);
+    expect(retained.touch.length).toBeGreaterThan(0);
+    session.abort();
+    await settle();
+    expect(audio.every(value => value === 0)).toBe(true);
+    expect(retained.committed).toHaveLength(0);
+    expect(retained.touch).toHaveLength(0);
+    expect(retained.roundTrace).toHaveLength(0);
+    expect(retained.motionPromise).toBeNull();
+    expect(retained.released).toBeNull();
+    expect(retained.recorder).toBeNull();
+  });
+
+  it("ignores a cue response that lands after abort", async () => {
+    server.holdCue = true;
+    const cues: number[] = [];
+    const failures: string[] = [];
+    const session = new PairedSession(pipeline({}), {
+      onCue: (cue) => cues.push(cue.roundIndex),
+      onFailure: (error) => failures.push(error.reason),
+    });
+    const trace = surface();
+    await session.start(WALLET, trace.element);
+    await playRound(trace, session);
+    expect(session.currentPhase).toBe("cue_loading");
+    session.abort();
+    server.cueRelease?.();
+    await settle();
+    expect(session.currentPhase).toBe("failed");
+    expect(cues).toEqual([]);
+    expect(failures).toEqual([]);
+    expect(server.commits).toEqual([]);
+  });
+
+  it("ignores a cue response that lands after the round expired", async () => {
+    server.holdCue = true;
+    // playRound advances the frame-driven clock to about 1,450 ms, so the
+    // reveal must outlive that and still expire inside the wait below.
+    server.revealExpiresMs = 1_600;
+    const cues: number[] = [];
+    const failures: string[] = [];
+    const session = new PairedSession(pipeline({}), {
+      onCue: (cue) => cues.push(cue.roundIndex),
+      onFailure: (error) => failures.push(error.reason),
+    });
+    const trace = surface();
+    await session.start(WALLET, trace.element);
+    await playRound(trace, session);
+    expect(session.currentPhase).toBe("cue_loading");
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    expect(failures).toEqual(["round_expired"]);
+    server.cueRelease?.();
+    await settle();
+    expect(session.currentPhase).toBe("failed");
+    expect(cues).toEqual([]);
+    expect(failures).toEqual(["round_expired"]);
+    expect(server.commits).toEqual([]);
+  });
+
   it("changes nothing after an abort, even when a commit lands later", async () => {
     server.holdRound = 1;
     const phases: string[] = [];
@@ -541,6 +740,25 @@ describe("paired session", () => {
     expect(session.currentPhase).toBe("failed");
     expect(phases[phases.length - 1]).toBe("failed");
     expect(reveals).toEqual([1]);
+  });
+
+  it.each(["signMessage", "signTransaction", "sendTransaction"])("blocks a late %s call after cancellation", async method => {
+    let resume!: () => void;
+    const signing = vi.fn(async () => new Uint8Array(64));
+    const wallet = {publicKey:{toBase58:() => WALLET},[method]:signing};
+    const session = new PairedSession({...pipeline({}), process:async (_data, protectedWallet) => {
+      await new Promise<void>(resolve => {resume=resolve;});
+      const action = Reflect.get(protectedWallet as object,method) as () => Promise<unknown>;
+      await action();
+      return {success:true,commitment:new Uint8Array(32),isFirstVerification:true};
+    }});
+    await playSession(session,surface());
+    const completing=session.complete(wallet,{});
+    await settle();
+    session.abort();
+    resume();
+    await completing.catch(() => undefined);
+    expect(signing).not.toHaveBeenCalled();
   });
 
   it("refuses the validator's answer once aborted during finalize", async () => {
@@ -639,11 +857,11 @@ describe("paired session through the verification pipeline", () => {
     await playSession(session, surface());
     server.finalizeReplies = [
       { status: 503, body: { reason: "session_busy", retry_after: 0 } },
-      { status: 400, body: { reason: "trace_incomplete", biometric_risk: 0 } },
+      { status: 400, body: { reason: "audio_evidence_insufficient", biometric_risk: 0 } },
     ];
     const result = await session.complete({ publicKey: new PublicKey(WALLET) }, connection);
     expect(server.finalizes).toHaveLength(2);
     expect(server.finalizes[0]).toEqual(server.finalizes[1]);
-    expect(result).toMatchObject({ success: false, reason: "trace_incomplete" });
+    expect(result).toMatchObject({ success: false, reason: "audio_evidence_insufficient" });
   });
 });
