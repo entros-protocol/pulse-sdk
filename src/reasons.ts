@@ -35,6 +35,7 @@ export type VerificationReason =
   | "temporal_coupling_low"
   | "phrase_content_mismatch"
   | "trace_incomplete"
+  | "audio_evidence_insufficient"
   | "captcha_required"
   // Executor transport-level. Trying again immediately makes things worse.
   | "rate_limited"
@@ -102,6 +103,7 @@ const DISPOSITIONS = {
   temporal_coupling_low: "retry",
   phrase_content_mismatch: "retry",
   trace_incomplete: "retry",
+  audio_evidence_insufficient: "retry",
   captcha_required: "retry",
   rate_limited: "wait",
   ip_rate_limited: "wait",

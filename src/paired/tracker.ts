@@ -70,6 +70,12 @@ export interface RoundTracker {
   frame(level: number): RoundProgress;
   /** The round's voiced runs, in frame indices from the round's first frame. */
   runs(): VoicedRun[];
+  /** Whether the latest round frame meets the current speech threshold. */
+  speechActive(): boolean;
+  /** Latched after speech and its quiet interval, independent of trace order. */
+  speechReady(): boolean;
+  /** Removes frames excluded by a refined recording boundary. */
+  discardPrefix(frames: number): void;
 }
 
 /** RMS of one frame of canonical samples. */
@@ -95,6 +101,8 @@ export function createRoundTracker(): RoundTracker {
   let round: number[] = [];
   let tracedAt: number | null = null;
   let reported = false;
+  let speechReady = false;
+  let readyFrom: number | null = null;
 
   const bar = (): number => {
     const ordered = [...history].sort((left, right) => left - right);
@@ -151,6 +159,8 @@ export function createRoundTracker(): RoundTracker {
       round = [];
       tracedAt = null;
       reported = false;
+      speechReady = false;
+      readyFrom = null;
     },
 
     reach(point) {
@@ -167,11 +177,8 @@ export function createRoundTracker(): RoundTracker {
       pushBounded(round, level);
       const now = round.length - 1;
       const traced = !traceRequired || (waypoints.length > 0 && reached === waypoints.length);
-      if (!traced) return now >= OPEN_STALL_FRAMES ? "stalled" : "open";
-      tracedAt ??= now;
-
       const threshold = bar();
-      const spoken = runsAgainst(threshold).some((run) => run.qualifies);
+      const spoken = runsAgainst(threshold).reverse().find((run) => run.qualifies);
       let lastVoiced: number | null = null;
       for (let index = round.length - 1; index >= 0; index--) {
         if (round[index]! >= threshold) {
@@ -179,7 +186,13 @@ export function createRoundTracker(): RoundTracker {
           break;
         }
       }
-      if (spoken && lastVoiced !== null && now - lastVoiced >= QUIET_FRAMES && !reported) {
+      if (spoken && lastVoiced !== null && now - lastVoiced >= QUIET_FRAMES) {
+        speechReady = true;
+        readyFrom = Math.max(readyFrom ?? 0, spoken.startFrame);
+      }
+      if (!traced) return now >= OPEN_STALL_FRAMES ? "stalled" : "open";
+      tracedAt ??= now;
+      if (speechReady && !reported) {
         reported = true;
         return "complete";
       }
@@ -188,6 +201,23 @@ export function createRoundTracker(): RoundTracker {
 
     runs() {
       return runsAgainst(bar());
+    },
+
+    speechReady: () => speechReady,
+
+    discardPrefix(frames) {
+      const removed = Math.min(frames, round.length);
+      round.splice(0, removed);
+      if (readyFrom !== null) {
+        readyFrom -= removed;
+        if (readyFrom < 0) { readyFrom = null; speechReady = false; reported = false; }
+      }
+      if (tracedAt !== null) tracedAt = Math.max(0, tracedAt - removed);
+    },
+
+    speechActive() {
+      const level = round[round.length - 1];
+      return level !== undefined && level >= bar();
     },
   };
 }

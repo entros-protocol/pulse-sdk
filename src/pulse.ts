@@ -551,6 +551,8 @@ export interface ValidationEvidence {
  * posts the single-capture request to `/validate-features`.
  */
 export interface ValidationTarget {
+  /** Cancels validation when the capture owner ends the session. */
+  signal?: AbortSignal;
   /** The executor path, such as `/validate-session`. */
   path: string;
   /** Builds the request body. */
@@ -579,9 +581,11 @@ async function sendValidation(
   deadlineMs: number,
   target?: ValidationTarget,
 ): Promise<PostJsonResponse> {
+  if (target?.signal?.aborted) throw new Error("Verification cancelled.");
   const retryAfterMs = target?.retryAfterMs;
   if (!target || !retryAfterMs) return send(deadlineMs);
   for (let attempt = 0; ; attempt++) {
+    if (target.signal?.aborted) throw new Error("Verification cancelled.");
     let response: PostJsonResponse | null = null;
     let failure: unknown = null;
     try {
@@ -594,7 +598,13 @@ async function sendValidation(
       if (response) return response;
       throw failure;
     }
-    await new Promise((resolve) => setTimeout(resolve, wait));
+    await new Promise<void>((resolve,reject) => {
+      const signal=target.signal;
+      const abort=() => {clearTimeout(timer);signal?.removeEventListener("abort",abort);reject(new Error("Verification cancelled."));};
+      const timer=setTimeout(() => {signal?.removeEventListener("abort",abort);resolve();},wait);
+      signal?.addEventListener("abort",abort,{once:true});
+      if (signal?.aborted) abort();
+    });
   }
 }
 
@@ -841,6 +851,7 @@ async function extractFingerprintAndValidate(
           postJson(validateUrl, body, {
             headers: validateHeaders,
             stallMs: VALIDATE_UPLOAD_STALL_MS,
+            signal: target?.signal,
             deadlineMs,
             onUploadProgress: (loaded, total) => {
               // Same stage label as before. `popup-content.tsx` matches on

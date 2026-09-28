@@ -168,6 +168,18 @@ export function attemptBindingDigest(serverAttemptId: Uint8Array, challengeNonce
   return digest([DOMAINS.attempt, serverAttemptId, challengeNonce]);
 }
 
+export function cueCommitment(sessionNonce: Uint8Array, roundIndex: number, roundNonce: Uint8Array, salt: Uint8Array, point: GridPoint): Digest {
+  if (salt.length !== 32 || !Number.isInteger(point.x) || !Number.isInteger(point.y) || point.x < 150 || point.x > 850 || point.y < 150 || point.y > 850) throw new PairedEncodingError("malformed");
+  const encoded = new Uint8Array(4);
+  encoded.set(u16(point.x)); encoded.set(u16(point.y),2);
+  return digest([ascii("entros/paired-round/v2/cue\0"),sessionNonce,u32(roundIndex),roundNonce,salt,encoded]);
+}
+
+export function challengeDigestV2(sessionNonce: Uint8Array, roundIndex: number, roundNonce: Uint8Array, word: string, target: Uint8Array, cue: Digest): Digest {
+  if (cue.length !== 32) throw new PairedEncodingError("malformed");
+  return digest([ascii("entros/paired-round/v2/challenge\0"),sessionNonce,u32(roundIndex),roundNonce,ascii(word),target,cue]);
+}
+
 export function challengeDigest(
   sessionNonce: Uint8Array,
   roundIndex: number,

@@ -185,7 +185,8 @@ import { PulseSDK } from '@entros/pulse-sdk';
 const pulse = new PulseSDK({ cluster: 'devnet', relayerUrl: 'https://api.entros.io/relay' });
 const session = pulse.createPairedSession({
   onReveal: (round) => showRound(round.word, round.waypoints),
-  onStall: () => offerContinue(),
+  onCue: (cue) => showCue(cue.point, cue.expiresAtMs),
+  onContinueAvailable: (available) => setContinueVisible(available),
   onPhase: (phase) => {
     if (phase === 'ready') void finish();
   },
@@ -200,9 +201,14 @@ async function finish() {
 }
 ```
 
-A round advances on its own once speech is heard and the trace has reached every waypoint in
-order. The surface records only pressed points. `continueRound()` ends a stalled round, for speech
-the SDK did not pick up, once the trace has reached every waypoint in order. The finalize request
+The current source uses paired protocol version 2 and requires a compatible executor.
+Speech and tracing may occur in either order. The controller requests a final cue after speech
+readiness and a valid visible outline. `continueRound()` requests that cue when quiet speech does
+not trigger readiness, once the outline passes. Ask the person to speak before continuing.
+The controller verifies the cue and commits after the person traces its endpoint and the complete
+outline passes. The surface records pressed points. Render `cue_loading`, `cue`, and the supplied
+deadlines from controller callbacks. Abort the session when the connected wallet changes.
+The finalize request
 carries every committed segment. A relayer that is busy gets the same finalize again, and the SDK
 refuses a receipt that does not bind this session before it asks the wallet to sign.
 
