@@ -315,4 +315,88 @@ describe("real recorder and session controller timing", () => {
     expect(mic.state.trackStops).toBe(1);
     expect(mic.state.closed).toBe(1);
   });
+
+  it("keeps speech readiness when a delayed clock bound refines across the spoken word", async () => {
+    const mic = device();
+    const cueRounds: number[] = [];
+    const session = new PairedSession(pipeline(), {
+      onCue: (cue) => cueRounds.push(cue.roundIndex),
+    });
+    const trace = surface();
+    nowMs = 10_296;
+    const started = session.start(WALLET, trace.element);
+    while (!mic.connected()) await Promise.resolve();
+    mic.emit(buffer(null));
+    nowMs = 10_300;
+    await started;
+
+    // The word, spoken right at the reveal: four full frames above the floor.
+    nowMs = 10_522;
+    mic.emit(buffer({ from: 704, to: 3_904, level: 0.05 }));
+    // Quiet buffers while speech plus its quiet interval latches readiness.
+    nowMs = 10_778;
+    mic.emit(buffer(null));
+    nowMs = 11_034;
+    mic.emit(buffer(null));
+    // A stalled pipeline now catches up: each buffer still carries 256 ms of
+    // audio, but the clock advances far less, so every arrival bound moves the
+    // recording origin further back — across the spoken word.
+    nowMs = 11_090;
+    mic.emit(buffer(null));
+    nowMs = 11_150;
+    mic.emit(buffer(null));
+    nowMs = 11_210;
+    mic.emit(buffer(null));
+
+    // The round still completes on its own: the refined boundary stopped at
+    // the word, so readiness survived and the cue request fires here.
+    nowMs = 11_300;
+    for (const [x, y] of [
+      [200, 200],
+      [350, 450],
+      [500, 700],
+      [650, 500],
+      [800, 300],
+    ]) {
+      trace.press("pointermove", x!, y!);
+    }
+    mic.emit(buffer(null));
+    await settle();
+    expect(server.cues).toHaveLength(1);
+    expect(cueRounds).toEqual([1]);
+    expect(session.currentPhase).toBe("cue");
+
+    nowMs = 11_340;
+    trace.press("pointermove", 200, 800);
+    nowMs = 11_360;
+    mic.emit(buffer(null));
+    await settle();
+
+    expect(server.commits).toHaveLength(1);
+    const commit = server.commits[0]!;
+    expect(commit.round_index).toBe(1);
+    // The committed segment starts at the clamped boundary and keeps the word:
+    // canonical samples 4,800 through 36,800.
+    const canonicalizer = createStreamingCanonicalizer(16_000);
+    const parts = [
+      canonicalizer.push(buffer(null)),
+      canonicalizer.push(buffer({ from: 704, to: 3_904, level: 0.05 })),
+      ...Array.from({ length: 7 }, () => canonicalizer.push(buffer(null))),
+    ];
+    const length = parts.reduce((total, part) => total + part.length, 0);
+    const canonical = new Float32Array(length);
+    let offset = 0;
+    for (const part of parts) {
+      canonical.set(part, offset);
+      offset += part.length;
+    }
+    const segment = encodePcm16(canonical.subarray(4_800, 36_800));
+    expect(segment.subarray(0, 6_400).some((value) => value !== 0)).toBe(true);
+    expect(commit.audio_byte_length).toBe(segment.length);
+    expect(commit.audio_digest).toBe(toHex(audioDigest(SESSION_NONCE, 1, CHALLENGE, AUDIO_FORMAT, segment)));
+
+    session.abort();
+    await settle();
+    expect(session.currentPhase).toBe("failed");
+  });
 });
