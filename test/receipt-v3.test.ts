@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { decodeSignedReceipt, receiptMatchesBinding } from "../src/submit/receipt";
 import type { SignedReceiptDto } from "../src/submit/types";
 
-const VECTORS_SHA256 = "cb88f752aed0e29a0f2321e85a2ff3006e3c1f65a933d2c729c069574445e63d";
+const VECTORS_SHA256 = "a1926388062f2dad25fa476b9ab2c3cb194ba0f5d042dccd14dc343ba94d31eb";
 const vectorsText = readFileSync(
   resolve(__dirname, "fixtures/paired-round-vectors.json"),
   "utf8",

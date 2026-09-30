@@ -39,10 +39,15 @@ export const FLOOR_RATIO = 4;
 export const FLOOR_PERCENTILE = 0.1;
 /** Frames kept for the floor and for one round, 120 s. */
 export const HISTORY_FRAMES = 2_400;
-/** No frame below this counts as speech, however quiet the room. */
-export const MIN_SPEECH_RMS = 0.01;
+/**
+ * No frame below this counts as speech, however quiet the room. Calibrated
+ * against the validator's normalized hearing: owner acceptance showed a quiet
+ * but clearly transcribed word at ~0.005-0.01 raw frame RMS, so the floor
+ * must sit below it.
+ */
+export const MIN_SPEECH_RMS = 0.004;
 /** The lowest noise floor assumed, so digital silence sets no bar. */
-export const MIN_FLOOR_RMS = 0.002;
+export const MIN_FLOOR_RMS = 0.001;
 
 /**
  * `complete` is reported once per round. After it the round reads as

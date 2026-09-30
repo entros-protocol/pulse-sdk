@@ -25,7 +25,7 @@ import {
   toHex,
 } from "../src/paired/transcript";
 
-const VECTORS_SHA256 = "cb88f752aed0e29a0f2321e85a2ff3006e3c1f65a933d2c729c069574445e63d";
+const VECTORS_SHA256 = "a1926388062f2dad25fa476b9ab2c3cb194ba0f5d042dccd14dc343ba94d31eb";
 const vectorsText = readFileSync(resolve(__dirname, "fixtures/paired-round-vectors.json"), "utf8");
 const vectors = JSON.parse(vectorsText);
 
@@ -241,9 +241,9 @@ it("reports the same active frame used by the adaptive tracker", () => {
   const tracker = createRoundTracker();
   for (let i = 0; i < 60; i++) tracker.observe(0.001);
   tracker.begin([], false);
-  tracker.frame(0.009);
+  tracker.frame(0.003);
   expect(tracker.speechActive()).toBe(false);
-  tracker.frame(0.01);
+  tracker.frame(0.004);
   expect(tracker.speechActive()).toBe(true);
   tracker.begin([], false);
   expect(tracker.speechActive()).toBe(false);

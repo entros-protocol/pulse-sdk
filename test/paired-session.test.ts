@@ -343,9 +343,9 @@ describe("paired session", () => {
     const session = new PairedSession(pipeline({}), { onLevel: (rms, active) => levels.push([rms, active]) });
     await session.start(WALLET, surface().element);
     frames(0.001, 20);
-    frames(0.009, 1);
+    frames(0.003, 1);
     frames(0.02, 1);
-    expect(levels.slice(-2)).toEqual([[0.009, false], [0.02, true]]);
+    expect(levels.slice(-2)).toEqual([[0.003, false], [0.02, true]]);
     session.abort();
   });
 

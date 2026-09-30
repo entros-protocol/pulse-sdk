@@ -45,8 +45,8 @@
     "floorRatio": 4,
     "floorPercentile": 0.1,
     "historyFrames": 2400,
-    "minSpeechRms": 0.01,
-    "minFloorRms": 0.002
+    "minSpeechRms": 0.004,
+    "minFloorRms": 0.001
   },
   "levelling": {
     "targetRms": 0.05,
