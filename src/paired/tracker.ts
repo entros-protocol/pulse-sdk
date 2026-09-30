@@ -74,6 +74,12 @@ export interface RoundTracker {
   speechActive(): boolean;
   /** Latched after speech and its quiet interval, independent of trace order. */
   speechReady(): boolean;
+  /**
+   * The round's first frame at the speech bar, or null. A refined recording
+   * boundary may move forward up to this frame but not past it: everything
+   * from here on is speech the person produced during the round.
+   */
+  firstVoicedFrame(): number | null;
   /** Removes frames excluded by a refined recording boundary. */
   discardPrefix(frames: number): void;
 }
@@ -204,6 +210,14 @@ export function createRoundTracker(): RoundTracker {
     },
 
     speechReady: () => speechReady,
+
+    firstVoicedFrame() {
+      const threshold = bar();
+      for (let index = 0; index < round.length; index++) {
+        if (round[index]! >= threshold) return index;
+      }
+      return null;
+    },
 
     discardPrefix(frames) {
       const removed = Math.min(frames, round.length);
