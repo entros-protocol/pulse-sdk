@@ -36,6 +36,8 @@ export type VerificationReason =
   | "phrase_content_mismatch"
   | "trace_incomplete"
   | "audio_evidence_insufficient"
+  | "anchor_retry"
+  | "paired_required"
   | "captcha_required"
   // Executor transport-level. Trying again immediately makes things worse.
   | "rate_limited"
@@ -104,6 +106,8 @@ const DISPOSITIONS = {
   phrase_content_mismatch: "retry",
   trace_incomplete: "retry",
   audio_evidence_insufficient: "retry",
+  anchor_retry: "retry",
+  paired_required: "fatal",
   captcha_required: "retry",
   rate_limited: "wait",
   ip_rate_limited: "wait",

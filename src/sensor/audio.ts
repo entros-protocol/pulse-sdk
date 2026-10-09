@@ -4,32 +4,12 @@ import { realFFT } from "../extraction/fft";
 import { sdkWarn } from "../log";
 import { CANONICAL_SAMPLE_RATE, toCanonicalCapture } from "./resample";
 import { getProjectionDefinition } from "../projection";
-
-/**
- * Target RMS level the captured audio is normalized to before being
- * surfaced as `AudioCapture.samples`. Stays well inside Float32's
- * `[-1, 1]` range (no clipping risk on transients) and lands at the low
- * end of Whisper-tiny.en's amplitude sweet spot of `[0.05, 0.15]`. The
- * validator's VAD gate then applies a clean ~2× gain to reach its own
- * `0.1` target instead of the ~30× it had to apply to raw mic input.
- */
-const TARGET_CAPTURE_RMS = 0.05;
-
-/**
- * Below this RMS, the capture is treated as effective silence and the
- * normalization step is skipped — never amplify the noise floor of a
- * muted or unplugged mic into apparent signal. Must equal the validator's
- * own silence floor for normalization.
- */
-const MIN_RMS_FOR_NORMALIZATION = 1e-4;
-
-/**
- * Cap on the gain factor applied during normalization. Must equal the
- * validator's own gain cap, so a capture that the SDK can't fully normalize
- * also gets the same partial-gain treatment server-side without further
- * amplification surprises.
- */
-const MAX_NORMALIZATION_GAIN = 50;
+import {
+  captureNormalizationGain,
+  MAX_NORMALIZATION_GAIN,
+  MIN_RMS_FOR_NORMALIZATION,
+  TARGET_CAPTURE_RMS,
+} from "./audio-normalization";
 
 interface VoiceIsolationConstraints extends MediaTrackConstraints {
   voiceIsolation?: ConstrainBoolean;
@@ -99,7 +79,7 @@ export function normalizeCaptureRMS(samples: Float32Array): Float32Array {
   }
   const rms = Math.sqrt(sumSq / samples.length);
   if (rms < MIN_RMS_FOR_NORMALIZATION) return samples;
-  const gain = Math.min(TARGET_CAPTURE_RMS / rms, MAX_NORMALIZATION_GAIN);
+  const gain = captureNormalizationGain(rms);
   const out = new Float32Array(samples.length);
   for (let i = 0; i < samples.length; i++) {
     out[i] = Math.max(-1, Math.min(1, samples[i]! * gain));
@@ -177,8 +157,7 @@ export function describeInputLevel(samples: Float32Array): {
   const rms = Math.sqrt(sumSq / samples.length);
   // Mirrors `normalizeCaptureRMS` exactly rather than re-deriving it, so the
   // reported gain is the gain that was actually applied.
-  const gain =
-    rms < MIN_RMS_FOR_NORMALIZATION ? 1 : Math.min(TARGET_CAPTURE_RMS / rms, MAX_NORMALIZATION_GAIN);
+  const gain = captureNormalizationGain(rms);
 
   return {
     rms,
