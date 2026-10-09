@@ -25,7 +25,7 @@ import {
   toHex,
 } from "../src/paired/transcript";
 
-const VECTORS_SHA256 = "a1926388062f2dad25fa476b9ab2c3cb194ba0f5d042dccd14dc343ba94d31eb";
+const VECTORS_SHA256 = "917f232591b380b6565b09a0c2d29a48caaaae78a3d31fcc1441b09c127042e5";
 const vectorsText = readFileSync(resolve(__dirname, "fixtures/paired-round-vectors.json"), "utf8");
 const vectors = JSON.parse(vectorsText);
 
@@ -202,6 +202,8 @@ describe("paired-round vectors", () => {
       const completed = decisions.indexOf("complete");
       expect(completed === -1 ? null : completed, entry.name).toBe(entry.completedAtFrame);
       expect(tracker.runs(), entry.name).toEqual(entry.finalRuns);
+      expect(tracker.speechReady(), entry.name).toBe(entry.speechReady);
+      expect(tracker.firstVoicedFrame(), entry.name).toBe(entry.firstVoicedFrame);
     }
   });
 
@@ -234,6 +236,22 @@ describe("paired-round vectors", () => {
       expect(toHex(digest), entry.name).toBe(entry.requestHash);
     }
   });
+});
+
+it("matches the independent refined-boundary witnesses", () => {
+  for (const entry of vectors.trackerRefinements) {
+    const tracker = createRoundTracker();
+    for (const [level, count] of entry.priorLevels)
+      for (let index = 0; index < count; index++) tracker.observe(level);
+    tracker.begin([{ x: 200, y: 200 }], true);
+    for (const [level, count] of entry.levels)
+      for (let index = 0; index < count; index++) tracker.frame(level);
+    tracker.discardPrefix(entry.discardPrefix);
+    tracker.reach({ x: 200, y: 200 });
+    expect(tracker.frame(0.0003)).toBe(entry.decision);
+    expect(tracker.speechReady()).toBe(entry.speechReady);
+    expect(tracker.firstVoicedFrame()).toBe(entry.firstVoicedFrame);
+  }
 });
 
 
