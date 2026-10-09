@@ -864,4 +864,16 @@ describe("paired session through the verification pipeline", () => {
     expect(server.finalizes[0]).toEqual(server.finalizes[1]);
     expect(result).toMatchObject({ success: false, reason: "audio_evidence_insufficient" });
   });
+
+  it("returns a consumed baseline-quality verdict without resending finalize", async () => {
+    const sdk = new PulseSDK({ cluster: "devnet", relayerUrl: "https://executor.example", relayerApiKey: "key" });
+    const session = sdk.createPairedSession();
+    await playSession(session, surface());
+    server.finalizeReplies = [
+      { status: 400, body: { error: "Verification failed", reason: "anchor_retry" } },
+    ];
+    const result = await session.complete({ publicKey: new PublicKey(WALLET) }, connection);
+    expect(result).toMatchObject({ success: false, reason: "anchor_retry", failedAt: "validation" });
+    expect(server.finalizes).toHaveLength(1);
+  });
 });

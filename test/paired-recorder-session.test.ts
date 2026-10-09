@@ -316,7 +316,7 @@ describe("real recorder and session controller timing", () => {
     expect(mic.state.closed).toBe(1);
   });
 
-  it("keeps speech readiness when a delayed clock bound refines across the spoken word", async () => {
+  it.each([0.05, 0.005])("keeps speech at RMS %s when a delayed clock refines after a loud transient", async (speech) => {
     const mic = device();
     const cueRounds: number[] = [];
     const session = new PairedSession(pipeline(), {
@@ -332,7 +332,7 @@ describe("real recorder and session controller timing", () => {
 
     // The word, spoken right at the reveal: four full frames above the floor.
     nowMs = 10_522;
-    mic.emit(buffer({ from: 704, to: 3_904, level: 0.05 }));
+    mic.emit(buffer({ from: 704, to: 3_904, level: speech }));
     // Quiet buffers while speech plus its quiet interval latches readiness.
     nowMs = 10_778;
     mic.emit(buffer(null));
@@ -342,9 +342,11 @@ describe("real recorder and session controller timing", () => {
     // audio, but the clock advances far less, so every arrival bound moves the
     // recording origin further back — across the spoken word.
     nowMs = 11_090;
+    const transient = speech === 0.005 ? { from: 0, to: 800, level: 0.5 } : null;
     mic.emit(buffer(null));
     nowMs = 11_150;
-    mic.emit(buffer(null));
+    // Three quiet buffers finish the quiet-tail witness before the transient.
+    mic.emit(buffer(transient));
     nowMs = 11_210;
     mic.emit(buffer(null));
 
@@ -380,8 +382,12 @@ describe("real recorder and session controller timing", () => {
     const canonicalizer = createStreamingCanonicalizer(16_000);
     const parts = [
       canonicalizer.push(buffer(null)),
-      canonicalizer.push(buffer({ from: 704, to: 3_904, level: 0.05 })),
-      ...Array.from({ length: 7 }, () => canonicalizer.push(buffer(null))),
+      canonicalizer.push(buffer({ from: 704, to: 3_904, level: speech })),
+      canonicalizer.push(buffer(null)),
+      canonicalizer.push(buffer(null)),
+      canonicalizer.push(buffer(null)),
+      canonicalizer.push(buffer(transient)),
+      ...Array.from({ length: 3 }, () => canonicalizer.push(buffer(null))),
     ];
     const length = parts.reduce((total, part) => total + part.length, 0);
     const canonical = new Float32Array(length);

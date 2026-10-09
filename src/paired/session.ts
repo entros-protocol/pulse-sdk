@@ -435,7 +435,7 @@ export class PairedSession {
     else if (progress === "stalled" && !this.stalled) {this.stalled=true;this.options.onStall?.(this.reveal?.roundIndex ?? 0);}
   }
 
-  /** Requests the cue after the visible outline passes. The person must speak first. */
+  /** Requests the cue after the visible outline passes. The server judges speech at finalize. */
   continueRound(): boolean {
     if (this.phase !== "round" || !this.recorder || !this.reveal || performance.now() >= this.reveal.expiresAtMs || !this.completedOutline()) return false;
     void this.requestCue().catch(error => this.fail(error));
