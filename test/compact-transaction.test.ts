@@ -3,6 +3,7 @@ import { Keypair, Transaction } from "@solana/web3.js";
 import type { SolanaProof } from "../src/proof/types";
 import { toBigEndian32 } from "../src/proof/serializer";
 import { submitViaWallet } from "../src/submit/wallet";
+import { fundedPreflightConnection } from "./helpers/funding";
 
 const AUTHORITY = Keypair.fromSeed(new Uint8Array(32).fill(19)).publicKey;
 
@@ -24,6 +25,7 @@ function proofFixture(): SolanaProof {
 
 function connectionFixture() {
   return {
+    ...fundedPreflightConnection(),
     rpcEndpoint: "http://localhost:8899",
     commitment: "confirmed",
     getLatestBlockhash: async () => ({

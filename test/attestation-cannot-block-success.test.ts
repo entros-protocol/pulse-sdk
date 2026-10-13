@@ -3,6 +3,7 @@ import { Keypair } from "@solana/web3.js";
 import { submitViaWallet } from "../src/submit/wallet";
 import { ATTESTATION_SIGNATURE_TIMEOUT_MS } from "../src/config";
 import { toBigEndian32 } from "../src/proof/serializer";
+import { fundedPreflightConnection } from "./helpers/funding";
 
 /**
  * A confirmed verification must survive anything that happens afterwards.
@@ -16,6 +17,7 @@ const AUTHORITY = Keypair.generate().publicKey;
 
 function fakeConnection() {
   return {
+    ...fundedPreflightConnection(),
     rpcEndpoint: "http://localhost:8899",
     commitment: "confirmed",
     getLatestBlockhash: async () => ({

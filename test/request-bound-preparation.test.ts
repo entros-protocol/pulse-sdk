@@ -15,6 +15,7 @@ import {
   upgradeIdentityLayoutViaWallet,
 } from "../src/submit/wallet";
 import { toBigEndian32 } from "../src/proof/serializer";
+import { fundedPreflightConnection } from "./helpers/funding";
 
 async function setup(present = true) {
   const fixture = await createEvidenceFixture();
@@ -138,6 +139,7 @@ describe("pre-proof request preparation", () => {
         },
         connection: {
           ...f.connection,
+          ...fundedPreflightConnection(),
           getLatestBlockhash: async () => ({
             blockhash: "11111111111111111111111111111111",
             lastValidBlockHeight: 1,
@@ -229,6 +231,7 @@ describe("pre-proof request preparation", () => {
         },
         connection: {
           ...f.connection,
+          ...fundedPreflightConnection(),
           getLatestBlockhash: async () => ({
             blockhash: "11111111111111111111111111111111",
             lastValidBlockHeight: 1,

@@ -8,6 +8,7 @@ import {
 } from "@solana/web3.js";
 import { submitResetViaWallet } from "../src/submit/wallet";
 import type { SignedReceiptDto } from "../src/submit/types";
+import { fundedPreflightConnection } from "./helpers/funding";
 
 function receipt(
   wallet: Uint8Array,
@@ -30,6 +31,7 @@ function receipt(
 
 function connection() {
   return {
+    ...fundedPreflightConnection(),
     rpcEndpoint: "http://localhost:8899",
     commitment: "confirmed",
     getLatestBlockhash: async () => ({

@@ -29,6 +29,7 @@ import {
 } from "../config";
 import { sdkLog, sdkWarn } from "../log";
 import { fetchSubmissionNonce } from "./nonce";
+import { preflightWalletBalance } from "./balance";
 import { entrosAnchorIdl, entrosVerifierIdl } from "../protocol/idl";
 import { buildEd25519ReceiptIx, receiptMatchesBinding } from "./receipt";
 import { ENCRYPTED_BASELINE_BLOB_BYTES } from "../identity/baseline";
@@ -287,6 +288,15 @@ async function sendAndConfirm(
   | { ok: true; txSig: string }
   | { ok: false; error: string; failedAt: VerificationPhase }
 > {
+  try {
+    await preflightWalletBalance(connection, tx);
+  } catch (error) {
+    return {
+      ok: false,
+      error: errToString(error),
+      failedAt: "signing",
+    };
+  }
   let txSig: string;
   try {
     // The third argument is omitted rather than passed as `undefined`. The

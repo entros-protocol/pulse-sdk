@@ -43,7 +43,7 @@
  * - `baseline`: finding a prior fingerprint to prove drift against, locally
  *   or from the on-chain `EncryptedBaseline` PDA.
  * - `proving`: Hamming bounds and Groth16 proof generation.
- * - `signing`: the wallet prompt, up to the point the user approves.
+ * - `signing`: funding preflight and the wallet prompt, before approval.
  * - `submission`: building and broadcasting the transaction.
  * - `confirmation`: waiting for the cluster, and the on-chain result.
  *
@@ -97,7 +97,7 @@ const PHASE_POLICY = {
   // are bounds on the capture rather than a verdict on the person. The
   // validator has already accepted or rejected by this point.
   proving: { spend: "none", judged: false },
-  // A prompt the user never approved sends nothing.
+  // Funding preflight and a prompt the user never approved send nothing.
   signing: { spend: "none", judged: false },
   // Covers building the transaction as well as broadcasting it, and reports
   // `possible` for both. A build failure spent nothing, so the answer is
