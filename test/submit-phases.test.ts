@@ -1,14 +1,16 @@
 import { describe, it, expect } from "vitest";
 import { Keypair } from "@solana/web3.js";
 import { submitResetViaWallet } from "../src/submit/wallet";
+import { phaseChargesAttempt, phaseSpend } from "../src/phases";
+import { fundedPreflightConnection } from "./helpers/funding";
 
 /**
  * Phase attribution across the signing / submission / confirmation seam.
  *
  * Wallet adapters merge signing and sending into one `sendTransaction` call,
- * and that seam is where both 2026-07-31 production failures lived: a wallet
- * prompt that never appeared was reported as a proving timeout, and an
- * on-chain revert was reported as a validator rejection. The rules below are
+ * and that seam is where misattributed failures live: a wallet prompt that
+ * never appears can be reported as a proving timeout, and an on-chain revert
+ * as a validator rejection. The rules below are
  * what let a host describe each outcome correctly, so they are pinned here
  * rather than left to the call site.
  *
@@ -26,6 +28,7 @@ const AUTHORITY = Keypair.generate().publicKey;
 
 function fakeConnection(overrides: Record<string, unknown> = {}) {
   return {
+    ...fundedPreflightConnection(),
     rpcEndpoint: "http://localhost:8899",
     commitment: "confirmed",
     getLatestBlockhash: async () => ({
@@ -47,6 +50,48 @@ function fakeWallet(sendTransaction: () => Promise<string>) {
 }
 
 describe("sendAndConfirm phase attribution", () => {
+  it("refuses insufficient network fees before asking the wallet", async () => {
+    let walletCalls = 0;
+    const result = await submitResetViaWallet(new Uint8Array(32), {
+      wallet: fakeWallet(async () => { walletCalls += 1; return "unreachable"; }),
+      connection: fakeConnection({ getBalance: async () => 0 }),
+    });
+    expect(result).toMatchObject({ success: false, failedAt: "signing" });
+    expect(result.error).toContain("Insufficient funds");
+    expect(walletCalls).toBe(0);
+    expect(phaseSpend(result.failedAt)).toBe("none");
+    expect(phaseChargesAttempt(result.failedAt)).toBe(false);
+  });
+
+  it("refuses insufficient account rent before a wallet prompt", async () => {
+    let walletCalls = 0;
+    const result = await submitResetViaWallet(new Uint8Array(32), {
+      wallet: fakeWallet(async () => { walletCalls += 1; return "unreachable"; }),
+      connection: fakeConnection({
+        simulateTransaction: async () => ({
+          value: { err: { InsufficientFundsForRent: { account_index: 0 } }, logs: null },
+        }),
+      }),
+    });
+    expect(result).toMatchObject({ success: false, failedAt: "signing" });
+    expect(result.error).toContain("account rent");
+    expect(walletCalls).toBe(0);
+  });
+
+  it("does not ask the wallet when funding readback is unavailable", async () => {
+    let walletCalls = 0;
+    const result = await submitResetViaWallet(new Uint8Array(32), {
+      wallet: fakeWallet(async () => { walletCalls += 1; return "unreachable"; }),
+      connection: fakeConnection({
+        getBalance: async () => { throw new Error("RPC unavailable"); },
+      }),
+    });
+    expect(result).toMatchObject({ success: false, failedAt: "signing" });
+    expect(result.error).toContain("could not check");
+    expect(result.error).not.toContain("Insufficient funds");
+    expect(walletCalls).toBe(0);
+  });
+
   it("reports a confirmed reset without a phase", async () => {
     const result = await submitResetViaWallet(new Uint8Array(32), {
       wallet: fakeWallet(async () => "sig-ok"),
@@ -58,8 +103,8 @@ describe("sendAndConfirm phase attribution", () => {
   });
 
   it("attributes a declined prompt to signing", async () => {
-    // The one outcome that is certainly not on the wire, and the only reason
-    // `signing` exists as a phase distinct from `submission`.
+    // Among wallet-send failures, a declined prompt proves no broadcast.
+    // The funding preflight can also stop before that send call.
     const result = await submitResetViaWallet(new Uint8Array(32), {
       wallet: fakeWallet(async () => {
         throw new Error("User rejected the request.");

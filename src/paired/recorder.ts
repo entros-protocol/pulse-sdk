@@ -22,6 +22,8 @@ export interface FrameListener {
 }
 
 export interface PairedRecorder {
+  readonly ready: Promise<void>;
+  markNow(): number;
   readonly virtualDevice: boolean;
   readonly voiceIsolationApplied: boolean | null;
   /** The end of the last whole frame the tracker has read. Marks fall here. */
@@ -64,7 +66,7 @@ export async function startPairedRecorder(onFrame: FrameListener): Promise<Paire
 
   // A browser can deliver a lower rate than it was asked for. Paired segments
   // are 16 kHz by contract, so such a device cannot take part.
-  let canonicalizer: ReturnType<typeof createStreamingCanonicalizer>;
+  let canonicalizer: ReturnType<typeof createStreamingCanonicalizer> | null;
   try {
     canonicalizer = createStreamingCanonicalizer(context.sampleRate);
   } catch (error) {
@@ -77,10 +79,12 @@ export async function startPairedRecorder(onFrame: FrameListener): Promise<Paire
   let bufferStart = 0;
   let total = 0;
   let framed = 0;
-  // `performance.now()` against the canonical sample count, refreshed on every
-  // callback. Pointer events map to sample indices through it.
-  let anchorTime = performance.now();
-  let anchorSamples = 0;
+  let nativeReceived = 0;
+  let originMs = Number.POSITIVE_INFINITY;
+  let resolveReady: () => void = () => undefined;
+  const ready = new Promise<void>((resolve) => { resolveReady = resolve; });
+  const sampleIndexAt = (timeMs: number): number => Number.isFinite(originMs)
+    ? Math.max(0, Math.floor(((timeMs - originMs) * CANONICAL_SAMPLE_RATE) / 1000)) : 0;
   let stopped = false;
 
   const append = (samples: Float32Array): void => {
@@ -92,47 +96,50 @@ export async function startPairedRecorder(onFrame: FrameListener): Promise<Paire
     }
     buffer.set(samples, used);
     total += samples.length;
-    while (framed + FRAME_SAMPLES <= total) {
+    while (!stopped && framed + FRAME_SAMPLES <= total) {
       const start = framed - bufferStart;
-      onFrame(frameRms(buffer.subarray(start, start + FRAME_SAMPLES)), framed + FRAME_SAMPLES);
+      const level = frameRms(buffer.subarray(start, start + FRAME_SAMPLES));
       framed += FRAME_SAMPLES;
+      resolveReady();
+      onFrame(level, framed);
     }
   };
 
   const processor = context.createScriptProcessor(BUFFER_SIZE, 1, 1);
   processor.onaudioprocess = (event: AudioProcessingEvent) => {
-    if (stopped) return;
+    if (stopped || !canonicalizer) return;
     const input = new Float32Array(event.inputBuffer.getChannelData(0));
     // A buffer arrives once it is full, so its first sample was captured one
     // buffer's duration before this callback.
-    anchorTime = performance.now() - (input.length * 1_000) / context.sampleRate;
-    anchorSamples = total;
+    nativeReceived += input.length;
+    originMs = Math.min(originMs, performance.now() - (nativeReceived * 1000) / context.sampleRate);
     append(canonicalizer.push(input));
   };
   source.connect(processor);
   processor.connect(context.destination);
 
   return {
+    ready,
+    markNow: () => sampleIndexAt(performance.now()),
     virtualDevice,
     voiceIsolationApplied,
     framedSamples: () => framed,
-    sampleIndexAt(timeMs) {
-      const offset = Math.round(((timeMs - anchorTime) * CANONICAL_SAMPLE_RATE) / 1_000);
-      return Math.max(0, anchorSamples + offset);
-    },
+    sampleIndexAt,
     timeAt(sampleIndex) {
-      return anchorTime + ((sampleIndex - anchorSamples) * 1_000) / CANONICAL_SAMPLE_RATE;
+      return originMs + (sampleIndex * 1000) / CANONICAL_SAMPLE_RATE;
     },
     slice(start, end) {
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) throw new RangeError("Sample indices must be integers.");
       if (start < bufferStart || end > total || start > end) {
         throw new RangeError(`samples ${start}..${end} are not held`);
       }
       return buffer.slice(start - bufferStart, end - bufferStart);
     },
     releaseBefore(sampleIndex) {
-      const discard = Math.min(sampleIndex, total) - bufferStart;
+      const discard = Math.min(sampleIndex, framed) - bufferStart;
       if (discard <= 0) return;
       buffer.copyWithin(0, discard, total - bufferStart);
+      buffer.fill(0, total - bufferStart - discard, total - bufferStart);
       bufferStart += discard;
     },
     async stop() {
@@ -142,7 +149,10 @@ export async function startPairedRecorder(onFrame: FrameListener): Promise<Paire
       source.disconnect();
       processor.disconnect();
       stream.getTracks().forEach((track) => track.stop());
-      append(canonicalizer.flush());
+      buffer = new Float32Array(0);
+      bufferStart = total;
+      canonicalizer = null;
+      resolveReady();
       await context.close().catch(() => undefined);
     },
   };

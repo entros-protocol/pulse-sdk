@@ -14,7 +14,8 @@ import type { PostJsonResponse } from "../transport/post-json";
 import {
   AUDIO_FORMAT,
   audioDigest,
-  challengeDigest,
+  challengeDigestV2,
+  cueCommitment,
   decodePathTarget,
   type Digest,
   equalBytes,
@@ -31,7 +32,7 @@ import {
 } from "./transcript";
 import { MAX_ROUND_SAMPLES } from "./segment";
 
-export const PAIRED_PROTOCOL_VERSION = 1;
+export const PAIRED_PROTOCOL_VERSION = 2;
 export const PAIRED_ROUNDS = 3;
 export const MAX_SESSION_SAMPLES = 576_000;
 
@@ -54,6 +55,7 @@ export interface PairedReveal {
   pathTarget: Uint8Array;
   waypoints: GridPoint[];
   challengeDigest: Digest;
+  cueCommitment: Digest;
   /** When the round expires, on the local clock. */
   expiresAtMs: number;
 }
@@ -140,8 +142,10 @@ export function parseReveal(
   } catch {
     throw new PairedProtocolError("malformed_response");
   }
+  if (waypoints.length < 3 || waypoints.length > 4 || roundIndex < 1 || roundIndex > PAIRED_ROUNDS) throw new PairedProtocolError("malformed_response");
+  const cue = hexField(value, "cue_commitment", 32);
   const digest = hexField(value, "challenge_digest", 32);
-  if (!equalBytes(digest, challengeDigest(sessionNonce, roundIndex, roundNonce, word, pathTarget))) {
+  if (!equalBytes(digest, challengeDigestV2(sessionNonce, roundIndex, roundNonce, word, pathTarget, cue))) {
     throw new PairedProtocolError("challenge_mismatch");
   }
   return {
@@ -151,11 +155,12 @@ export function parseReveal(
     pathTarget,
     waypoints,
     challengeDigest: digest,
+    cueCommitment: cue,
     expiresAtMs: Math.min(nowMs + field(value, "expires_in_ms", isCount), sessionEndsAtMs),
   };
 }
 
-/** Reads an open response and refuses anything outside protocol version 1. */
+/** Reads an open response and refuses anything outside protocol version 2. */
 export function parseOpenResponse(value: unknown, nowMs: number): PairedSessionOpen {
   if (!isRecord(value)) throw new PairedProtocolError("malformed_response");
   if (
@@ -191,6 +196,27 @@ export function parseOpenResponse(value: unknown, nowMs: number): PairedSessionO
     expiresAtMs,
     reveal,
   };
+}
+
+export interface PairedCue {
+  point: GridPoint;
+  expiresAtMs: number;
+}
+
+export function buildCueRequest(open: PairedSessionOpen, reveal: PairedReveal, walletId: string): Json {
+  return {wallet_id:walletId,session_id:open.sessionId,round_index:reveal.roundIndex,round_nonce:toHex(reveal.roundNonce),challenge_digest:toHex(reveal.challengeDigest)};
+}
+
+export function parseCueResponse(value: unknown, open: PairedSessionOpen, reveal: PairedReveal, requestStartedAtMs: number): PairedCue {
+  if (!isRecord(value) || value.session_id !== open.sessionId || value.round_index !== reveal.roundIndex || !isRecord(value.point)) throw new PairedProtocolError("malformed_response");
+  if (!equalBytes(hexField(value,"round_nonce",32),reveal.roundNonce) || !equalBytes(hexField(value,"challenge_digest",32),reveal.challengeDigest)) throw new PairedProtocolError("challenge_mismatch");
+  const point = {x:field(value.point,"x",isCount),y:field(value.point,"y",isCount)};
+  const salt = hexField(value,"salt",32);
+  let actual: Digest;
+  try { actual = cueCommitment(open.sessionNonce,reveal.roundIndex,reveal.roundNonce,salt,point); }
+  catch { throw new PairedProtocolError("malformed_response"); }
+  if (!equalBytes(actual,reveal.cueCommitment)) throw new PairedProtocolError("challenge_mismatch");
+  return {point,expiresAtMs:Math.min(reveal.expiresAtMs,open.expiresAtMs,requestStartedAtMs+field(value,"expires_in_ms",isCount))};
 }
 
 /** `C_0`, the commitment round 1 chains from. */
@@ -335,6 +361,7 @@ export async function retryUntil<T>(
   clock: RetryClock,
 ): Promise<T> {
   for (let count = 0; ; count++) {
+    if (clock.now() >= deadlineMs) throw new PairedProtocolError("round_expired");
     const result = await attempt();
     if ("value" in result) return result.value;
     const wait = Math.max(backoffMs(count), result.waitMs ?? 0);

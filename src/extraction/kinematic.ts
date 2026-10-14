@@ -52,21 +52,20 @@ const MIN_WINDOW_COVERAGE = 0.9;
  *
  * The result is correlated against the F0 contour server-side, so the two have
  * to describe the same stretch of time. `window` is what makes that true, and
- * it is required rather than optional on purpose: this used to map motion's
- * array index proportionally onto audio's frame count, which silently
- * time-warped one stream against the other whenever their spans diverged.
- * `pulse-sdk@4.0.0` diverged them by trimming the pre-prompt lead-in out of the
- * audio alone, and cross-modal coupling fell from r=0.31 to r=0.03. A required
- * parameter turns the next such divergence into a compile error.
+ * it is required rather than optional on purpose: mapping motion's array index
+ * proportionally onto audio's frame count silently time-warps one stream
+ * against the other whenever their spans diverge, as they do once the
+ * pre-prompt lead-in is trimmed from the audio alone. A required parameter
+ * turns any such divergence into a compile error.
  *
  * `window` and {@link MotionSample.timestamp} are both in the
  * `performance.now()` domain, so they compare directly.
  *
  * Returns an empty array when the capture cannot support an honest contour:
  * too few samples, a degenerate window, or motion spanning less than
- * {@link MIN_WINDOW_COVERAGE} of it. The validator treats an absent contour as
- * "skip", which is the fail-safe direction. A misaligned one reads as weak
- * coupling and rejects a real person.
+ * {@link MIN_WINDOW_COVERAGE} of it. An absent contour is the honest answer
+ * for such a capture. A misaligned one reads as weak coupling and rejects a
+ * real person.
  */
 export function extractAccelerationMagnitude(
   samples: MotionSample[],
@@ -304,8 +303,8 @@ function computeMotionV2(
 ): number[] {
   const out: number[] = [];
 
-  // 1. Cross-axis covariance — 6 selected pairs (per blueprint §2.2). The
-  // pairs target identity-bearing motor coordinations: accel-gyro coupling
+  // 1. Cross-axis covariance — 6 selected pairs. The pairs target
+  // identity-bearing motor coordinations: accel-gyro coupling
   // (ax-gy, ay-gx, az-gz) for natural hand sway, accel-accel coupling
   // (ax-az, ay-az) for axis-of-grip leakage, and gyro-gyro coupling
   // (gx-gy) for wrist-rotation patterns.

@@ -25,7 +25,7 @@ import {
   toHex,
 } from "../src/paired/transcript";
 
-const VECTORS_SHA256 = "cb88f752aed0e29a0f2321e85a2ff3006e3c1f65a933d2c729c069574445e63d";
+const VECTORS_SHA256 = "917f232591b380b6565b09a0c2d29a48caaaae78a3d31fcc1441b09c127042e5";
 const vectorsText = readFileSync(resolve(__dirname, "fixtures/paired-round-vectors.json"), "utf8");
 const vectors = JSON.parse(vectorsText);
 
@@ -202,6 +202,8 @@ describe("paired-round vectors", () => {
       const completed = decisions.indexOf("complete");
       expect(completed === -1 ? null : completed, entry.name).toBe(entry.completedAtFrame);
       expect(tracker.runs(), entry.name).toEqual(entry.finalRuns);
+      expect(tracker.speechReady(), entry.name).toBe(entry.speechReady);
+      expect(tracker.firstVoicedFrame(), entry.name).toBe(entry.firstVoicedFrame);
     }
   });
 
@@ -233,5 +235,66 @@ describe("paired-round vectors", () => {
       );
       expect(toHex(digest), entry.name).toBe(entry.requestHash);
     }
+  });
+});
+
+it("matches the independent refined-boundary witnesses", () => {
+  for (const entry of vectors.trackerRefinements) {
+    const tracker = createRoundTracker();
+    for (const [level, count] of entry.priorLevels)
+      for (let index = 0; index < count; index++) tracker.observe(level);
+    tracker.begin([{ x: 200, y: 200 }], true);
+    for (const [level, count] of entry.levels)
+      for (let index = 0; index < count; index++) tracker.frame(level);
+    tracker.discardPrefix(entry.discardPrefix);
+    tracker.reach({ x: 200, y: 200 });
+    expect(tracker.frame(0.0003)).toBe(entry.decision);
+    expect(tracker.speechReady()).toBe(entry.speechReady);
+    expect(tracker.firstVoicedFrame()).toBe(entry.firstVoicedFrame);
+  }
+});
+
+
+it("reports the same active frame used by the adaptive tracker", () => {
+  const tracker = createRoundTracker();
+  for (let i = 0; i < 60; i++) tracker.observe(0.001);
+  tracker.begin([], false);
+  tracker.frame(0.003);
+  expect(tracker.speechActive()).toBe(false);
+  tracker.frame(0.004);
+  expect(tracker.speechActive()).toBe(true);
+  tracker.begin([], false);
+  expect(tracker.speechActive()).toBe(false);
+  for (let i = 0; i < 2400; i++) tracker.observe(0.02);
+  tracker.frame(0.05);
+  expect(tracker.speechActive()).toBe(false);
+  tracker.frame(0.08);
+  expect(tracker.speechActive()).toBe(true);
+});
+
+it("keeps speech readiness when the room changes before tracing", () => {
+  const tracker = createRoundTracker();
+  tracker.observe(0.001); tracker.observe(0.001);
+  const points = [{x:150,y:150},{x:150,y:700},{x:750,y:700}];
+  tracker.begin(points,true);
+  for (let i=0;i<6;i++) tracker.frame(0.05);
+  for (let i=0;i<12;i++) tracker.frame(0.001);
+  for (let i=0;i<160;i++) tracker.frame(0.04);
+  points.forEach(point => tracker.reach(point));
+  expect(tracker.frame(0.04)).toBe("complete");
+});
+
+
+describe("readiness after a refined capture boundary", () => {
+  it("keeps the later completed speech run when the first one is excluded", () => {
+    const tracker=createRoundTracker();
+    tracker.observe(.001);tracker.observe(.001);
+    tracker.begin([{x:200,y:200}],true);
+    for (const level of [...Array(6).fill(.05),...Array(12).fill(.001),...Array(6).fill(.05),...Array(12).fill(.001)]) tracker.frame(level);
+    expect(tracker.speechReady()).toBe(true);
+    tracker.discardPrefix(1);
+    tracker.reach({x:200,y:200});
+    expect(tracker.frame(.04)).toBe("complete");
+    expect(tracker.speechReady()).toBe(true);
   });
 });

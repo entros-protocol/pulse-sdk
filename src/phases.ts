@@ -1,9 +1,8 @@
 /**
  * Which stage of a verification failed, and what a host may conclude from it.
  *
- * This module exists because two production failures on 2026-07-31 were
- * reported as the wrong thing, and in both cases the phase was the missing
- * fact:
+ * Without an explicit phase, failures get reported as the wrong thing, and in
+ * both of these cases the phase is the missing fact:
  *
  *   - An on-chain revert rendered as "Validation rejected this attempt". The
  *     host inferred the stage from English prose, and its opaque-rejection
@@ -44,7 +43,7 @@
  * - `baseline`: finding a prior fingerprint to prove drift against, locally
  *   or from the on-chain `EncryptedBaseline` PDA.
  * - `proving`: Hamming bounds and Groth16 proof generation.
- * - `signing`: the wallet prompt, up to the point the user approves.
+ * - `signing`: funding preflight and the wallet prompt, before approval.
  * - `submission`: building and broadcasting the transaction.
  * - `confirmation`: waiting for the cluster, and the on-chain result.
  *
@@ -98,7 +97,7 @@ const PHASE_POLICY = {
   // are bounds on the capture rather than a verdict on the person. The
   // validator has already accepted or rejected by this point.
   proving: { spend: "none", judged: false },
-  // A prompt the user never approved sends nothing.
+  // Funding preflight and a prompt the user never approved send nothing.
   signing: { spend: "none", judged: false },
   // Covers building the transaction as well as broadcasting it, and reports
   // `possible` for both. A build failure spent nothing, so the answer is

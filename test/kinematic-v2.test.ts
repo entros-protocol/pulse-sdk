@@ -569,11 +569,10 @@ describe("mouse v2 — speed autocorrelation (indices 77..81)", () => {
 
 describe("mouse v2 — no remaining deterministic zeros across desktop sessions", () => {
   it("majority of v2 slots [54, 81) differ meaningfully between two distinct mouse traces", () => {
-    // Wave 2 fix contract: the 27 slots formerly zero-padded must now
-    // carry per-session signal. The pre-fix zero-pad produced 27 slots
-    // identical across all desktop users (~85 deterministic bits in the
-    // motion modality). After the fix, two distinct paths produce
-    // different values across the MAJORITY of these slots — some
+    // The 27 v2 slots must carry per-session signal. Zero-padding them
+    // would make 27 slots identical across all desktop users (~85
+    // deterministic bits in the motion modality). Two distinct paths must
+    // produce different values across the MAJORITY of these slots — some
     // individual slots (e.g., a covariance pair where both paths happen
     // to be 90°-out-of-phase) may legitimately land at zero on both
     // inputs and that's ok; the leak is wholesale identicality, not

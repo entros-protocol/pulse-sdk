@@ -39,16 +39,16 @@ export const MAX_CAPTURE_MS = 60000;
  * mark. Independent of `MAX_CAPTURE_MS`, which bounds how long the recorder
  * runs rather than how much of it is used.
  *
- * Mirrors `entros-validation::phrase_binding::MAX_AUDIO_SAMPLES` (320_000,
+ * Must equal the validator's maximum accepted phrase sample count (320,000,
  * i.e. 20 s at 16 kHz). The validator truncates anything longer to that bound
  * before transcribing, so overrunning costs a client the tail of its audio
  * and, with it, the phrase check.
  *
- * The two meet exactly rather than leaving room. Both comparisons are strict
- * `>`, so a capture of precisely 320,000 samples is untouched on both sides,
- * and loosening either to `>=` would truncate every maxed capture. That is
- * the invariant `test/audio.test.ts` pins against the server's constant, not
- * against this one.
+ * The two meet exactly rather than leaving room. The overrun check in
+ * `captureAudio` is a strict `>`, so a capture of precisely 320,000 samples is
+ * untouched, and loosening it to `>=` would truncate every maxed capture.
+ * `test/audio.test.ts` pins the cap against the literal sample count, not
+ * against this constant.
  *
  * It also keeps the body inside the executor's 1 MiB limit by construction.
  * Measured against a real 320,000-sample capture, the full body is 910,172

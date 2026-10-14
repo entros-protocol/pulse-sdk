@@ -45,8 +45,8 @@
     "floorRatio": 4,
     "floorPercentile": 0.1,
     "historyFrames": 2400,
-    "minSpeechRms": 0.01,
-    "minFloorRms": 0.002
+    "minSpeechRms": 0.004,
+    "minFloorRms": 0.001
   },
   "levelling": {
     "targetRms": 0.05,
@@ -1204,7 +1204,9 @@
           "gapFrames": 0,
           "qualifies": true
         }
-      ]
+      ],
+      "speechReady": true,
+      "firstVoicedFrame": 10
     },
     {
       "name": "a click train never counts as speech",
@@ -1355,7 +1357,9 @@
           "gapFrames": 9,
           "qualifies": false
         }
-      ]
+      ],
+      "speechReady": false,
+      "firstVoicedFrame": 10
     },
     {
       "name": "a word with a short stop inside stays one run",
@@ -1442,7 +1446,9 @@
           "gapFrames": 2,
           "qualifies": true
         }
-      ]
+      ],
+      "speechReady": true,
+      "firstVoicedFrame": 10
     },
     {
       "name": "an unfinished trace offers to continue after fifteen seconds",
@@ -1512,7 +1518,9 @@
           "gapFrames": 0,
           "qualifies": true
         }
-      ]
+      ],
+      "speechReady": true,
+      "firstVoicedFrame": 10
     },
     {
       "name": "speech before the trace finishes completes when the trace does",
@@ -1591,7 +1599,9 @@
           "gapFrames": 0,
           "qualifies": true
         }
-      ]
+      ],
+      "speechReady": true,
+      "firstVoicedFrame": 5
     },
     {
       "name": "a noisy room raises the bar above quiet speech",
@@ -1658,7 +1668,9 @@
         ]
       ],
       "completedAtFrame": null,
-      "finalRuns": []
+      "finalRuns": [],
+      "speechReady": false,
+      "firstVoicedFrame": null
     },
     {
       "name": "a noisy room still hears loud speech",
@@ -1737,7 +1749,9 @@
           "gapFrames": 0,
           "qualifies": true
         }
-      ]
+      ],
+      "speechReady": true,
+      "firstVoicedFrame": 10
     },
     {
       "name": "the speech-only tier needs no trace",
@@ -1787,7 +1801,9 @@
           "gapFrames": 0,
           "qualifies": true
         }
-      ]
+      ],
+      "speechReady": true,
+      "firstVoicedFrame": 10
     },
     {
       "name": "a burst shorter than a word does not count",
@@ -1862,7 +1878,9 @@
           "gapFrames": 0,
           "qualifies": false
         }
-      ]
+      ],
+      "speechReady": false,
+      "firstVoicedFrame": 10
     },
     {
       "name": "a word spoken before the floor is known counts once quiet arrives",
@@ -1932,7 +1950,9 @@
           "gapFrames": 0,
           "qualifies": true
         }
-      ]
+      ],
+      "speechReady": true,
+      "firstVoicedFrame": 0
     },
     {
       "name": "waypoints reached in reverse leave the trace unfinished",
@@ -2007,7 +2027,9 @@
           "gapFrames": 0,
           "qualifies": true
         }
-      ]
+      ],
+      "speechReady": true,
+      "firstVoicedFrame": 10
     },
     {
       "name": "a waypoint reached early counts once the trace returns to it in order",
@@ -2091,7 +2113,553 @@
           "gapFrames": 0,
           "qualifies": true
         }
-      ]
+      ],
+      "speechReady": true,
+      "firstVoicedFrame": 10
+    },
+    {
+      "name": "quiet speech uses a common gain",
+      "priorLevels": [
+        [
+          0.0003,
+          20
+        ]
+      ],
+      "traceRequired": false,
+      "waypoints": [],
+      "levels": [
+        [
+          0.0003,
+          6
+        ],
+        [
+          0.002,
+          10
+        ],
+        [
+          0.0003,
+          12
+        ]
+      ],
+      "reaches": [],
+      "decisions": [
+        [
+          "open",
+          27
+        ],
+        [
+          "complete",
+          1
+        ]
+      ],
+      "completedAtFrame": 27,
+      "finalRuns": [
+        {
+          "startFrame": 6,
+          "endFrame": 16,
+          "voicedFrames": 10,
+          "gapFrames": 0,
+          "qualifies": true
+        }
+      ],
+      "speechReady": true,
+      "firstVoicedFrame": 6
+    },
+    {
+      "name": "quiet speech below the former raw floor",
+      "priorLevels": [
+        [
+          0.0003,
+          20
+        ]
+      ],
+      "traceRequired": false,
+      "waypoints": [],
+      "levels": [
+        [
+          0.0003,
+          6
+        ],
+        [
+          0.0039,
+          10
+        ],
+        [
+          0.0003,
+          12
+        ]
+      ],
+      "reaches": [],
+      "decisions": [
+        [
+          "open",
+          27
+        ],
+        [
+          "complete",
+          1
+        ]
+      ],
+      "completedAtFrame": 27,
+      "finalRuns": [
+        {
+          "startFrame": 6,
+          "endFrame": 16,
+          "voicedFrames": 10,
+          "gapFrames": 0,
+          "qualifies": true
+        }
+      ],
+      "speechReady": true,
+      "firstVoicedFrame": 6
+    },
+    {
+      "name": "steady noise stays below its relative bar",
+      "priorLevels": [
+        [
+          0.0039,
+          20
+        ]
+      ],
+      "traceRequired": false,
+      "waypoints": [],
+      "levels": [
+        [
+          0.0039,
+          40
+        ]
+      ],
+      "reaches": [],
+      "decisions": [
+        [
+          "open",
+          40
+        ]
+      ],
+      "completedAtFrame": null,
+      "finalRuns": [],
+      "speechReady": false,
+      "firstVoicedFrame": null
+    },
+    {
+      "name": "low signal to noise does not become speech",
+      "priorLevels": [
+        [
+          0.003,
+          20
+        ]
+      ],
+      "traceRequired": false,
+      "waypoints": [],
+      "levels": [
+        [
+          0.003,
+          6
+        ],
+        [
+          0.0039,
+          10
+        ],
+        [
+          0.003,
+          12
+        ]
+      ],
+      "reaches": [],
+      "decisions": [
+        [
+          "open",
+          28
+        ]
+      ],
+      "completedAtFrame": null,
+      "finalRuns": [],
+      "speechReady": false,
+      "firstVoicedFrame": null
+    },
+    {
+      "name": "digital silence does not complete",
+      "priorLevels": [
+        [
+          0,
+          20
+        ]
+      ],
+      "traceRequired": false,
+      "waypoints": [],
+      "levels": [
+        [
+          0,
+          40
+        ]
+      ],
+      "reaches": [],
+      "decisions": [
+        [
+          "open",
+          40
+        ]
+      ],
+      "completedAtFrame": null,
+      "finalRuns": [],
+      "speechReady": false,
+      "firstVoicedFrame": null
+    },
+    {
+      "name": "the silence guard skips gain",
+      "priorLevels": [
+        [
+          0,
+          20
+        ]
+      ],
+      "traceRequired": false,
+      "waypoints": [],
+      "levels": [
+        [
+          0,
+          6
+        ],
+        [
+          9e-05,
+          10
+        ],
+        [
+          0,
+          12
+        ]
+      ],
+      "reaches": [],
+      "decisions": [
+        [
+          "open",
+          28
+        ]
+      ],
+      "completedAtFrame": null,
+      "finalRuns": [],
+      "speechReady": false,
+      "firstVoicedFrame": null
+    },
+    {
+      "name": "readiness survives a changed room before tracing",
+      "priorLevels": [
+        [
+          0.001,
+          2
+        ]
+      ],
+      "traceRequired": true,
+      "waypoints": [
+        [
+          200,
+          200
+        ],
+        [
+          500,
+          700
+        ],
+        [
+          800,
+          300
+        ]
+      ],
+      "levels": [
+        [
+          0.05,
+          6
+        ],
+        [
+          0.001,
+          12
+        ],
+        [
+          0.04,
+          161
+        ]
+      ],
+      "reaches": [
+        [
+          178,
+          200,
+          200
+        ],
+        [
+          178,
+          500,
+          700
+        ],
+        [
+          178,
+          800,
+          300
+        ]
+      ],
+      "decisions": [
+        [
+          "open",
+          178
+        ],
+        [
+          "complete",
+          1
+        ]
+      ],
+      "completedAtFrame": 178,
+      "finalRuns": [],
+      "speechReady": true,
+      "firstVoicedFrame": 0
+    },
+    {
+      "name": "latched speech boundary survives a loud gain transient",
+      "priorLevels": [
+        [
+          0.0003,
+          20
+        ]
+      ],
+      "traceRequired": true,
+      "waypoints": [
+        [
+          200,
+          200
+        ],
+        [
+          500,
+          700
+        ],
+        [
+          800,
+          300
+        ]
+      ],
+      "levels": [
+        [
+          0.0003,
+          6
+        ],
+        [
+          0.005,
+          10
+        ],
+        [
+          0.0003,
+          12
+        ],
+        [
+          0.5,
+          1
+        ]
+      ],
+      "reaches": [
+        [
+          28,
+          200,
+          200
+        ],
+        [
+          28,
+          500,
+          700
+        ],
+        [
+          28,
+          800,
+          300
+        ]
+      ],
+      "decisions": [
+        [
+          "open",
+          28
+        ],
+        [
+          "complete",
+          1
+        ]
+      ],
+      "completedAtFrame": 28,
+      "finalRuns": [
+        {
+          "startFrame": 28,
+          "endFrame": 29,
+          "voicedFrames": 1,
+          "gapFrames": 0,
+          "qualifies": false
+        }
+      ],
+      "speechReady": true,
+      "firstVoicedFrame": 6
+    }
+  ],
+  "trackerRefinements": [
+    {
+      "priorLevels": [
+        [
+          0.0003,
+          20
+        ]
+      ],
+      "levels": [
+        [
+          0.0003,
+          6
+        ],
+        [
+          0.0039,
+          10
+        ],
+        [
+          0.0003,
+          12
+        ]
+      ],
+      "discardPrefix": 0,
+      "decision": "complete",
+      "speechReady": true,
+      "firstVoicedFrame": 6
+    },
+    {
+      "priorLevels": [
+        [
+          0.0003,
+          20
+        ]
+      ],
+      "levels": [
+        [
+          0.0003,
+          6
+        ],
+        [
+          0.0039,
+          10
+        ],
+        [
+          0.0003,
+          12
+        ]
+      ],
+      "discardPrefix": 6,
+      "decision": "complete",
+      "speechReady": true,
+      "firstVoicedFrame": 0
+    },
+    {
+      "priorLevels": [
+        [
+          0.0003,
+          20
+        ]
+      ],
+      "levels": [
+        [
+          0.0003,
+          6
+        ],
+        [
+          0.0039,
+          10
+        ],
+        [
+          0.0003,
+          12
+        ]
+      ],
+      "discardPrefix": 16,
+      "decision": "open",
+      "speechReady": false,
+      "firstVoicedFrame": null
+    },
+    {
+      "priorLevels": [
+        [
+          0.0003,
+          20
+        ]
+      ],
+      "levels": [
+        [
+          0.0003,
+          6
+        ],
+        [
+          0.005,
+          10
+        ],
+        [
+          0.0003,
+          12
+        ],
+        [
+          0.5,
+          1
+        ]
+      ],
+      "discardPrefix": 0,
+      "decision": "complete",
+      "speechReady": true,
+      "firstVoicedFrame": 6
+    },
+    {
+      "priorLevels": [
+        [
+          0.0003,
+          20
+        ]
+      ],
+      "levels": [
+        [
+          0.0003,
+          6
+        ],
+        [
+          0.005,
+          10
+        ],
+        [
+          0.0003,
+          12
+        ],
+        [
+          0.5,
+          1
+        ]
+      ],
+      "discardPrefix": 6,
+      "decision": "complete",
+      "speechReady": true,
+      "firstVoicedFrame": 0
+    },
+    {
+      "priorLevels": [
+        [
+          0.0003,
+          20
+        ]
+      ],
+      "levels": [
+        [
+          0.0003,
+          6
+        ],
+        [
+          0.005,
+          10
+        ],
+        [
+          0.0003,
+          12
+        ],
+        [
+          0.5,
+          1
+        ]
+      ],
+      "discardPrefix": 16,
+      "decision": "open",
+      "speechReady": false,
+      "firstVoicedFrame": 12
     }
   ],
   "coarsePaths": [

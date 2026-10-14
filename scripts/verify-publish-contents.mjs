@@ -3,7 +3,7 @@
  * Pre-publish gate. Runs automatically via the `prepublishOnly` npm lifecycle.
  *
  * Guards against the class of leaks where an internal build target
- * (`dist-internal/`, harness artifacts, source trees) would be packed into
+ * (`dist-internal/`, test artifacts, source trees) would be packed into
  * the npm tarball alongside the public `dist/` build.
  *
  * It also guards the class where the published artifact misdescribes itself:

@@ -41,17 +41,17 @@ import { yieldToMainThread } from "../yield";
  * of floating-point rounding, orders of magnitude below the natural variation
  * between two captures of the same person.
  *
- * Ported from `entros-validation/src/f0_recheck.rs::design_lowpass_fir` and
- * `::resample_fir`, so the client and the validator share one filter design.
- * The cutoff differs deliberately, see {@link CUTOFF_FRACTION}.
+ * The filter design matches the validator's own windowed-sinc FIR resampler,
+ * so the client and the validator share one design. The cutoff differs
+ * deliberately, see {@link CUTOFF_FRACTION}.
  */
 
 /**
  * The one rate and bandwidth every capture is brought to before extraction or
  * transmission.
  *
- * Matches `entros-validation`'s Whisper and VAD rate (`MODEL_SAMPLE_RATE`,
- * `VAD_SAMPLE_RATE`), so the server's own resample becomes a no-op.
+ * Must equal the rate the validator transcribes and runs voice-activity
+ * detection at, so the server's own resample becomes a no-op.
  */
 export const CANONICAL_SAMPLE_RATE = 16000;
 
@@ -59,11 +59,10 @@ export const CANONICAL_SAMPLE_RATE = 16000;
  * Cutoff as a fraction of the canonical rate, leaving a transition band below
  * Nyquist. 0.475 puts it at 7600 Hz.
  *
- * The Rust reference uses `min(to_rate / 2, 3800)`, correct for its purpose:
- * it feeds YIN pitch detection, where everything above 3.8 kHz is noise.
- * Reusing that here would be a serious mistake. This audio still has to serve
- * the MFCC bank, the LTAS features and Whisper transcription, all of which
- * read the full speech band.
+ * A pitch-only resampler can cut far lower, because pitch detection treats
+ * everything above a few kHz as noise. Doing that here would be a serious
+ * mistake. This audio still has to serve the MFCC bank, the LTAS features and
+ * Whisper transcription, all of which read the full speech band.
  *
  * The exact value matters less than the fact that every capture meets the same
  * one. A capture band-limited at 7600 Hz by this filter is comparable with any
@@ -141,7 +140,7 @@ export interface CanonicalCapture {
  * Design a lowpass FIR by the windowed-sinc method with a Hamming window,
  * normalized to unit gain at DC.
  *
- * `cutoffHz` is normalized against `sampleRate`, matching the Rust reference.
+ * `cutoffHz` is normalized against `sampleRate`, matching the validator's design.
  */
 function designLowpassFir(
   sampleRate: number,
@@ -247,14 +246,14 @@ export async function resampleTo(
 
   for (let i = 0; i < outputLength; i++) {
     // Output sample i sits at input position `i * ratio`, an integer only when
-    // the ratio is. Rounding to the nearest input sample, what the Rust
-    // reference does, because it only ever runs at exact ratios of 2 and 6 -
-    // leaves a periodic wobble of up to half a source sample. At 44.1 kHz that
-    // is 11.3 microseconds, about 0.14% of a 120 Hz pitch period, inside the
-    // range of the jitter features the pipeline measures. Measured cost of
-    // rounding instead of interpolating: 20 dB of error at 200 Hz, 34 dB at
-    // 997 Hz. It would put a device-dependent term back into the fingerprint,
-    // which is the defect this module exists to remove.
+    // the ratio is. Rounding to the nearest input sample, which is sound only
+    // at exact integer ratios, leaves a periodic wobble of up to half a source
+    // sample. At 44.1 kHz that is 11.3 microseconds, about 0.14% of a 120 Hz
+    // pitch period, inside the range of the jitter features the pipeline
+    // measures. Measured cost of rounding instead of interpolating: 20 dB of
+    // error at 200 Hz, 34 dB at 997 Hz. It would put a device-dependent term
+    // back into the fingerprint, which is the defect this module exists to
+    // remove.
     const pos = i * ratio;
     const base = Math.floor(pos);
     const frac = pos - base;

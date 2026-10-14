@@ -1,6 +1,6 @@
 {
   "name": "@entros/pulse-sdk",
-  "version": "4.14.0",
+  "version": "4.16.0",
   "description": "Entros client SDK for behavioral capture, commitments, re-verification proofs, and devnet submission",
   "license": "MIT",
   "homepage": "https://entros.io",
@@ -26,9 +26,9 @@
   ],
   "scripts": {
     "build": "tsup",
-    "build:internal": "IAM_INTERNAL_TEST=1 tsup",
+    "build:internal": "ENTROS_INTERNAL_TEST=1 tsup",
     "test": "vitest run",
-    "test:internal": "IAM_INTERNAL_TEST=1 vitest run test/internal-test-hooks.test.ts test/validate-payload.test.ts",
+    "test:internal": "ENTROS_INTERNAL_TEST=1 vitest run test/internal-test-hooks.test.ts test/validate-payload.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "measure:fingerprint-architecture": "tsx scripts/measure-fingerprint-architecture.ts",

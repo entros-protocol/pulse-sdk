@@ -23,6 +23,7 @@ import { readIntegratorEvidence } from "../src/identity/integrator";
 import { upgradeIdentityLayoutViaWallet } from "../src/submit/wallet";
 import { prepareWalletProofRequest } from "../src/submit/request";
 import { createEvidenceFixture } from "./fixtures/integrator-evidence";
+import { fundedPreflightConnection } from "./helpers/funding";
 
 const wallet = new PublicKey(new Uint8Array(32).fill(61));
 const manifest: RequestBoundManifest = {
@@ -322,6 +323,7 @@ describe("trusted isolated deployment", () => {
         },
       },
       connection: {
+        ...fundedPreflightConnection(),
         getGenesisHash: async () => manifest.genesisHash,
         getLatestBlockhash: async () => ({
           blockhash: "11111111111111111111111111111111",

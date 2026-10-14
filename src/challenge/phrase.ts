@@ -29,9 +29,7 @@ function secureRandom(max: number): number {
 /**
  * FALLBACK challenge-phrase generator. Used only when the executor's
  * `/challenge` endpoint is unreachable; the authoritative phrase comes from
- * the server (5 real words drawn from a curated English-word dictionary). On
- * this fallback path, validation skips the phrase verification step —
- * other server-side checks still run.
+ * the server (5 real words drawn from a curated English-word dictionary).
  *
  * Output is 5-6 syllable pairs, forming nonsensical but speakable words.
  * Uses crypto.getRandomValues for unpredictable challenge generation.

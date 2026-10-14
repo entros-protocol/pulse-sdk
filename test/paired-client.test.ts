@@ -10,6 +10,8 @@ import {
   initialCommitment,
   PairedProtocolError,
   parseCommitResponse,
+  parseCueResponse,
+  buildCueRequest,
   parseOpenResponse,
   parseReveal,
   refusalOf,
@@ -19,7 +21,7 @@ import { toHex } from "../src/paired/transcript";
 import type { PostJsonResponse } from "../src/transport/post-json";
 
 const vectors = JSON.parse(
-  readFileSync(resolve(__dirname, "fixtures/paired-round-vectors.json"), "utf8"),
+  readFileSync(resolve(__dirname, "fixtures/paired-round-v2-vectors.json"), "utf8"),
 );
 const session = vectors.sessions[0];
 const rounds = session.roundEntries;
@@ -32,6 +34,7 @@ function reveal(index: number, overrides: Record<string, unknown> = {}) {
     word: round.word,
     path_target_hex: round.pathTargetHex,
     challenge_digest: round.challengeDigestHex,
+    cue_commitment: round.cueCommitmentHex,
     expires_in_ms: 120_000,
     ...overrides,
   };
@@ -40,7 +43,7 @@ function reveal(index: number, overrides: Record<string, unknown> = {}) {
 function openBody(overrides: Record<string, unknown> = {}) {
   return {
     protocol: "paired",
-    protocol_version: 1,
+    protocol_version: 2,
     session_id: "00112233445566778899aabbccddeeff",
     session_nonce: session.sessionNonceHex,
     attempt_binding: session.attemptBindingDigestHex,
@@ -100,7 +103,7 @@ describe("paired open response", () => {
   it("refuses another protocol, tier, format or bound", () => {
     for (const change of [
       { protocol: "single" },
-      { protocol_version: 2 },
+      { protocol_version: 1 },
       { tier: "speech_only" },
       { audio_format: "pcm_s16le_48000_mono" },
       { rounds: 4 },
@@ -295,6 +298,7 @@ describe("paired refusals and retries", () => {
     expect(finalizeRetryAfterMs(response(503, { reason: "validation_unavailable" }), 6)).toBe(4_000);
     expect(finalizeRetryAfterMs(response(503, { reason: "technical_failure" }), 0)).toBeNull();
     expect(finalizeRetryAfterMs(response(400, { reason: "trace_incomplete" }), 0)).toBeNull();
+    expect(finalizeRetryAfterMs(response(400, { reason: "audio_evidence_insufficient" }), 0)).toBeNull();
     expect(finalizeRetryAfterMs(response(409, { reason: "session_consumed" }), 0)).toBeNull();
     expect(finalizeRetryAfterMs(response(200, { valid: true }), 0)).toBeNull();
   });
@@ -362,5 +366,29 @@ describe("paired finalize success", () => {
   it("requires a receipt for a transition and none for an update", () => {
     expect(checkFinalizeSuccess({ valid: true }, binding)).toMatch(/no receipt/);
     expect(checkFinalizeSuccess({ valid: true }, { wallet, finalDigest })).toEqual({});
+  });
+});
+
+
+describe("paired cue opening", () => {
+  const open=()=>parseOpenResponse(openBody(),1000);
+  const opening=(sessionOpen: ReturnType<typeof open>)=>({
+    ...buildCueRequest(sessionOpen,sessionOpen.reveal,"11111111111111111111111111111111"),
+    point:{x:rounds[0].cuePoint[0],y:rounds[0].cuePoint[1]},salt:rounds[0].cueSaltHex,expires_in_ms:6000,
+  });
+  it("verifies the independent opening and anchors its duration to request start", () => {
+    const sessionOpen=open();
+    const first=parseCueResponse(opening(sessionOpen),sessionOpen,sessionOpen.reveal,1500);
+    expect(first.expiresAtMs).toBe(7500);
+    const retry=parseCueResponse({...opening(sessionOpen),expires_in_ms:5000},sessionOpen,{...sessionOpen.reveal,expiresAtMs:first.expiresAtMs},3000);
+    expect(retry.expiresAtMs).toBe(first.expiresAtMs);
+  });
+  it("refuses altered binding, opening, coordinates and salt", () => {
+    const sessionOpen=open();
+    for (const changed of [{session_id:"00".repeat(16)},{round_index:2},{round_nonce:"00".repeat(32)},
+      {challenge_digest:"00".repeat(32)},{salt:"00".repeat(32)},{salt:"ab"},{point:{x:149,y:500}},
+      {point:{x:200.5,y:500}},{point:{x:850,y:850}}]) {
+      expect(()=>parseCueResponse({...opening(sessionOpen),...changed},sessionOpen,sessionOpen.reveal,1000)).toThrow(PairedProtocolError);
+    }
   });
 });

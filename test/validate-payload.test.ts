@@ -19,7 +19,7 @@ import {
 
 // Body-shape assertions need the internal injection hook (see
 // internal-test-hooks.test.ts). Under default `npm test` these are skipped.
-const isInternalTestBuild = process.env.IAM_INTERNAL_TEST === "1";
+const isInternalTestBuild = process.env.ENTROS_INTERNAL_TEST === "1";
 
 function validAudio(): AudioCapture {
   const samples = new Float32Array(20000);

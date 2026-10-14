@@ -19,6 +19,7 @@ import {
 import type { SignedReceiptDto } from "../src/submit/types";
 import { qualifyingTransaction } from "../src/identity/integrator-transaction";
 import { entrosVerifierIdl } from "../src/protocol/idl";
+import { fundedPreflightConnection } from "./helpers/funding";
 
 const wallet = Keypair.fromSeed(new Uint8Array(32).fill(19)).publicKey;
 function deploymentFixture(isolated = false) {
@@ -67,6 +68,7 @@ function deploymentFixture(isolated = false) {
     ),
   };
   const connection = {
+    ...fundedPreflightConnection(),
     rpcEndpoint: "http://localhost:8899",
     commitment: "confirmed",
     getGenesisHash: async () => manifest.genesisHash,

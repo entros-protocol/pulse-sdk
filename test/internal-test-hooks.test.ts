@@ -6,11 +6,11 @@ import type {
   TouchSample,
 } from "../src/sensor/types";
 
-// `IAM_INTERNAL_TEST=1 npm run test:internal` flips vitest's `define` constant
-// so __injectSensorData accepts injection. Default `npm test` keeps it off,
+// `npm run test:internal` sets ENTROS_INTERNAL_TEST=1, which flips vitest's
+// `define` constant so __injectSensorData accepts injection. Default `npm test` keeps it off,
 // verifying the production throw path. The test file runs under both modes,
 // with assertions gated by this flag.
-const isInternalTestBuild = process.env.IAM_INTERNAL_TEST === "1";
+const isInternalTestBuild = process.env.ENTROS_INTERNAL_TEST === "1";
 
 function validAudio(): AudioCapture {
   const samples = new Float32Array(20000);
@@ -80,12 +80,12 @@ describe("PulseSession.__injectSensorData — production-build behavior", () => 
           motion: validMotion(),
           touch: validTouch(),
         }),
-      ).toThrow(/internal test builds/i);
+      ).toThrow(/not available in this build/i);
     },
   );
 
   it.skipIf(isInternalTestBuild)(
-    "throw message instructs how to enable the hook",
+    "throw message does not describe how to enable the hook",
     () => {
       const session = newSession();
       try {
@@ -96,7 +96,9 @@ describe("PulseSession.__injectSensorData — production-build behavior", () => 
         });
         throw new Error("expected __injectSensorData to throw");
       } catch (err) {
-        expect((err as Error).message).toMatch(/IAM_INTERNAL_TEST=1/);
+        const message = (err as Error).message;
+        expect(message).toBe("PulseSession.__injectSensorData is not available in this build.");
+        expect(message).not.toMatch(/INTERNAL_TEST/);
       }
     },
   );

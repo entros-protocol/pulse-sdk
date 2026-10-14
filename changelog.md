@@ -9,6 +9,29 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+<!-- generated-release:4.16.0 -->
+## [4.16.0] - 2026-10-13
+
+- Extract capture level normalization into a shared module (bbb4e57).
+- Base the paired speech bar on the normalized capture level. Quiet captures keep progressing through rounds; latched speech survives recorder boundary refinement. (55cbb57).
+- Add anchor_retry and paired_required verification reasons (19992c5).
+- Resync paired round test vectors with the gain-aware tracker (188ba7c).
+- Check wallet funding before submitting transactions (bafa48f).
+<!-- /generated-release:4.16.0 -->
+
+<!-- generated-release:4.15.0 -->
+## [4.15.0] - 2026-09-30
+
+- Rename the internal test flag and build the published package without source maps or comments. (e32a674).
+- Remove attack-cost framing from the penetration test. (b06c7c0).
+- State validator constraints in comments without private repository paths. (65b1c82).
+- Implement paired protocol version 2 cues in the browser client (ce92fef).
+- Add paired v2 vector fixtures and client, session and transport regressions (70e3da0).
+- Clamp the refined round boundary at the round's first voiced frame (9720a96).
+- Cover a stalled-pipeline clock refinement crossing the spoken word (d641c09).
+- Lower the paired speech floor so quiet accepted words latch readiness. Owner acceptance showed a clearly transcribed word at 0.005-0.01 raw frame RMS against the old 0.01 floor; the bar now starts at 0.004 with a 0.001 noise-floor bound, and the shared vectors and their SHA-256 pins resync to match. (4622685).
+<!-- /generated-release:4.15.0 -->
+
 <!-- generated-release:4.14.0 -->
 ## [4.14.0] - 2026-09-26
 

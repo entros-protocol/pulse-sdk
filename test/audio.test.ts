@@ -406,9 +406,8 @@ describe("captureAudio capture-window mark", () => {
 });
 
 /**
- * The transmitted-length cap. It mirrors the validator's own
- * `MAX_AUDIO_SAMPLES`, past which phrase binding is skipped and the
- * verification silently passes, so the cap exists to make that unreachable.
+ * The transmitted-length cap. It must equal the validator's maximum accepted
+ * phrase sample count, so every transmitted sample reaches phrase binding.
  *
  * Which end survives depends on where the phrase is. With a mark, index 0 is
  * the prompt and speech is at the front. Without one, every integrator who
@@ -458,10 +457,9 @@ describe("captureAudio transmitted-length cap", () => {
    * Pinned against the server's number, not against our own constant, or the
    * assertion moves with whatever it is meant to be checking.
    *
-   * `entros-validation::phrase_binding::MAX_AUDIO_SAMPLES` is 320_000, and the
-   * comparison there is `projected > MAX`, so 320_000 exactly is the largest
-   * capture that still gets phrase binding. Margin is zero by design: one
-   * sample more and the validator skips the check and passes silently.
+   * The validator accepts at most 320,000 phrase samples (20 s at 16 kHz), so
+   * 320,000 exactly is the largest capture it binds in full. Margin is zero by
+   * design: a longer transmission loses audio the phrase check needs.
    */
   it("caps at exactly the validator's MAX_AUDIO_SAMPLES", async () => {
     expect(CAP_SAMPLES).toBe(320_000);
@@ -555,8 +553,8 @@ describe("captureAudio reports the transmitted window", () => {
 
   it("reports an empty window for a capture that produced nothing", async () => {
     // No frames at all. Equal bounds make `extractAccelerationMagnitude`
-    // return no contour, so the coupling check skips rather than correlating
-    // against a buffer that never existed.
+    // return no contour rather than one correlated against a buffer that
+    // never existed.
     const { result } = await run({ frames: 0 });
     expect(result.samples.length).toBe(0);
     expect(result.windowEndMs - result.windowStartMs).toBe(0);
@@ -570,8 +568,8 @@ describe("captureAudio reports the transmitted window", () => {
  * it leaves the device, so the level of the transmitted audio is a property of
  * that target and says nothing about the capture. A validator can therefore see
  * healthy audio while the user was barely audible, which is exactly the state
- * that made the "microphone too quiet" warning impossible to adjudicate from
- * server logs on 2026-08-01.
+ * that makes the "microphone too quiet" warning impossible to adjudicate from
+ * server logs.
  *
  * The pair that resolves it is `gainClipped` against `voicedFrameRatio`.
  * Normalisation recovers input down to 0.05 / 50 = 0.001 RMS, while hosts warn

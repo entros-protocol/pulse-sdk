@@ -113,11 +113,10 @@ import {
   getOrDeriveBaselineKey,
 } from "./identity/baseline";
 
-// Build-time constant. Replaced by tsup `define` (true when IAM_INTERNAL_TEST=1)
-// and by vitest `define`. In default builds (npm publish path) this is `false`
-// and any test hook short-circuits to throw — guaranteeing the harness-only
+// Build-time constant, replaced by tsup and vitest `define`. It is `false` in
+// default builds (the npm publish path), where every test hook throws, so the
 // injection path is unreachable in published artifacts.
-declare const __IAM_INTERNAL_TEST__: boolean;
+declare const __ENTROS_INTERNAL_TEST__: boolean;
 
 type ResolvedConfig = Required<Pick<PulseConfig, "cluster" | "threshold">> &
   PulseConfig;
@@ -363,9 +362,8 @@ function remainingValidationChallengeMs(
  * Used by both PulseSDK.verify() and PulseSession.complete().
  */
 // Minimum sample counts for meaningful feature extraction.
-// Exported so consumers (including the internal-build-only red team harness)
-// can enforce the same thresholds upstream and surface clearer errors than
-// the SDK's data-quality gate would.
+// Exported so consumers can enforce the same minimums upstream and surface
+// clearer errors than the SDK's data-quality gate would.
 export const MIN_AUDIO_SAMPLES = 16000; // ~1 second at 16 kHz
 export const MIN_MOTION_SAMPLES = 10;
 export const MIN_TOUCH_SAMPLES = 10;
@@ -553,6 +551,8 @@ export interface ValidationEvidence {
  * posts the single-capture request to `/validate-features`.
  */
 export interface ValidationTarget {
+  /** Cancels validation when the capture owner ends the session. */
+  signal?: AbortSignal;
   /** The executor path, such as `/validate-session`. */
   path: string;
   /** Builds the request body. */
@@ -581,9 +581,11 @@ async function sendValidation(
   deadlineMs: number,
   target?: ValidationTarget,
 ): Promise<PostJsonResponse> {
+  if (target?.signal?.aborted) throw new Error("Verification cancelled.");
   const retryAfterMs = target?.retryAfterMs;
   if (!target || !retryAfterMs) return send(deadlineMs);
   for (let attempt = 0; ; attempt++) {
+    if (target.signal?.aborted) throw new Error("Verification cancelled.");
     let response: PostJsonResponse | null = null;
     let failure: unknown = null;
     try {
@@ -596,7 +598,13 @@ async function sendValidation(
       if (response) return response;
       throw failure;
     }
-    await new Promise((resolve) => setTimeout(resolve, wait));
+    await new Promise<void>((resolve,reject) => {
+      const signal=target.signal;
+      const abort=() => {clearTimeout(timer);signal?.removeEventListener("abort",abort);reject(new Error("Verification cancelled."));};
+      const timer=setTimeout(() => {signal?.removeEventListener("abort",abort);resolve();},wait);
+      signal?.addEventListener("abort",abort,{once:true});
+      if (signal?.aborted) abort();
+    });
   }
 }
 
@@ -716,8 +724,7 @@ async function extractFingerprintAndValidate(
       // Encode captured audio for server-side phrase verification. The
       // validator transcribes the audio and matches it against the
       // server-issued challenge phrase (which the executor looks up by
-      // nonce). If audio is absent, the validation service skips the
-      // phrase check — preserving backward compatibility for older SDKs.
+      // nonce).
       //
       // We also transmit the `sampleRate` of the buffer. Browsers treat the
       // 16kHz AudioContext request as a hint and some (Safari with Bluetooth
@@ -844,6 +851,7 @@ async function extractFingerprintAndValidate(
           postJson(validateUrl, body, {
             headers: validateHeaders,
             stallMs: VALIDATE_UPLOAD_STALL_MS,
+            signal: target?.signal,
             deadlineMs,
             onUploadProgress: (loaded, total) => {
               // Same stage label as before. `popup-content.tsx` matches on
@@ -926,10 +934,9 @@ async function extractFingerprintAndValidate(
         );
       }
     } catch (err) {
-      // The request never produced a response. Previously this path silently
-      // continued and skipped server-side validation, which let a
-      // network-failure attacker bypass server-side checks entirely, so it
-      // returns a recoverable error and the host surfaces a retry CTA.
+      // The request never produced a response. Server-side validation is
+      // mandatory, so this returns a recoverable error and the host surfaces a
+      // retry CTA rather than continuing without it.
       //
       // The four transport failures used to collapse into one string, which
       // is how a slow uplink came to be reported as an unreachable service.
@@ -2300,12 +2307,10 @@ export class PulseSession {
   // --- Test hooks (internal builds only) ---
 
   /**
-   * @internal Test-only. Primes the session with pre-captured sensor data,
-   * bypassing browser capture APIs. Throws unless built with IAM_INTERNAL_TEST=1.
-   * Stripped from the published .d.ts so npm consumers never see it. Used by the
-   * red team harness to drive the real verification pipeline (extraction →
-   * SimHash → TBH → proof → submit) against synthetic sensor data — never
-   * available to npm consumers.
+   * @internal Test-only. Primes the session with pre-captured sensor data in
+   * place of browser capture, so internal test builds can drive the real
+   * verification pipeline (extraction, SimHash, TBH, proof, submit). Throws in
+   * every other build and is stripped from the published .d.ts.
    */
   __injectSensorData(data: {
     audio: AudioCapture;
@@ -2317,11 +2322,8 @@ export class PulseSession {
     // direct ts-node/tsx execution that bypasses tsup/vitest `define`).
     // Without this, a missing build-time replacement throws ReferenceError
     // before the user-facing message can fire.
-    if (typeof __IAM_INTERNAL_TEST__ !== "boolean" || !__IAM_INTERNAL_TEST__) {
-      throw new Error(
-        "PulseSession.__injectSensorData is only available in internal test builds. " +
-          "Set IAM_INTERNAL_TEST=1 when building pulse-sdk from source.",
-      );
+    if (typeof __ENTROS_INTERNAL_TEST__ !== "boolean" || !__ENTROS_INTERNAL_TEST__) {
+      throw new Error("PulseSession.__injectSensorData is not available in this build.");
     }
     const conflicts: string[] = [];
     if (this.audioStageState === "capturing") conflicts.push("audio");

@@ -10,6 +10,7 @@ import {
 import { PROGRAM_IDS } from "../src/config";
 import { submitRebaselineViaWallet } from "../src/submit/wallet";
 import type { SignedReceiptDto } from "../src/submit/types";
+import { fundedPreflightConnection } from "./helpers/funding";
 
 function discriminator(name: string): Buffer {
   return createHash("sha256").update(`global:${name}`).digest().subarray(0, 8);
@@ -49,6 +50,7 @@ describe("projection rebaseline transaction", () => {
       signAllTransactions: async (transactions: Transaction[]) => transactions,
     };
     const connection = {
+      ...fundedPreflightConnection(),
       rpcEndpoint: "http://localhost:8899",
       commitment: "confirmed",
       getLatestBlockhash: async () => ({
@@ -98,6 +100,7 @@ describe("projection rebaseline transaction", () => {
         signAllTransactions: async (transactions: Transaction[]) => transactions,
       },
       connection: {
+        ...fundedPreflightConnection(),
         getLatestBlockhash: async () => ({
           blockhash: "11111111111111111111111111111111",
           lastValidBlockHeight: 1,
