@@ -9,6 +9,7 @@ import {
 } from "../src/submit/associated-token";
 import { submitViaWallet } from "../src/submit/wallet";
 import type { SignedReceiptDto } from "../src/submit/types";
+import { fundedPreflightConnection } from "./helpers/funding";
 
 const AUTHORITY = Keypair.fromSeed(new Uint8Array(32).fill(23)).publicKey;
 
@@ -70,6 +71,7 @@ describe("first-verification mint receipt", () => {
           signAllTransactions: async (transactions: Transaction[]) => transactions,
         },
         connection: {
+          ...fundedPreflightConnection(),
           getLatestBlockhash: async () => ({
             blockhash: "11111111111111111111111111111111",
             lastValidBlockHeight: 1,

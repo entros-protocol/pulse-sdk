@@ -3,6 +3,7 @@ import { Keypair, Transaction } from "@solana/web3.js";
 import { ENCRYPTED_BASELINE_BLOB_BYTES } from "../src/identity/baseline";
 import { submitViaWallet } from "../src/submit/wallet";
 import type { SignedReceiptDto } from "../src/submit/types";
+import { fundedPreflightConnection } from "./helpers/funding";
 
 /** The largest serialized transaction the network accepts, in bytes. */
 const PACKET_DATA_SIZE = 1232;
@@ -28,6 +29,7 @@ function v3Receipt(): SignedReceiptDto {
 
 function connectionFixture() {
   return {
+    ...fundedPreflightConnection(),
     rpcEndpoint: "http://localhost:8899",
     commitment: "confirmed",
     getLatestBlockhash: async () => ({

@@ -9,6 +9,16 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+<!-- generated-release:4.16.0 -->
+## [4.16.0] - 2026-10-13
+
+- Extract capture level normalization into a shared module (bbb4e57).
+- Base the paired speech bar on the normalized capture level. Quiet captures keep progressing through rounds; latched speech survives recorder boundary refinement. (55cbb57).
+- Add anchor_retry and paired_required verification reasons (19992c5).
+- Resync paired round test vectors with the gain-aware tracker (188ba7c).
+- Check wallet funding before submitting transactions (bafa48f).
+<!-- /generated-release:4.16.0 -->
+
 <!-- generated-release:4.15.0 -->
 ## [4.15.0] - 2026-09-30
 
