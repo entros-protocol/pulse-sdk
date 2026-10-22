@@ -27,6 +27,23 @@ function v3Receipt(): SignedReceiptDto {
   };
 }
 
+function v4UpdateReceipt(): SignedReceiptDto {
+  const message = Buffer.alloc(136);
+  Buffer.from("entros-validator-receipt-v4\0", "ascii").copy(message, 0);
+  message[28] = 4;
+  message.writeUInt16LE(1, 29);
+  AUTHORITY.toBuffer().copy(message, 31);
+  Buffer.alloc(32, 17).copy(message, 63);
+  message.writeBigInt64LE(1_790_000_000n, 95);
+  Buffer.alloc(32, 9).copy(message, 103);
+  message[135] = 2;
+  return {
+    validator_pubkey_hex: "8c".repeat(32),
+    signature_hex: "ab".repeat(64),
+    message_hex: message.toString("hex"),
+  };
+}
+
 function connectionFixture() {
   return {
     ...fundedPreflightConnection(),
@@ -72,5 +89,51 @@ describe("receipt transaction size", () => {
     expect(captured!.instructions[1]!.data.length).toBe(16 + 32 + 64 + 136);
     expect(size).toBeLessThanOrEqual(PACKET_DATA_SIZE);
     console.info(`first mint with a v3 receipt: ${size} bytes, ${PACKET_DATA_SIZE - size} to spare`);
+  });
+
+  it("fits a compact re-verification with a v4 update receipt digest and encrypted baseline", async () => {
+    let captured: Transaction | undefined;
+    const publicInputs = [
+      new Uint8Array(32).fill(17),
+      new Uint8Array(32).fill(34),
+      (() => {
+        const b = new Uint8Array(32);
+        b[31] = 30;
+        return b;
+      })(),
+      (() => {
+        const b = new Uint8Array(32);
+        b[31] = 3;
+        return b;
+      })(),
+    ];
+    const result = await submitViaWallet(
+      { proofBytes: new Uint8Array(256), publicInputs },
+      publicInputs[0]!,
+      {
+        wallet: {
+          publicKey: AUTHORITY,
+          sendTransaction: async (transaction: Transaction) => {
+            captured = transaction;
+            return "update-signature";
+          },
+          signTransaction: async (transaction: Transaction) => transaction,
+          signAllTransactions: async (transactions: Transaction[]) => transactions,
+        },
+        connection: connectionFixture(),
+        isFirstVerification: false,
+        signedReceipt: v4UpdateReceipt(),
+        encryptedBaselineBlob: new Uint8Array(ENCRYPTED_BASELINE_BLOB_BYTES),
+      },
+    );
+    expect(result.success).toBe(true);
+    const size = captured!.serialize({
+      requireAllSignatures: false,
+      verifySignatures: false,
+    }).length;
+    // The Ed25519 instruction for v4 signs the 32-byte SHA-256 digest of the 136B preimage.
+    expect(captured!.instructions[2]!.data.length).toBe(16 + 32 + 64 + 32);
+    expect(size).toBeLessThanOrEqual(PACKET_DATA_SIZE);
+    console.info(`re-verify with a v4 update receipt digest: ${size} bytes, ${PACKET_DATA_SIZE - size} to spare`);
   });
 });

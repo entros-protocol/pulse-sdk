@@ -14,13 +14,15 @@ import { fundedPreflightConnection } from "./helpers/funding";
 const AUTHORITY = Keypair.fromSeed(new Uint8Array(32).fill(23)).publicKey;
 
 const receipt = (commitment: Uint8Array): SignedReceiptDto => {
-  const message = Buffer.alloc(103);
-  Buffer.from("entros-validator-receipt-v2\0", "ascii").copy(message, 0);
+  const message = Buffer.alloc(136);
+  Buffer.from("entros-validator-receipt-v3\0", "ascii").copy(message, 0);
   message[28] = 1;
   message.writeUInt16LE(1, 29);
   Buffer.from(AUTHORITY.toBytes()).copy(message, 31);
   Buffer.from(commitment).copy(message, 63);
   message.writeBigInt64LE(1_788_044_400n, 95);
+  message.fill(9, 103, 135);
+  message[135] = 1;
   return {
     validator_pubkey_hex: "8c".repeat(32),
     signature_hex: "ab".repeat(64),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { simhash } from "../src/hashing/simhash";
-import { fuseFeatures } from "../src/extraction/statistics";
+import { fuseFeaturesForProjection } from "../src/extraction/projection-scaling";
 import {
   extractMouseDynamics,
   extractTouchFeatures,
@@ -55,22 +55,23 @@ describe("projection version 2 client parity", () => {
   });
 
   it("pins the full SimHash and Poseidon pipeline", async () => {
-    const fusedFeatures = fuseFeatures(
+    const fusedFeatures = fuseFeaturesForProjection(
       RAW_FEATURES.slice(0, 170),
       RAW_FEATURES.slice(170, 251),
       RAW_FEATURES.slice(251),
+      2,
     );
     const fingerprint = simhash(fusedFeatures, 2);
     const packed = packBits(fingerprint);
     const commitment = await computeCommitment(fingerprint, FIXED_SALT);
 
     expect(bytesToHex(fingerprintToBytes(fingerprint))).toBe(
-      "171739965959892d2bfec818b1009923c870b6f105678bc5f0f931f49e6ae582",
+      "47931d625548b93b8dcfdca89301e99aca7ab2a1a755db8632f934b75b23f596",
     );
-    expect(packed.lo).toBe(BigInt("47317415302883274880799270694016325399"));
-    expect(packed.hi).toBe(BigInt("173990837961685963407535389837236793544"));
+    expect(packed.lo).toBe(BigInt("205910948500125577978619551950382666567"));
+    expect(packed.hi).toBe(BigInt("200657029248877128052315591129303251658"));
     expect(bytesToHex(bigintToBytes32(commitment))).toBe(
-      "01a4d28e4832e357f7aac96ac793a97fec1cba126ce4720877a320e0c4ad957e",
+      "07c592a5a50730f610e8853b7e9597d3f6f7d66a1e4214c6b6c4762428759a5d",
     );
   });
 });

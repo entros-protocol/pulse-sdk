@@ -14,14 +14,17 @@ function receipt(
   wallet: Uint8Array,
   commitment: Uint8Array,
   purpose: number,
+  projectionVersion = 1,
 ): SignedReceiptDto {
-  const message = Buffer.alloc(103);
-  Buffer.from("entros-validator-receipt-v2\0", "ascii").copy(message, 0);
+  const message = Buffer.alloc(136);
+  Buffer.from("entros-validator-receipt-v3\0", "ascii").copy(message, 0);
   message[28] = purpose;
-  message.writeUInt16LE(1, 29);
+  message.writeUInt16LE(projectionVersion, 29);
   message.set(wallet, 31);
   message.set(commitment, 63);
   message.writeBigInt64LE(1_786_310_400n, 95);
+  message.fill(9, 103, 135);
+  message[135] = 1;
   return {
     validator_pubkey_hex: "11".repeat(32),
     signature_hex: "22".repeat(64),
@@ -106,8 +109,9 @@ describe("versioned reset receipts", () => {
     ).toBe(true);
   });
 
-  it("keeps the version 0 reset layout free of remaining accounts", async () => {
+  it("requires a reset receipt and instructions sysvar at projection version 0", async () => {
     const publicKey = Keypair.generate().publicKey;
+    const commitment = new Uint8Array(32).fill(5);
     let submitted: Transaction | undefined;
     const wallet = {
       publicKey,
@@ -119,18 +123,28 @@ describe("versioned reset receipts", () => {
       signAllTransactions: async (transactions: Transaction[]) => transactions,
     };
 
-    const result = await submitResetViaWallet(new Uint8Array(32), {
+    const missing = await submitResetViaWallet(commitment, {
       wallet,
       connection: connection(),
       projectionVersion: 0,
     });
+    expect(missing.success).toBe(false);
+    expect(submitted).toBeUndefined();
+
+    const result = await submitResetViaWallet(commitment, {
+      wallet,
+      connection: connection(),
+      projectionVersion: 0,
+      signedReceipt: receipt(publicKey.toBytes(), commitment, 3, 0),
+    });
 
     expect(result.success, result.error).toBe(true);
-    expect(submitted?.instructions).toHaveLength(2);
+    expect(submitted?.instructions).toHaveLength(3);
+    expect(submitted!.instructions[1]!.programId.equals(Ed25519Program.programId)).toBe(true);
     expect(
-      submitted!.instructions[1]!.keys.some(({ pubkey }) =>
+      submitted!.instructions[2]!.keys.some(({ pubkey }) =>
         pubkey.equals(SYSVAR_INSTRUCTIONS_PUBKEY),
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 });

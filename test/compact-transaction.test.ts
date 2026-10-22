@@ -3,9 +3,26 @@ import { Keypair, Transaction } from "@solana/web3.js";
 import type { SolanaProof } from "../src/proof/types";
 import { toBigEndian32 } from "../src/proof/serializer";
 import { submitViaWallet } from "../src/submit/wallet";
+import type { SignedReceiptDto } from "../src/submit/types";
 import { fundedPreflightConnection } from "./helpers/funding";
 
 const AUTHORITY = Keypair.fromSeed(new Uint8Array(32).fill(19)).publicKey;
+
+function updateReceipt(commitment: Uint8Array = new Uint8Array(32).fill(17)): SignedReceiptDto {
+  const message = Buffer.alloc(136);
+  Buffer.from("entros-validator-receipt-v4\0", "ascii").copy(message, 0);
+  message[28] = 4;
+  message.writeUInt16LE(1, 29);
+  AUTHORITY.toBuffer().copy(message, 31);
+  Buffer.from(commitment).copy(message, 63);
+  message.writeBigInt64LE(1_790_000_000n, 95);
+  message[135] = 0;
+  return {
+    validator_pubkey_hex: "8c".repeat(32),
+    signature_hex: "ab".repeat(64),
+    message_hex: message.toString("hex"),
+  };
+}
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -56,6 +73,7 @@ describe("compact re-verification transaction", () => {
         },
         connection: connectionFixture(),
         isFirstVerification: false,
+        signedReceipt: updateReceipt(proof.publicInputs[0]!),
         encryptedBaselineBlob: new Uint8Array(96),
       },
     );
@@ -68,13 +86,39 @@ describe("compact re-verification transaction", () => {
     const transaction = captured!;
     expect(
       transaction.instructions.map((instruction) => instruction.data.length),
-    ).toEqual([5, 40, 364, 40, 104]);
+    ).toEqual([5, 364, 144, 18, 104]);
     expect(
       transaction.serialize({
         requireAllSignatures: false,
         verifySignatures: false,
       }).length,
-    ).toBe(1040);
+    ).toBe(1153);
+  });
+
+  it("rejects a missing update receipt before asking the wallet or fetching a nonce", async () => {
+    let walletCalled = false;
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const proof = proofFixture();
+    const result = await submitViaWallet(proof, proof.publicInputs[0]!, {
+      wallet: {
+        publicKey: AUTHORITY,
+        sendTransaction: async () => {
+          walletCalled = true;
+          return "unexpected";
+        },
+      },
+      connection: connectionFixture(),
+      isFirstVerification: false,
+      relayerUrl: "https://executor.invalid",
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      failedAt: "submission",
+    });
+    expect(result.error).toContain("validator-signed update receipt");
+    expect(walletCalled).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("rejects a commitment mismatch before asking the wallet", async () => {
@@ -254,14 +298,13 @@ describe("compact re-verification transaction", () => {
       },
       connection: connectionFixture(),
       isFirstVerification: false,
+      signedReceipt: updateReceipt(proof.publicInputs[0]!),
       relayerUrl: "https://executor.invalid",
     });
 
     expect(result.success).toBe(true);
     expect(captured).toBeDefined();
-    const challengeNonce = captured!.instructions[1]!.data.subarray(8, 40);
-    const proofNonce = captured!.instructions[2]!.data.subarray(8, 40);
-    expect(challengeNonce).toEqual(proofNonce);
-    expect(challengeNonce.some((byte) => byte !== 0)).toBe(true);
+    const proofNonce = captured!.instructions[1]!.data.subarray(8, 40);
+    expect(proofNonce.some((byte) => byte !== 0)).toBe(true);
   });
 });

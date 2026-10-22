@@ -129,6 +129,14 @@ describe("pre-proof request preparation", () => {
           request.digestLo,
         ].map(toBigEndian32),
       };
+      const updateMessage = Buffer.alloc(136);
+      updateMessage.set(Buffer.from("entros-validator-receipt-v4\0", "ascii"));
+      updateMessage[28] = 4;
+      updateMessage.writeUInt16LE(1, 29);
+      updateMessage.set(f.fixture.wallet.toBytes(), 31);
+      updateMessage.set(f.options.commitmentNew, 63);
+      updateMessage.writeBigInt64LE(1800000000n, 95);
+      updateMessage[135] = 0;
       const result = await submitViaWallet(proof, f.options.commitmentNew, {
         wallet: {
           publicKey: f.fixture.wallet,
@@ -149,6 +157,11 @@ describe("pre-proof request preparation", () => {
         isFirstVerification: false,
         preparedRequest: request,
         requestBoundManifest: f.manifest,
+        signedReceipt: {
+          validator_pubkey_hex: "11".repeat(32),
+          signature_hex: "22".repeat(64),
+          message_hex: updateMessage.toString("hex"),
+        },
         relayerUrl: "https://executor.invalid/verify",
       });
       expect(result).toMatchObject({

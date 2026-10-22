@@ -642,7 +642,8 @@ describe("/validate-features body - projection 2 authorization", () => {
       expect(body?.projection_version).toBe(2);
       expect(body).not.toHaveProperty("compatibility_evidence");
       expect(body).toHaveProperty("wallet_authorization");
-      expect(body?.request_receipt).toBe(false);
+      expect(body?.request_receipt).toBe(true);
+      expect(body?.receipt_purpose).toBe("update");
     },
   );
 

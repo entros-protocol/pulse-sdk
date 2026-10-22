@@ -35,9 +35,9 @@ export const EXPECTED_FINGERPRINT_ARCHITECTURE_OUTPUTS = [
   {
     projectionVersion: 2,
     fingerprintHex:
-      "2d9c86198251b94e9285a3b4ae87667b52363261ed0eb523bc9877b4a1a63a15",
+      "7ba67350b4da582b479404e7a78d57e8062609b52bdcc2361f1cf58ac024831c",
     commitmentHex:
-      "0e1fe84296ee186cf1bf7ae8b1628d1fefa01b8ddb1a4f9eac43b69874889e9f",
+      "1d98102e61bbacd81d7232f7755932608d208eb1f4088cd8d9ecb79ceecc09c1",
   },
 ] as const;
 

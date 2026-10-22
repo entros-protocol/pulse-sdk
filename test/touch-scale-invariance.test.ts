@@ -8,7 +8,7 @@ import {
   extractMouseDynamics,
   extractTouchFeatures,
 } from "../src/extraction/kinematic";
-import { fuseFeatures } from "../src/extraction/statistics";
+import { fuseFeaturesForProjection } from "../src/extraction/projection-scaling";
 import { hammingDistance, simhash } from "../src/hashing/simhash";
 import { canonicalizeTouchSamples } from "../src/sensor/touch";
 
@@ -32,7 +32,10 @@ function projectionTwoResult(sampleCount: number, profile: "smooth" | "paused") 
   return {
     touch,
     motion,
-    fingerprint: simhash(fuseFeatures(projectionTwoAudio, motion, touch), 2),
+    fingerprint: simhash(
+      fuseFeaturesForProjection(projectionTwoAudio, motion, touch, 2),
+      2,
+    ),
   };
 }
 

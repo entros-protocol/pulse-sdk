@@ -22,6 +22,30 @@ import { entrosVerifierIdl } from "../src/protocol/idl";
 import { fundedPreflightConnection } from "./helpers/funding";
 
 const wallet = Keypair.fromSeed(new Uint8Array(32).fill(19)).publicKey;
+function v4UpdateReceipt(
+  commitment: Uint8Array,
+  projectionVersion = 1,
+  pairedSessionDigest = false,
+): SignedReceiptDto {
+  const message = Buffer.alloc(136);
+  message.set(Buffer.from("entros-validator-receipt-v4\0", "ascii"));
+  message[28] = 4;
+  message.writeUInt16LE(projectionVersion, 29);
+  message.set(wallet.toBytes(), 31);
+  message.set(commitment, 63);
+  message.writeBigInt64LE(1800000000n, 95);
+  if (pairedSessionDigest) {
+    message.fill(9, 103, 135);
+    message[135] = 1;
+  } else {
+    message[135] = 0;
+  }
+  return {
+    validator_pubkey_hex: "11".repeat(32),
+    signature_hex: "22".repeat(64),
+    message_hex: message.toString("hex"),
+  };
+}
 function deploymentFixture(isolated = false) {
   const anchor = new PublicKey(isolated ? new Uint8Array(32).fill(61) : PROGRAM_IDS.entrosAnchor);
   const verifier = new PublicKey(isolated ? new Uint8Array(32).fill(62) : PROGRAM_IDS.entrosVerifier);
@@ -136,6 +160,7 @@ describe.each([false, true])("prepared bound transaction isolated=%s", (isolated
         isFirstVerification: false,
         preparedRequest: f.request,
         requestBoundManifest: f.manifest,
+        signedReceipt: v4UpdateReceipt(f.proof.publicInputs[0]!),
         encryptedBaselineBlob: new Uint8Array(96),
         ...(isolated ? { relayerUrl: "https://executor.invalid/verify" } : {}),
       });
@@ -150,10 +175,10 @@ describe.each([false, true])("prepared bound transaction isolated=%s", (isolated
         expect(addresses).toContain(baseline.toBase58());
       }
       expect(transaction.instructions.map((ix) => ix.data.length)).toEqual([
-        5, 8, 40, 372, 40, 104,
+        5, 8, 372, 144, 18, 104,
       ]);
       const coder = new BorshInstructionCoder(entrosVerifierIdl as Idl);
-      const decoded = coder.decode(transaction.instructions[3]!.data)!;
+      const decoded = coder.decode(transaction.instructions[2]!.data)!;
       expect(decoded.name).toBe("verify_proof_bound");
       expect((decoded.data as { nonce: number[] }).nonce).toEqual(
         Array<number>(32).fill(9),
@@ -162,7 +187,7 @@ describe.each([false, true])("prepared bound transaction isolated=%s", (isolated
         requireAllSignatures: false,
         verifySignatures: false,
       }).length;
-      expect(length).toBe(1097);
+      expect(length).toBe(1210);
       expect(length).toBeLessThanOrEqual(1232);
       if (!isolated) expect(
         await qualifyingTransaction(
@@ -179,18 +204,56 @@ describe.each([false, true])("prepared bound transaction isolated=%s", (isolated
       fetch.mockRestore();
     }
   });
+  it("keeps a paired session-bound update with encrypted baseline within the 1,232-byte packet limit", async () => {
+    const f = fixture();
+    const result = await submitViaWallet(f.proof, f.proof.publicInputs[0]!, {
+      wallet: f.signer,
+      connection: f.connection,
+      isFirstVerification: false,
+      preparedRequest: f.request,
+      requestBoundManifest: f.manifest,
+      signedReceipt: v4UpdateReceipt(f.proof.publicInputs[0]!, 1, true),
+      encryptedBaselineBlob: new Uint8Array(96),
+      ...(isolated ? { relayerUrl: "https://executor.invalid/verify" } : {}),
+    });
+    expect(result.success, result.error).toBe(true);
+    const transaction = f.transaction();
+    expect(transaction.instructions.map((ix) => ix.data.length)).toEqual([
+      8, 372, 144, 50, 104,
+    ]);
+    const length = transaction.serialize({
+      requireAllSignatures: false,
+      verifySignatures: false,
+    }).length;
+    expect(length).toBe(1202);
+    expect(length).toBeLessThanOrEqual(1232);
+    if (!isolated)
+      expect(
+        await qualifyingTransaction(
+          parsed(transaction),
+          "bound-signature",
+          wallet,
+          f.identity,
+        ),
+      ).toMatchObject({
+        kind: "update",
+        commitment: f.request.action.commitmentNew,
+      });
+  });
   it.each(["mint", "reset", "rebaseline"] as const)(
     "includes durable state in the %s receipt transaction",
     async (kind) => {
       const f = fixture();
       const commitment = f.proof.publicInputs[0]!;
-      const message = Buffer.alloc(103);
-      message.set(Buffer.from("entros-validator-receipt-v2\0", "ascii"));
+      const message = Buffer.alloc(136);
+      message.set(Buffer.from("entros-validator-receipt-v3\0", "ascii"));
       message[28] = kind === "mint" ? 1 : kind === "reset" ? 3 : 2;
       message.writeUInt16LE(1, 29);
       message.set(wallet.toBytes(), 31);
       message.set(commitment, 63);
       message.writeBigInt64LE(1800000000n, 95);
+      message.fill(9, 103, 135);
+      message[135] = 1;
       const signedReceipt: SignedReceiptDto = {
         validator_pubkey_hex: "11".repeat(32),
         signature_hex: "22".repeat(64),
@@ -273,6 +336,7 @@ describe.each([false, true])("prepared bound transaction isolated=%s", (isolated
         isFirstVerification: false,
         preparedRequest: request,
         requestBoundManifest: field === "manifest" ? undefined : f.manifest,
+        signedReceipt: v4UpdateReceipt(f.proof.publicInputs[0]!),
       });
       expect(result.success).toBe(false);
       expect(f.signer.sendTransaction).not.toHaveBeenCalled();
@@ -286,12 +350,13 @@ describe.each([false, true])("prepared bound transaction isolated=%s", (isolated
       isFirstVerification: false,
       preparedRequest: f.request,
       requestBoundManifest: f.manifest,
+      signedReceipt: v4UpdateReceipt(f.proof.publicInputs[0]!),
     });
     const valid = parsed(f.transaction());
     const missing = parsed(f.transaction());
     missing.transaction.message.instructions =
       valid.transaction.message.instructions.filter(
-        (_ix, index) => index !== 3,
+        (_ix, index) => index !== 2,
       );
     expect(
       await qualifyingTransaction(
@@ -302,10 +367,10 @@ describe.each([false, true])("prepared bound transaction isolated=%s", (isolated
       ),
     ).toBeNull();
     const mismatched = parsed(f.transaction());
-    const ix = mismatched.transaction.message.instructions[3]!;
+    const ix = mismatched.transaction.message.instructions[2]!;
     if (!("accounts" in ix))
       throw new Error("Expected partially decoded instruction");
-    ix.accounts[4] = PublicKey.default;
+    ix.accounts[3] = PublicKey.default;
     expect(
       await qualifyingTransaction(
         mismatched,

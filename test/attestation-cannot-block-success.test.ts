@@ -57,21 +57,36 @@ describe("a hanging attestation signature", () => {
       })),
     );
 
+    const commitment = new Uint8Array(32).fill(17);
+    const updateMessage = Buffer.alloc(136);
+    updateMessage.set(Buffer.from("entros-validator-receipt-v4\0", "ascii"));
+    updateMessage[28] = 4;
+    updateMessage.writeUInt16LE(1, 29);
+    updateMessage.set(AUTHORITY.toBytes(), 31);
+    updateMessage.set(commitment, 63);
+    updateMessage.writeBigInt64LE(1_790_000_000n, 95);
+    updateMessage[135] = 0;
+
     const promise = submitViaWallet(
       {
         proofBytes: new Uint8Array(256),
         publicInputs: [
-          new Uint8Array(32).fill(17),
+          commitment,
           new Uint8Array(32).fill(34),
           toBigEndian32("30"),
           toBigEndian32("3"),
         ],
       },
-      new Uint8Array(32).fill(17),
+      commitment,
       {
         wallet: walletWithHangingSignMessage(),
         connection: fakeConnection(),
         isFirstVerification: false,
+        signedReceipt: {
+          validator_pubkey_hex: "11".repeat(32),
+          signature_hex: "22".repeat(64),
+          message_hex: updateMessage.toString("hex"),
+        },
         relayerUrl: "https://relayer.example/verify",
       },
     );

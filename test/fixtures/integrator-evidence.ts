@@ -135,15 +135,20 @@ export async function createEvidenceFixture(
           ? verificationPda
           : PublicKey.default,
   );
+  const receipt = {
+    validated_at: new BN(blockTime),
+    assurance_tier: 1,
+    session_final_digest: null,
+  };
   const data = anchorCoder.encode(
     name,
     kind === "compact"
-      ? { verification_nonce: nonce }
+      ? { receipt }
       : kind === "mint"
         ? { initial_commitment: commitment }
         : kind === "rebaseline"
           ? { new_commitment: commitment, projection_version: 1 }
-          : { new_commitment: commitment, verification_nonce: nonce },
+          : { new_commitment: commitment, receipt },
   );
   const transaction: ParsedTransactionWithMeta = {
     slot: 100,
@@ -165,7 +170,7 @@ export async function createEvidenceFixture(
     const verifierCoder = new BorshInstructionCoder(entrosVerifierIdl as Idl);
     transaction.transaction.message.instructions.unshift({
       programId: new PublicKey(PROGRAM_IDS.entrosVerifier),
-      accounts: [wallet, PublicKey.default, verificationPda, PublicKey.default],
+      accounts: [wallet, verificationPda, PublicKey.default],
       data: utils.bytes.bs58.encode(
         verifierCoder.encode("verify_proof_compact", {
           nonce,

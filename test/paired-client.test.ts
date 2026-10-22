@@ -363,9 +363,51 @@ describe("paired finalize success", () => {
     expect(checkFinalizeSuccess(success(), { ...binding, purpose: "reset" })).toMatch(/does not match/);
   });
 
-  it("requires a receipt for a transition and none for an update", () => {
+  it("requires a receipt for a transition and accepts a v4 receipt for an update", () => {
     expect(checkFinalizeSuccess({ valid: true }, binding)).toMatch(/no receipt/);
     expect(checkFinalizeSuccess({ valid: true }, { wallet, finalDigest })).toEqual({});
+    const v4Message = Buffer.alloc(136);
+    Buffer.from("entros-validator-receipt-v4\0", "ascii").copy(v4Message, 0);
+    v4Message[28] = 4;
+    v4Message.writeUInt16LE(1, 29);
+    Buffer.from(wallet).copy(v4Message, 31);
+    Buffer.alloc(32, 9).copy(v4Message, 63);
+    v4Message.writeBigInt64LE(1_790_000_000n, 95);
+    Buffer.from(finalDigest).copy(v4Message, 103);
+    v4Message[135] = 1;
+    const v4Receipt = {
+      validator_pubkey_hex: "8c".repeat(32),
+      signature_hex: "ab".repeat(64),
+      message_hex: v4Message.toString("hex"),
+    };
+    expect(
+      checkFinalizeSuccess(
+        {
+          valid: true,
+          signed_receipt: v4Receipt,
+          commitment_hex: "09".repeat(32),
+          salt_hex: "05".repeat(32),
+        },
+        { purpose: "update", wallet, finalDigest },
+      ),
+    ).toEqual({ assuranceTier: 1 });
+    expect(
+      checkFinalizeSuccess(
+        { valid: true, signed_receipt: v4Receipt, commitment_hex: "09".repeat(32) },
+        { purpose: "update", wallet, finalDigest },
+      ),
+    ).toMatch(/does not match/);
+    expect(
+      checkFinalizeSuccess(
+        {
+          valid: true,
+          signed_receipt: receipt(1, finalDigest),
+          commitment_hex: "09".repeat(32),
+          salt_hex: "05".repeat(32),
+        },
+        { purpose: "update", wallet, finalDigest },
+      ),
+    ).toMatch(/does not match/);
   });
 });
 
