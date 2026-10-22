@@ -283,7 +283,9 @@ export class PairedSession {
       if (this.closed) return;
       const policy = await this.pipeline.readProjectionPolicy(connection);
       if (this.closed) return;
-      if (policy.current !== 1) throw new PairedProtocolError("projection_not_supported");
+      if (policy.current !== 1 && policy.current !== 2) {
+        throw new PairedProtocolError("projection_not_supported");
+      }
 
       const response = await this.openWithRetry(wallet);
       if (this.closed) return;
@@ -714,7 +716,16 @@ export class PairedSession {
 
     let assuranceTier: number | undefined;
     const finalDigest = sessionFinalDigest(open, this.committed);
-    let receiptPurpose: "mint" | "rebaseline" | "reset" | undefined;
+    let receiptPurpose: "mint" | "rebaseline" | "reset" | "update" | undefined;
+    const policy = await this.pipeline.readProjectionPolicy(connection);
+    if (policy.current !== 1 && policy.current !== 2) {
+      if (!this.closed) this.setPhase("failed");
+      return failure(
+        "projection_not_supported",
+        "The protocol projection changed during the session. Start a new verification.",
+      );
+    }
+    const pairedProjectionVersion: 1 | 2 = policy.current;
     const target: ValidationTarget = {
       path: "/validate-session",
       signal: this.requests.signal,
@@ -725,6 +736,7 @@ export class PairedSession {
         return buildFinalizeBody({
           open,
           walletId: evidence.walletAddress,
+          projectionVersion: pairedProjectionVersion,
           rounds: this.committed,
           features: evidence.features,
           f0Contour: evidence.f0Contour,
@@ -737,7 +749,8 @@ export class PairedSession {
       accept: (body) => {
         if (this.phase === "failed") return "The verification was cancelled.";
         const checked = checkFinalizeSuccess(body, {
-          purpose: receiptPurpose,
+          purpose: receiptPurpose ?? (body.signed_receipt !== undefined ? "update" : undefined),
+          projectionVersion: pairedProjectionVersion,
           wallet: walletBytes,
           finalDigest,
         });
@@ -746,15 +759,6 @@ export class PairedSession {
         return null;
       },
     };
-
-    const policy = await this.pipeline.readProjectionPolicy(connection);
-    if (policy.current !== 1) {
-      if (!this.closed) this.setPhase("failed");
-      return failure(
-        "projection_not_supported",
-        "The protocol projection changed during the session. Start a new verification.",
-      );
-    }
     if (this.closed) return failure("technical_failure","The verification was cancelled.");
     const protectedWallet = this.guardedWallet(wallet);
     const result = reset

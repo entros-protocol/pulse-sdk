@@ -437,6 +437,7 @@ export function sessionFinalDigest(open: PairedSessionOpen, rounds: readonly Com
 export interface FinalizeInput {
   open: PairedSessionOpen;
   walletId: string;
+  projectionVersion?: 1 | 2;
   rounds: readonly CommittedRound[];
   features: number[];
   f0Contour?: number[];
@@ -451,7 +452,7 @@ export function buildFinalizeBody(input: FinalizeInput): Json {
   const body: Json = {
     capture_protocol: "paired",
     wallet_id: input.walletId,
-    projection_version: 1,
+    projection_version: input.projectionVersion ?? 1,
     session_id: input.open.sessionId,
     final_digest: toHex(sessionFinalDigest(input.open, rounds)),
     segments: rounds.map((round) => ({
@@ -470,20 +471,22 @@ export function buildFinalizeBody(input: FinalizeInput): Json {
 }
 
 export interface FinalizeBinding {
-  /** The transition the receipt must authorise. Absent for an update, which needs none. */
-  purpose?: "mint" | "rebaseline" | "reset";
+  /** The transition the receipt must authorise ("mint", "rebaseline", "reset", or "update"). */
+  purpose?: "mint" | "rebaseline" | "reset" | "update";
+  projectionVersion?: 1 | 2;
   wallet: Uint8Array;
   finalDigest: Digest;
 }
 
-const RECEIPT_PURPOSES = { mint: 1, rebaseline: 2, reset: 3 } as const;
+const RECEIPT_PURPOSES = { mint: 1, rebaseline: 2, reset: 3, update: 4 } as const;
 const RECEIPT_MISMATCH = "The validator's receipt does not match this session.";
 
 /**
  * Checks a finalize success body before anything asks the wallet to sign.
  * Returns the tier the receipt signs, or a message refusing the body. A
- * transition needs a version 3 receipt that binds this session, this wallet,
- * the transition and the commitment, and the commitment's salt.
+ * baseline transition needs a version 3 receipt and an update needs a
+ * version 4 receipt, each binding this session, this wallet, the purpose,
+ * and the derived commitment.
  */
 export function checkFinalizeSuccess(
   body: Json,
@@ -506,15 +509,16 @@ export function checkFinalizeSuccess(
   const decoded = decodeSignedReceipt(dto);
   const commitment = isString(body.commitment_hex) ? fromHex(body.commitment_hex, 32) : null;
   const salt = isString(body.salt_hex) ? fromHex(body.salt_hex, 32) : null;
+  const expectedVersion = binding.purpose === "update" ? 4 : 3;
   if (
     !decoded ||
-    decoded.version !== 3 ||
+    decoded.version !== expectedVersion ||
     decoded.assuranceTier === null ||
     !commitment ||
     !salt ||
     !receiptMatchesBinding(dto, {
       purpose: RECEIPT_PURPOSES[binding.purpose],
-      projectionVersion: 1,
+      projectionVersion: binding.projectionVersion ?? 1,
       wallet: binding.wallet,
       commitment,
       finalDigest: binding.finalDigest,

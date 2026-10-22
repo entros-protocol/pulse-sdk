@@ -204,9 +204,7 @@
     {
       "name": "verify_proof",
       "docs": [
-        "Verify a proof against a challenge.",
-        "Validates the challenge is unused and not expired, runs mock verification,",
-        "and stores the result."
+        "Verify a proof and store the result PDA keyed by `(verifier, nonce)`."
       ],
       "discriminator": [
         217,
@@ -223,36 +221,6 @@
           "name": "verifier",
           "writable": true,
           "signer": true
-        },
-        {
-          "name": "challenge",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  104,
-                  97,
-                  108,
-                  108,
-                  101,
-                  110,
-                  103,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "verifier"
-              },
-              {
-                "kind": "arg",
-                "path": "nonce"
-              }
-            ]
-          }
         },
         {
           "name": "verification_result",
@@ -336,36 +304,6 @@
           "name": "verifier",
           "writable": true,
           "signer": true
-        },
-        {
-          "name": "challenge",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  104,
-                  97,
-                  108,
-                  108,
-                  101,
-                  110,
-                  103,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "verifier"
-              },
-              {
-                "kind": "arg",
-                "path": "nonce"
-              }
-            ]
-          }
         },
         {
           "name": "verification_result",
@@ -615,36 +553,6 @@
           "name": "verifier",
           "writable": true,
           "signer": true
-        },
-        {
-          "name": "challenge",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  104,
-                  97,
-                  108,
-                  108,
-                  101,
-                  110,
-                  103,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "verifier"
-              },
-              {
-                "kind": "arg",
-                "path": "nonce"
-              }
-            ]
-          }
         },
         {
           "name": "verification_result",

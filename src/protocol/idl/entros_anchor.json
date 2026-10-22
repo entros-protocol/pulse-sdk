@@ -1059,7 +1059,7 @@
         "- Verification fee charged, matching mint/update economics.",
         "",
         "Reset does not consume a ZK comparison proof because the client cannot",
-        "recover its prior fingerprint. Versioned projections require a fresh",
+        "recover its prior fingerprint. Every projection version requires a fresh",
         "validator receipt bound to this wallet, commitment, and reset purpose."
       ],
       "discriminator": [
@@ -1404,11 +1404,11 @@
         "trust-score farming via per-call fee payment, which contradicts the",
         "protocol's economic deterrence model.",
         "",
-        "The `verification_nonce` argument supplies the challenge nonce used to",
-        "derive the VerificationResult PDA (`seeds = [b\"verification\", authority, nonce]`).",
-        "Single-use is enforced implicitly: after this call, `current_commitment`",
-        "rotates to `new_commitment`, so the consumed VerificationResult's",
-        "`commitment_prev` no longer matches on any future call."
+        "The `receipt` argument supplies the validator receipt parameters used to",
+        "verify the preceding Ed25519 signature over the v4 update receipt digest.",
+        "Single-use is enforced both by closing `verification_result` via CPI",
+        "to `entros-verifier` and by advancing `current_commitment` and",
+        "`last_verification_timestamp`."
       ],
       "discriminator": [
         120,
@@ -1458,77 +1458,10 @@
         {
           "name": "verification_result",
           "docs": [
-            "PDA seeds validated by Anchor; layout + owner + cross-field constraints",
-            "validated in instruction body. Binds the ZK proof to this specific",
-            "update. Without this account, update_anchor would accept any commitment",
-            "with no proof."
+            "Owner, discriminator, verifier, nonce, canonical PDA address, and freshness are",
+            "verified in `process_anchor_update` before closing via CPI to `entros-verifier`."
           ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  118,
-                  101,
-                  114,
-                  105,
-                  102,
-                  105,
-                  99,
-                  97,
-                  116,
-                  105,
-                  111,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "authority"
-              },
-              {
-                "kind": "arg",
-                "path": "verification_nonce"
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                48,
-                50,
-                94,
-                115,
-                90,
-                162,
-                108,
-                8,
-                240,
-                151,
-                76,
-                223,
-                101,
-                176,
-                170,
-                86,
-                254,
-                247,
-                252,
-                28,
-                240,
-                145,
-                60,
-                108,
-                42,
-                129,
-                105,
-                32,
-                232,
-                212,
-                226,
-                52
-              ]
-            }
-          }
+          "writable": true
         },
         {
           "name": "protocol_config",
@@ -1667,6 +1600,14 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "instructions_sysvar",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "verifier_program",
+          "address": "4F97jNoxQzT2qRbkWpW3ztC3Nz2TtKj3rnKG8ExgnrfV"
         }
       ],
       "args": [
@@ -1680,12 +1621,11 @@
           }
         },
         {
-          "name": "verification_nonce",
+          "name": "receipt",
           "type": {
-            "array": [
-              "u8",
-              32
-            ]
+            "defined": {
+              "name": "UpdateReceiptArgs"
+            }
           }
         }
       ]
@@ -1771,78 +1711,10 @@
         },
         {
           "name": "verification_result",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  118,
-                  101,
-                  114,
-                  105,
-                  102,
-                  105,
-                  99,
-                  97,
-                  116,
-                  105,
-                  111,
-                  110,
-                  95,
-                  98,
-                  111,
-                  117,
-                  110,
-                  100
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "authority"
-              },
-              {
-                "kind": "arg",
-                "path": "verification_nonce"
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                48,
-                50,
-                94,
-                115,
-                90,
-                162,
-                108,
-                8,
-                240,
-                151,
-                76,
-                223,
-                101,
-                176,
-                170,
-                86,
-                254,
-                247,
-                252,
-                28,
-                240,
-                145,
-                60,
-                108,
-                42,
-                129,
-                105,
-                32,
-                232,
-                212,
-                226,
-                52
-              ]
-            }
-          }
+          "docs": [
+            "verified in `process_anchor_update` before closing via CPI to `entros-verifier`."
+          ],
+          "writable": true
         },
         {
           "name": "protocol_config",
@@ -1978,16 +1850,23 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "instructions_sysvar",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "verifier_program",
+          "address": "4F97jNoxQzT2qRbkWpW3ztC3Nz2TtKj3rnKG8ExgnrfV"
         }
       ],
       "args": [
         {
-          "name": "verification_nonce",
+          "name": "receipt",
           "type": {
-            "array": [
-              "u8",
-              32
-            ]
+            "defined": {
+              "name": "UpdateReceiptArgs"
+            }
           }
         }
       ]
@@ -2040,72 +1919,10 @@
         },
         {
           "name": "verification_result",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  118,
-                  101,
-                  114,
-                  105,
-                  102,
-                  105,
-                  99,
-                  97,
-                  116,
-                  105,
-                  111,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "authority"
-              },
-              {
-                "kind": "arg",
-                "path": "verification_nonce"
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                48,
-                50,
-                94,
-                115,
-                90,
-                162,
-                108,
-                8,
-                240,
-                151,
-                76,
-                223,
-                101,
-                176,
-                170,
-                86,
-                254,
-                247,
-                252,
-                28,
-                240,
-                145,
-                60,
-                108,
-                42,
-                129,
-                105,
-                32,
-                232,
-                212,
-                226,
-                52
-              ]
-            }
-          }
+          "docs": [
+            "verified in `process_anchor_update` before closing via CPI to `entros-verifier`."
+          ],
+          "writable": true
         },
         {
           "name": "protocol_config",
@@ -2241,16 +2058,23 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "instructions_sysvar",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "verifier_program",
+          "address": "4F97jNoxQzT2qRbkWpW3ztC3Nz2TtKj3rnKG8ExgnrfV"
         }
       ],
       "args": [
         {
-          "name": "verification_nonce",
+          "name": "receipt",
           "type": {
-            "array": [
-              "u8",
-              32
-            ]
+            "defined": {
+              "name": "UpdateReceiptArgs"
+            }
           }
         }
       ]
@@ -2609,7 +2433,7 @@
     {
       "code": 6033,
       "name": "InvalidResetReceiptAccounts",
-      "msg": "Reset requires exactly one instructions sysvar account for versioned projections and none for projection zero"
+      "msg": "Reset requires the instructions sysvar account for validator receipt verification"
     },
     {
       "code": 6034,
@@ -2625,6 +2449,26 @@
       "code": 6036,
       "name": "InvalidAssuranceTier",
       "msg": "Receipt assurance tier is not a known tier"
+    },
+    {
+      "code": 6037,
+      "name": "CommitmentUnchanged",
+      "msg": "Proof commitment_new must differ from commitment_prev"
+    },
+    {
+      "code": 6038,
+      "name": "InvalidVerificationResultPda",
+      "msg": "VerificationResult PDA does not match canonical verifier seeds"
+    },
+    {
+      "code": 6039,
+      "name": "InvalidVerifierProgram",
+      "msg": "Invalid verifier program account"
+    },
+    {
+      "code": 6040,
+      "name": "ReceiptAlreadyUsed",
+      "msg": "Receipt validated_at precedes the identity's last verification timestamp"
     }
   ],
   "types": [
@@ -2985,6 +2829,36 @@
           {
             "name": "assurance_tier",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UpdateReceiptArgs",
+      "docs": [
+        "Compact instruction arguments reconstructed into the v4 update receipt preimage on-chain."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "validated_at",
+            "type": "i64"
+          },
+          {
+            "name": "assurance_tier",
+            "type": "u8"
+          },
+          {
+            "name": "session_final_digest",
+            "type": {
+              "option": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
           }
         ]
       }

@@ -1,5 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { SAS_CONFIG } from "../config";
+import { PROGRAM_IDS, SAS_CONFIG } from "../config";
+
+const IDENTITY_DISCRIMINATOR = [156, 32, 87, 93, 52, 155, 248, 207] as const;
+const IDENTITY_TRUST_SCORE_OFFSET = 60;
+const IDENTITY_LAST_RESET_TIMESTAMP_OFFSET = 543;
+const IDENTITY_MIN_SIZE = 62;
+const IDENTITY_RESET_SIZE = 551;
 
 /** Decoded Entros attestation from the Solana Attestation Service */
 export interface EntrosAttestation {
@@ -13,8 +19,9 @@ export interface EntrosAttestation {
 /**
  * Check if a wallet has a valid Entros attestation via SAS.
  *
- * Derives the attestation PDA, fetches the account, deserializes
- * the attestation data, and checks expiry.
+ * Derives the attestation PDA and IdentityState PDA, fetches both accounts in a
+ * single RPC batch, deserializes the attestation data, cross-checks against
+ * IdentityState (`trustScore` clamp and post-reset invalidation), and checks expiry.
  *
  * @param walletAddress - Base58 Solana wallet address
  * @param connection - Solana web3.js Connection instance
@@ -28,6 +35,7 @@ export async function verifyEntrosAttestation(
     const { PublicKey } = await import("@solana/web3.js");
 
     const sasProgramId = new PublicKey(SAS_CONFIG.programId);
+    const anchorProgramId = new PublicKey(PROGRAM_IDS.entrosAnchor);
     const credentialPda = new PublicKey(SAS_CONFIG.entrosCredentialPda);
     const schemaPda = new PublicKey(SAS_CONFIG.entrosSchemaPda);
     const userWallet = new PublicKey(walletAddress);
@@ -42,14 +50,52 @@ export async function verifyEntrosAttestation(
       ],
       sasProgramId
     );
+    // Derive IdentityState PDA: ["identity", wallet]
+    const [identityPda] = PublicKey.findProgramAddressSync(
+      [new TextEncoder().encode("identity"), userWallet.toBuffer()],
+      anchorProgramId
+    );
 
-    const accountInfo = await connection.getAccountInfo(attestationPda);
-    if (!accountInfo) return null;
+    const [accountInfo, identityInfo] =
+      typeof connection.getMultipleAccountsInfo === "function"
+        ? await connection.getMultipleAccountsInfo([attestationPda, identityPda])
+        : await Promise.all([
+            connection.getAccountInfo(attestationPda),
+            connection.getAccountInfo(identityPda),
+          ]);
+    if (!accountInfo || !identityInfo) return null;
 
-    return deserializeSasAttestation(new Uint8Array(accountInfo.data));
+    const sas = deserializeSasAttestation(new Uint8Array(accountInfo.data));
+    if (!sas) return null;
+
+    const identity = deserializeIdentityStateCrossCheck(
+      new Uint8Array(identityInfo.data)
+    );
+    if (!identity) return null;
+
+    return {
+      ...sas,
+      trustScore: Math.min(sas.trustScore, identity.trustScore),
+      expired: sas.expired || identity.lastResetTimestamp > sas.verifiedAt,
+    };
   } catch {
     return null;
   }
+}
+
+function deserializeIdentityStateCrossCheck(
+  raw: Uint8Array
+): { trustScore: number; lastResetTimestamp: number } | null {
+  if (raw.length < IDENTITY_MIN_SIZE) return null;
+  for (let i = 0; i < IDENTITY_DISCRIMINATOR.length; i++) {
+    if (raw[i] !== IDENTITY_DISCRIMINATOR[i]) return null;
+  }
+  const trustScore = readU16LE(raw, IDENTITY_TRUST_SCORE_OFFSET);
+  const lastResetTimestamp =
+    raw.length >= IDENTITY_RESET_SIZE
+      ? readI64LE(raw, IDENTITY_LAST_RESET_TIMESTAMP_OFFSET)
+      : 0;
+  return { trustScore, lastResetTimestamp };
 }
 
 /** Read a u16 from a Uint8Array at the given offset (little-endian) */

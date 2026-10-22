@@ -57,6 +57,7 @@ import {
   type CaptureTiming,
 } from "./extraction/kinematic";
 import { fuseFeatures, fuseRawFeatures } from "./extraction/statistics";
+import { fuseFeaturesForProjection } from "./extraction/projection-scaling";
 import { yieldToMainThread } from "./yield";
 import { collectClientSignals } from "./client-signals/automation";
 import { simhash, hammingDistance } from "./hashing/simhash";
@@ -156,7 +157,7 @@ interface ValidateFeaturesRequestBody extends ValidationDigestRequest {
   wallet_authorization?: WalletAuthorization;
   commitment_new_hex: string;
   request_receipt: boolean;
-  receipt_purpose?: "mint" | "rebaseline" | "reset";
+  receipt_purpose?: "mint" | "rebaseline" | "reset" | "update";
   client_signals: ClientSignals;
   curve_trace?: CurveTraceOutline;
   capture_timing?: CaptureTiming;
@@ -237,7 +238,12 @@ export async function extractFeatures(
 
   return {
     raw: fuseRawFeatures(audioFeatures, motionFeatures, touchFeatures),
-    normalized: fuseFeatures(audioFeatures, motionFeatures, touchFeatures),
+    normalized: fuseFeaturesForProjection(
+      audioFeatures,
+      motionFeatures,
+      touchFeatures,
+      projectionVersion,
+    ),
     f0Contour,
     accelMagnitude,
     // Described whenever motion exists, including when the contour above came
@@ -543,7 +549,7 @@ export interface ValidationEvidence {
   accelMagnitude: number[];
   captureTiming: unknown;
   clientSignals: ReturnType<typeof collectClientSignals>;
-  receiptPurpose?: "mint" | "rebaseline" | "reset";
+  receiptPurpose?: "mint" | "rebaseline" | "reset" | "update";
 }
 
 /**
@@ -629,7 +635,7 @@ async function extractFingerprintAndValidate(
   onProgress?: ProgressCallback,
   studyContext?: StudyContext,
   projectionVersion = 0,
-  receiptPurpose?: "mint" | "rebaseline" | "reset",
+  receiptPurpose?: "mint" | "rebaseline" | "reset" | "update",
   target?: ValidationTarget,
 ): Promise<ExtractionResult> {
   onProgress?.("Extracting features...");
@@ -647,7 +653,11 @@ async function extractFingerprintAndValidate(
   let compatibilityEvidence: ProjectionCompatibilityEvidence | undefined;
   try {
     extracted = await extractFeatures(sensorData, projectionVersion);
-    if (projectionVersion === 2 && receiptPurpose !== undefined) {
+    if (
+      projectionVersion === 2 &&
+      receiptPurpose !== undefined &&
+      receiptPurpose !== "update"
+    ) {
       compatibilityEvidence = {
         projection_version: 1,
         feature_schema_version: getProjectionDefinition(1).featureSchemaVersion,
@@ -1247,7 +1257,7 @@ async function processSensorData(
     onProgress,
     studyContext,
     projectionPolicy.current,
-    needsProjectionMigration ? "rebaseline" : isFirstVerification ? "mint" : undefined,
+    needsProjectionMigration ? "rebaseline" : isFirstVerification ? "mint" : "update",
     target,
   );
   if (!extraction.ok) {
@@ -1584,6 +1594,8 @@ async function processSensorData(
         {
           wallet,
           connection,
+          relayerUrl: config.relayerUrl,
+          relayerApiKey: config.relayerApiKey,
           requestBoundManifest: config.requestBoundManifest,
           signedReceipt,
           encryptedBaselineBlob,
@@ -1592,9 +1604,7 @@ async function processSensorData(
     } else if (isFirstVerification) {
       // Pass the validator-signed receipt (when present) so submitViaWallet
       // can bundle an `Ed25519Program::verify` instruction before
-      // `mint_anchor` in the same atomic transaction. Re-verification
-      // doesn't need the receipt — the binding is already enforced via
-      // the VerificationResult PDA path that `update_anchor` consumes.
+      // `mint_anchor` in the same atomic transaction.
       submission = await submitViaWallet(
         solanaProof ?? { proofBytes: new Uint8Array(0), publicInputs: [] },
         tbh.commitmentBytes,
@@ -1619,6 +1629,7 @@ async function processSensorData(
         requestBoundManifest: config.requestBoundManifest,
         relayerUrl: config.relayerUrl,
         relayerApiKey: config.relayerApiKey,
+        signedReceipt,
         encryptedBaselineBlob,
         onProgress: (stage) => onProgress?.(stage),
       });
@@ -1776,9 +1787,7 @@ async function processResetSensorData(
     onProgress,
     undefined,
     projectionPolicy.current,
-    getProjectionDefinition(projectionPolicy.current).authenticatedTransitions
-      ? "reset"
-      : undefined,
+    "reset",
     target,
   );
   if (!extraction.ok) {

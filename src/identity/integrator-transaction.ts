@@ -122,23 +122,6 @@ export async function qualifyingTransaction(
       decoded.name === "update_anchor_bound"
     ) {
       const bound = decoded.name === "update_anchor_bound";
-      const nonce = commitmentHex(decoded.data.verification_nonce);
-      if (!nonce) return null;
-      const nonceBytes = Uint8Array.from(nonce.match(/../g) ?? [], (byte) =>
-        Number.parseInt(byte, 16),
-      );
-      const [verificationPda] = PublicKey.findProgramAddressSync(
-        [
-          new TextEncoder().encode(
-            bound ? "verification_bound" : "verification",
-          ),
-          wallet.toBytes(),
-          nonceBytes,
-        ],
-        new PublicKey(PROGRAM_IDS.entrosVerifier),
-      );
-      if (!instruction.accounts[bound ? 3 : 2]?.equals(verificationPda))
-        return null;
       if (bound) {
         const [state] = PublicKey.findProgramAddressSync(
           [new TextEncoder().encode("proof_request_state"), wallet.toBytes()],
@@ -169,19 +152,34 @@ export async function qualifyingTransaction(
         );
         if (earlier.accounts.length !== proofDefinition?.accounts.length)
           return null;
+        const nonce = commitmentHex(proof.data.nonce);
+        if (!nonce) continue;
+        const nonceBytes = Uint8Array.from(nonce.match(/../g) ?? [], (byte) =>
+          Number.parseInt(byte, 16),
+        );
+        const [verificationPda] = PublicKey.findProgramAddressSync(
+          [
+            new TextEncoder().encode(
+              bound ? "verification_bound" : "verification",
+            ),
+            wallet.toBytes(),
+            nonceBytes,
+          ],
+          new PublicKey(PROGRAM_IDS.entrosVerifier),
+        );
         if (
           !earlier.accounts[0]?.equals(wallet) ||
-          !earlier.accounts[2]?.equals(verificationPda)
+          !earlier.accounts[1]?.equals(verificationPda) ||
+          !instruction.accounts[bound ? 3 : 2]?.equals(verificationPda)
         )
           continue;
         if (bound) {
           if (
-            !earlier.accounts[3]?.equals(identity) ||
-            !earlier.accounts[4]?.equals(instruction.accounts[2]!)
+            !earlier.accounts[2]?.equals(identity) ||
+            !earlier.accounts[3]?.equals(instruction.accounts[2]!)
           )
             return null;
         }
-        if (commitmentHex(proof.data.nonce) !== nonce) continue;
         const inputs = proof.data.public_inputs;
         commitment =
           proof.name === "verify_proof_compact" ||

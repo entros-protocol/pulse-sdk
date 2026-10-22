@@ -1,3 +1,4 @@
+import { sha256 } from "@noble/hashes/sha2.js";
 import type { SignedReceiptDto } from "./types";
 
 /**
@@ -10,7 +11,9 @@ import type { SignedReceiptDto } from "./types";
  * (2), wallet (32), commitment (32), and validation time (8). A version 3
  * message, issued for a paired session, keeps those offsets under its own
  * domain and appends the session's final digest (32) and its assurance
- * tier (1).
+ * tier (1). A version 4 message, issued for an update, carries the same
+ * 136-byte preimage layout under its own domain while signing the 32-byte
+ * SHA-256 digest of that preimage so the Ed25519 instruction stays compact.
  */
 const PUBKEY_BYTES = 32;
 const SIGNATURE_BYTES = 64;
@@ -18,11 +21,12 @@ const V2_MESSAGE_BYTES = 103;
 const V3_MESSAGE_BYTES = 136;
 const RECEIPT_DOMAIN_V2 = new TextEncoder().encode("entros-validator-receipt-v2\0");
 const RECEIPT_DOMAIN_V3 = new TextEncoder().encode("entros-validator-receipt-v3\0");
+const RECEIPT_DOMAIN_V4 = new TextEncoder().encode("entros-validator-receipt-v4\0");
 /** 0 open, 1 bound, 2 attested. */
 const MAX_ASSURANCE_TIER = 2;
 
-export type ReceiptPurpose = 1 | 2 | 3;
-export type ReceiptVersion = 2 | 3;
+export type ReceiptPurpose = 1 | 2 | 3 | 4;
+export type ReceiptVersion = 2 | 3 | 4;
 
 export interface ReceiptBinding {
   purpose: ReceiptPurpose;
@@ -31,7 +35,7 @@ export interface ReceiptBinding {
   commitment: Uint8Array;
   /**
    * The paired session this receipt must have consumed. When present, only a
-   * version 3 receipt carrying this digest matches.
+   * version 3 or version 4 receipt carrying this digest matches.
    */
   finalDigest?: Uint8Array;
 }
@@ -81,9 +85,13 @@ export interface DecodedReceipt {
   signature: Uint8Array;
   message: Uint8Array;
   version: ReceiptVersion;
-  /** The paired session's final digest. Version 3 only. */
+  /** Validation Unix timestamp (seconds) from bytes 95..103 (little-endian i64). */
+  validatedAt: bigint;
+  /** The paired session's final digest. Version 3 and 4 only. */
   finalDigest: Uint8Array | null;
-  /** 0 open, 1 bound, 2 attested. Version 3 only. */
+  /** Non-zero session digest as a 32-byte number array for `UpdateReceiptArgs`, or `null` when all zeros. */
+  sessionFinalDigest: number[] | null;
+  /** 0 open, 1 bound, 2 attested. Version 3 and 4 only. */
   assuranceTier: number | null;
 }
 
@@ -98,38 +106,50 @@ export function decodeSignedReceipt(receipt: SignedReceiptDto): DecodedReceipt |
   const publicKey = hexToBytes(receipt.validator_pubkey_hex, PUBKEY_BYTES);
   const signature = hexToBytes(receipt.signature_hex, SIGNATURE_BYTES);
   const messageHexLength = receipt.message_hex.replace(/^0x/i, "").length;
-  const version: ReceiptVersion | null =
-    messageHexLength === V2_MESSAGE_BYTES * 2
-      ? 2
-      : messageHexLength === V3_MESSAGE_BYTES * 2
-        ? 3
-        : null;
-  if (!publicKey || !signature || version === null) return null;
-  const message = hexToBytes(
-    receipt.message_hex,
-    version === 2 ? V2_MESSAGE_BYTES : V3_MESSAGE_BYTES,
-  );
-  if (!message) return null;
-  const domain = version === 2 ? RECEIPT_DOMAIN_V2 : RECEIPT_DOMAIN_V3;
-  if (!equalBytes(message.subarray(0, 28), domain)) return null;
-  if (version === 2) {
+  if (!publicKey || !signature) return null;
+  if (messageHexLength === V2_MESSAGE_BYTES * 2) {
+    const message = hexToBytes(receipt.message_hex, V2_MESSAGE_BYTES);
+    if (!message || !equalBytes(message.subarray(0, 28), RECEIPT_DOMAIN_V2)) return null;
+    const purpose = message[28] ?? 0;
+    if (purpose < 1 || purpose > 3) return null;
+    const view = new DataView(message.buffer, message.byteOffset, message.byteLength);
     return {
       publicKey,
       signature,
       message,
-      version,
+      version: 2,
+      validatedAt: view.getBigInt64(95, true),
       finalDigest: null,
+      sessionFinalDigest: null,
       assuranceTier: null,
     };
   }
+  if (messageHexLength !== V3_MESSAGE_BYTES * 2) return null;
+  const message = hexToBytes(receipt.message_hex, V3_MESSAGE_BYTES);
+  if (!message) return null;
+  const domain = message.subarray(0, 28);
+  const version: ReceiptVersion | null = equalBytes(domain, RECEIPT_DOMAIN_V3)
+    ? 3
+    : equalBytes(domain, RECEIPT_DOMAIN_V4)
+      ? 4
+      : null;
+  if (version === null) return null;
+  const purpose = message[28] ?? 0;
+  if (version === 3 && (purpose < 1 || purpose > 3)) return null;
+  if (version === 4 && purpose !== 4) return null;
   const assuranceTier = message[135] ?? MAX_ASSURANCE_TIER + 1;
   if (assuranceTier > MAX_ASSURANCE_TIER) return null;
+  const finalDigest = message.slice(103, 135);
+  const hasNonZeroDigest = finalDigest.some((byte) => byte !== 0);
+  const view = new DataView(message.buffer, message.byteOffset, message.byteLength);
   return {
     publicKey,
     signature,
     message,
     version,
-    finalDigest: message.slice(103, 135),
+    validatedAt: view.getBigInt64(95, true),
+    finalDigest,
+    sessionFinalDigest: hasNonZeroDigest ? Array.from(finalDigest) : null,
     assuranceTier,
   };
 }
@@ -149,6 +169,8 @@ export function receiptMatchesBinding(
 ): boolean {
   const decoded = decodeSignedReceipt(receipt);
   if (!decoded) return false;
+  if (binding.purpose === 4 && decoded.version !== 4) return false;
+  if (binding.purpose !== 4 && decoded.version === 4) return false;
   const { message } = decoded;
   const view = new DataView(message.buffer, message.byteOffset, message.byteLength);
   if (
@@ -166,16 +188,12 @@ export function receiptMatchesBinding(
 }
 
 /**
- * Build the Ed25519 verification instruction for a mint or rebaseline receipt.
+ * Build the Ed25519 verification instruction for a validator receipt.
  *
- * Returns `null` if the receipt fails to decode. Callers must stop the
- * receipt-required transition before wallet submission.
- *
- * Web3.js's `Ed25519Program.createInstructionWithPublicKey` defaults the
- * three `*_instruction_index` fields to `0xFFFF`, which is the exact
- * "current instruction" sentinel the on-chain parser pins to. Cross-ix
- * substitution attacks are closed by that sentinel. We never build a
- * receipt that points at another ix's data.
+ * Versions 2 and 3 verify the raw receipt message bytes (103B or 136B).
+ * Version 4 (update receipts) verifies the 32-byte SHA-256 digest of the
+ * 136-byte preimage so the instruction fits inside the 1,232-byte Solana
+ * legacy transaction wire limit alongside the Groth16 proof.
  */
 export async function buildEd25519ReceiptIx(
   receipt: SignedReceiptDto,
@@ -186,7 +204,7 @@ export async function buildEd25519ReceiptIx(
   const { Ed25519Program } = await import("@solana/web3.js");
   return Ed25519Program.createInstructionWithPublicKey({
     publicKey: decoded.publicKey,
-    message: decoded.message,
+    message: decoded.version === 4 ? sha256(decoded.message) : decoded.message,
     signature: decoded.signature,
   });
 }

@@ -31,7 +31,7 @@ import { sdkLog, sdkWarn } from "../log";
 import { fetchSubmissionNonce } from "./nonce";
 import { preflightWalletBalance } from "./balance";
 import { entrosAnchorIdl, entrosVerifierIdl } from "../protocol/idl";
-import { buildEd25519ReceiptIx, receiptMatchesBinding } from "./receipt";
+import { buildEd25519ReceiptIx, decodeSignedReceipt, receiptMatchesBinding } from "./receipt";
 import { ENCRYPTED_BASELINE_BLOB_BYTES } from "../identity/baseline";
 import { getProjectionDefinition } from "../projection";
 import {
@@ -358,12 +358,23 @@ async function requestSasAttestation(
   relayerApiKey: string | undefined,
   serverNonce: number[] | undefined,
 ): Promise<string | undefined> {
-  if (!serverNonce) {
-    sdkLog("[Entros SDK] Skipping SAS attestation: no server-issued nonce");
-    return undefined;
-  }
   if (!wallet?.signMessage) {
     sdkLog("[Entros SDK] Skipping SAS attestation: wallet does not support signMessage");
+    return undefined;
+  }
+  let resolvedNonce = serverNonce;
+  if (!resolvedNonce) {
+    const fetched = await fetchSubmissionNonce(
+      walletAddress,
+      relayerUrl,
+      relayerApiKey,
+    );
+    if (fetched.source === "executor") {
+      resolvedNonce = Array.from(fetched.bytes);
+    }
+  }
+  if (!resolvedNonce) {
+    sdkLog("[Entros SDK] Skipping SAS attestation: no server-issued nonce");
     return undefined;
   }
 
@@ -408,7 +419,7 @@ async function requestSasAttestation(
 
     const attestBody: Record<string, unknown> = {
       wallet_address: walletAddress,
-      nonce: serverNonce,
+      nonce: resolvedNonce,
       signature,
       message,
     };
@@ -462,12 +473,12 @@ export async function submitViaWallet(
     relayerUrl?: string;
     relayerApiKey?: string;
     /**
-     * Validator-signed mint receipt. Consumed only on the first-verification
-     * path: when present, the SDK prepends an `Ed25519Program::verify`
-     * instruction so on-chain `mint_anchor` can confirm the commitment was
-     * endorsed by the configured validator. Re-verification ignores the
-     * field entirely — `update_anchor` enforces binding via the
-     * VerificationResult PDA instead.
+     * Validator-signed receipt. On first verification (mint), prepends an
+     * `Ed25519Program::verify` instruction over the raw receipt message. On
+     * re-verification (update), prepends an `Ed25519Program::verify`
+     * instruction over the 32-byte SHA-256 digest of the version 4 update
+     * receipt preimage immediately before `update_anchor_compact` or
+     * `update_anchor_bound`.
      */
     signedReceipt?: SignedReceiptDto;
     /**
@@ -540,8 +551,48 @@ export async function submitViaWallet(
         throw new Error("proof commitment does not match the submitted commitment");
       }
 
-      // Re-verification submits challenge creation, proof verification, and
-      // identity update in one transaction.
+      // Re-verification submits proof verification, Ed25519 update receipt
+      // digest verification, and identity update in one transaction.
+      if (!options.signedReceipt) {
+        return {
+          success: false,
+          error:
+            "Returning verification requires a validator-signed update receipt. The validator did not return one, so the SDK did not request a wallet transaction.",
+          failedAt: "submission",
+        };
+      }
+      const decodedReceipt = decodeSignedReceipt(options.signedReceipt);
+      const ed25519Ix =
+        decodedReceipt &&
+        decodedReceipt.version === 4 &&
+        receiptMatchesBinding(options.signedReceipt, {
+          purpose: 4,
+          projectionVersion:
+            request?.action.projectionVersion ??
+            new DataView(
+              decodedReceipt.message.buffer,
+              decodedReceipt.message.byteOffset,
+              decodedReceipt.message.byteLength,
+            ).getUint16(29, true),
+          wallet: provider.wallet.publicKey.toBytes(),
+          commitment: new Uint8Array(expectedCommitment),
+        })
+          ? await buildEd25519ReceiptIx(options.signedReceipt)
+          : null;
+      if (!decodedReceipt || decodedReceipt.version !== 4 || !ed25519Ix) {
+        return {
+          success: false,
+          error:
+            "Validator returned a signed update receipt that failed to decode (malformed hex or wrong version). Refusing to update without a valid binding.",
+          failedAt: "submission",
+        };
+      }
+      const receiptArgs = {
+        validatedAt: new anchor.BN(decodedReceipt.validatedAt.toString()),
+        assuranceTier: decodedReceipt.assuranceTier ?? 0,
+        sessionFinalDigest: decodedReceipt.sessionFinalDigest,
+      };
+
       const verifierProgramId = new PublicKey(resolveDeployment(options.requestBoundManifest).verifierProgram);
 
       if (request) {
@@ -552,15 +603,6 @@ export async function submitViaWallet(
         nonce = Array.from(preparedNonce.bytes);
         serverNonce = preparedNonce.source === "executor";
       }
-
-      const [challengePda] = PublicKey.findProgramAddressSync(
-        [
-          new TextEncoder().encode("challenge"),
-          provider.wallet.publicKey.toBuffer(),
-          new Uint8Array(nonce),
-        ],
-        verifierProgramId
-      );
 
       const [verificationPda] = PublicKey.findProgramAddressSync(
         [
@@ -595,16 +637,6 @@ export async function submitViaWallet(
         provider,
       );
 
-      // Build all three instructions without sending
-      const createChallengeIx = await verifierProgram.methods
-        .createChallenge(nonce)
-        .accounts({
-          challenger: provider.wallet.publicKey,
-          challenge: challengePda,
-          systemProgram: SystemProgram.programId,
-        })
-        .instruction();
-
       const [requestStatePda] = PublicKey.findProgramAddressSync(
         [new TextEncoder().encode("proof_request_state"), provider.wallet.publicKey.toBytes()], anchorProgramId,
       );
@@ -612,7 +644,7 @@ export async function submitViaWallet(
       const prepareIx = request ? await anchorProgram.methods.prepareProofRequest().accounts({ authority: provider.wallet.publicKey, proofRequestState: requestStatePda, systemProgram: SystemProgram.programId }).instruction() : null;
       const verifyProofIx = request ? await verifierProgram.methods.verifyProofBound(
         nonce, compactProof.proofBytes, compactProof.commitmentNew, compactProof.commitmentPrev, compactProof.threshold, compactProof.minDistance, new anchor.BN(request.action.validUntil.toString()),
-      ).accounts({ verifier: provider.wallet.publicKey, challenge: challengePda, verificationResult: verificationPda, identityState: identityPda, proofRequestState: requestStatePda, systemProgram: SystemProgram.programId }).instruction() : await verifierProgram.methods
+      ).accounts({ verifier: provider.wallet.publicKey, verificationResult: verificationPda, identityState: identityPda, proofRequestState: requestStatePda, systemProgram: SystemProgram.programId }).instruction() : await verifierProgram.methods
         .verifyProofCompact(
           nonce,
           compactProof.proofBytes,
@@ -623,16 +655,15 @@ export async function submitViaWallet(
         )
         .accounts({
           verifier: provider.wallet.publicKey,
-          challenge: challengePda,
           verificationResult: verificationPda,
           systemProgram: SystemProgram.programId,
         })
         .instruction();
 
-      const updateAnchorIx = request ? await anchorProgram.methods.updateAnchorBound(nonce).accounts({
-        authority: provider.wallet.publicKey, identityState: identityPda, proofRequestState: requestStatePda, verificationResult: verificationPda, protocolConfig: protocolConfigPda, treasury: treasuryPda, systemProgram: SystemProgram.programId,
+      const updateAnchorIx = request ? await anchorProgram.methods.updateAnchorBound(receiptArgs).accounts({
+        authority: provider.wallet.publicKey, identityState: identityPda, proofRequestState: requestStatePda, verificationResult: verificationPda, protocolConfig: protocolConfigPda, treasury: treasuryPda, systemProgram: SystemProgram.programId, instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY, verifierProgram: verifierProgramId,
       }).instruction() : await anchorProgram.methods
-        .updateAnchorCompact(nonce)
+        .updateAnchorCompact(receiptArgs)
         .accounts({
           authority: provider.wallet.publicKey,
           identityState: identityPda,
@@ -640,17 +671,28 @@ export async function submitViaWallet(
           protocolConfig: protocolConfigPda,
           treasury: treasuryPda,
           systemProgram: SystemProgram.programId,
+          instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+          verifierProgram: verifierProgramId,
         })
         .instruction();
 
       // Request more compute when the transaction also creates or updates the
-      // encrypted baseline account.
+      // encrypted baseline account, unless a request-bound update also carries
+      // a 32-byte paired session digest and encrypted baseline blob (5 non-budget
+      // instructions grant 1,000,000 default CUs and omitting the 40-byte budget
+      // instruction keeps the legacy packet at 1,202 bytes <= 1,232 bytes).
       const tx = new Transaction();
-      const computeUnitLimit = options.encryptedBaselineBlob ? 300_000 : 250_000;
-      tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnitLimit }));
+      const omitComputeBudgetForPacketLimit =
+        Boolean(request) &&
+        receiptArgs.sessionFinalDigest !== null &&
+        Boolean(options.encryptedBaselineBlob);
+      if (!omitComputeBudgetForPacketLimit) {
+        const computeUnitLimit = options.encryptedBaselineBlob ? 300_000 : 250_000;
+        tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnitLimit }));
+      }
       if (prepareIx) tx.add(prepareIx);
-      tx.add(createChallengeIx);
       tx.add(verifyProofIx);
+      tx.add(ed25519Ix);
       tx.add(updateAnchorIx);
       if (options.encryptedBaselineBlob) {
         const setBaselineIx = await buildSetEncryptedBaselineIx(
@@ -935,35 +977,32 @@ export async function submitResetViaWallet(
       provider,
     );
     const projectionVersion = options.projectionVersion ?? 0;
-    let receiptIx: import("@solana/web3.js").TransactionInstruction | undefined;
-    if (getProjectionDefinition(projectionVersion).authenticatedTransitions) {
-      if (
-        !options.signedReceipt ||
-        !receiptMatchesBinding(options.signedReceipt, {
-          purpose: 3,
-          projectionVersion,
-          wallet: provider.wallet.publicKey.toBytes(),
-          commitment,
-        })
-      ) {
-        return {
-          success: false,
-          error: "Baseline reset requires a matching validator-signed receipt.",
-          failedAt: "submission",
-        };
-      }
-      const builtReceiptIx = await buildEd25519ReceiptIx(options.signedReceipt);
-      if (!builtReceiptIx) {
-        return {
-          success: false,
-          error: "Baseline reset receipt is malformed.",
-          failedAt: "submission",
-        };
-      }
-      receiptIx = builtReceiptIx;
+    getProjectionDefinition(projectionVersion);
+    if (
+      !options.signedReceipt ||
+      !receiptMatchesBinding(options.signedReceipt, {
+        purpose: 3,
+        projectionVersion,
+        wallet: provider.wallet.publicKey.toBytes(),
+        commitment,
+      })
+    ) {
+      return {
+        success: false,
+        error: "Baseline reset requires a matching validator-signed receipt.",
+        failedAt: "submission",
+      };
+    }
+    const receiptIx = await buildEd25519ReceiptIx(options.signedReceipt);
+    if (!receiptIx) {
+      return {
+        success: false,
+        error: "Baseline reset receipt is malformed.",
+        failedAt: "submission",
+      };
     }
 
-    let resetBuilder = anchorProgram.methods
+    const resetBuilder = anchorProgram.methods
       .resetIdentityState(Array.from(commitment), projectionVersion)
       .accounts({
         authority: provider.wallet.publicKey,
@@ -971,16 +1010,14 @@ export async function submitResetViaWallet(
         protocolConfig: protocolConfigPda,
         treasury: treasuryPda,
         systemProgram: SystemProgram.programId,
-      });
-    if (getProjectionDefinition(projectionVersion).authenticatedTransitions) {
-      resetBuilder = resetBuilder.remainingAccounts([
+      })
+      .remainingAccounts([
         {
           pubkey: SYSVAR_INSTRUCTIONS_PUBKEY,
           isSigner: false,
           isWritable: false,
         },
       ]);
-    }
     const resetIx = await resetBuilder.instruction();
     if (options.requestBoundManifest) {
       validateRequestBoundManifest(options.requestBoundManifest);
@@ -993,7 +1030,7 @@ export async function submitResetViaWallet(
     // Keep an explicit limit for determinism and to match batched-tx ergonomics.
     const tx = new Transaction();
     tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }));
-    if (receiptIx) tx.add(receiptIx);
+    tx.add(receiptIx);
     tx.add(resetIx);
     if (options.encryptedBaselineBlob) {
       const setBaselineIx = await buildSetEncryptedBaselineIx(
@@ -1064,6 +1101,8 @@ export async function submitRebaselineViaWallet(
   options: {
     wallet: SubmissionWallet;
     connection: SubmissionConnection;
+    relayerUrl?: string;
+    relayerApiKey?: string;
     requestBoundManifest?: RequestBoundManifest;
     signedReceipt: SignedReceiptDto;
     encryptedBaselineBlob: Uint8Array;
@@ -1159,9 +1198,24 @@ export async function submitRebaselineViaWallet(
       await options.connection.getLatestBlockhash("confirmed")
     ).blockhash;
     const sent = await sendAndConfirm(options.wallet, options.connection, tx);
-    return sent.ok
-      ? { success: true, txSignature: sent.txSig }
-      : { success: false, error: sent.error, failedAt: sent.failedAt };
+    if (!sent.ok) {
+      return { success: false, error: sent.error, failedAt: sent.failedAt };
+    }
+    let attestationTx: string | undefined;
+    if (options.relayerUrl && !resolveDeployment(options.requestBoundManifest).isolated) {
+      try {
+        attestationTx = await requestSasAttestation(
+          options.wallet,
+          provider.wallet.publicKey.toBase58(),
+          options.relayerUrl,
+          options.relayerApiKey,
+          undefined,
+        );
+      } catch (err) {
+        sdkWarn(`[Entros SDK] SAS attestation skipped: ${errToString(err)}`);
+      }
+    }
+    return { success: true, txSignature: sent.txSig, attestationTx };
   } catch (err) {
     return { success: false, error: errToString(err), failedAt: "submission" };
   }
