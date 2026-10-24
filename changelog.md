@@ -9,6 +9,14 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+<!-- generated-release:4.16.1 -->
+## [4.16.1] - 2026-10-24
+
+- Add v4 update receipt submission, reset nonce auto-fetch, and post-reset attestation checks (880a5fc).
+- Add projection v2 log1p z-score scaling and update SDK test suites (ae9cfb2).
+- Patch transitive dependency advisories in the lockfile (8250960).
+<!-- /generated-release:4.16.1 -->
+
 <!-- generated-release:4.16.0 -->
 ## [4.16.0] - 2026-10-13
 
