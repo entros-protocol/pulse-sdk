@@ -9,6 +9,13 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+<!-- generated-release:4.16.2 -->
+## [4.16.2] - 2026-10-28
+
+- Pin Node 24.22.1 for the October 2026 security release (7b1ba56).
+- Accept a two-second gap between the RPC block time and the program clock when reading integrator evidence (936dfe3).
+<!-- /generated-release:4.16.2 -->
+
 <!-- generated-release:4.16.1 -->
 ## [4.16.1] - 2026-10-24
 
