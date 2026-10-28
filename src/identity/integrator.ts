@@ -22,6 +22,13 @@ export const INTEGRATOR_PROGRAM_IDS = {
   schema: SAS_CONFIG.entrosSchemaPda,
 } as const;
 
+/**
+ * Seconds the RPC block time of a slot may differ from the Clock sysvar time
+ * the program stored in that slot. Devnet has served block times one second
+ * after the stored clock.
+ */
+export const BLOCK_TIME_TOLERANCE_SECONDS = 2;
+
 /** Rejects after three seconds so one stalled RPC call cannot hold a reader open. */
 export async function boundedRpc<T>(operation: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -268,14 +275,20 @@ async function readOnce(
     now,
   );
   if (!identity) return { status: "invalid", reason: "identity_invalid" };
+  // The program stores its own clock, which can trail or lead the RPC block
+  // time. A time that must precede the transaction is checked against the
+  // earliest clock it could have had, and one it wrote against the latest.
+  const earliestClock = transaction.blockTime - BLOCK_TIME_TOLERANCE_SECONDS;
+  const latestClock = transaction.blockTime + BLOCK_TIME_TOLERANCE_SECONDS;
   if (
     (transactionProjection !== undefined &&
       transactionProjection !== identity.projectionVersion) ||
-    identity.lastRebaselineTimestamp > transaction.blockTime ||
+    identity.lastRebaselineTimestamp >
+      (transaction.kind === "rebaseline" ? latestClock : earliestClock) ||
     identity.currentCommitment !== transaction.commitment ||
-    identity.lastResetTimestamp >= transaction.blockTime ||
-    identity.lastVerificationTimestamp < transaction.blockTime ||
-    identity.creationTimestamp > transaction.blockTime
+    identity.lastResetTimestamp >= earliestClock ||
+    identity.lastVerificationTimestamp < earliestClock ||
+    identity.creationTimestamp > latestClock
   )
     return { status: "invalid", reason: "transaction_invalid" };
   if (
@@ -283,8 +296,9 @@ async function readOnce(
     !(
       transaction.kind === "mint" &&
       identity.trustScore === 0 &&
-      identity.creationTimestamp === transaction.blockTime &&
-      identity.lastVerificationTimestamp === transaction.blockTime &&
+      identity.creationTimestamp === identity.lastVerificationTimestamp &&
+      identity.lastVerificationTimestamp >= earliestClock &&
+      identity.lastVerificationTimestamp <= latestClock &&
       identity.lastResetTimestamp === 0 &&
       identity.lastRebaselineTimestamp === 0
     )
