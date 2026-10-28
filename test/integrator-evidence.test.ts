@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { BorshInstructionCoder, utils, type Idl } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
 import {
+  BLOCK_TIME_TOLERANCE_SECONDS,
   INTEGRATOR_DEVNET_GENESIS_HASH,
   readIntegratorEvidence,
 } from "../src/identity/integrator";
@@ -755,5 +756,86 @@ describe("strict integrator evidence", () => {
       }),
     ).toEqual({ status: "invalid", reason: "invalid_request" });
     expect(fixture.calls).toHaveLength(3);
+  });
+  describe("block time against the stored program clock", () => {
+    const blockTime = 1_799_999_990;
+    const tolerance = BLOCK_TIME_TOLERANCE_SECONDS;
+
+    it.each([-tolerance, -1, 0, 1, tolerance])(
+      "accepts an update whose stored clock is %i s from the block time",
+      async (offset) => {
+        const fixture = await createEvidenceFixture({
+          blockTime,
+          lastVerificationTimestamp: blockTime + offset,
+        });
+        expect((await readIntegratorEvidence(fixture.input)).status).toBe(
+          "available",
+        );
+      },
+    );
+
+    it("rejects an update whose stored clock trails the block time beyond the tolerance", async () => {
+      const fixture = await createEvidenceFixture({
+        blockTime,
+        lastVerificationTimestamp: blockTime - tolerance - 1,
+      });
+      expect(await readIntegratorEvidence(fixture.input)).toEqual({
+        status: "invalid",
+        reason: "transaction_invalid",
+      });
+    });
+
+    it.each([-tolerance, -1, 1, tolerance])(
+      "accepts a first mint whose stored clock is %i s from the block time",
+      async (offset) => {
+        const fixture = await createEvidenceFixture({
+          kind: "mint",
+          blockTime,
+          creationTimestamp: blockTime + offset,
+          lastVerificationTimestamp: blockTime + offset,
+        });
+        expect((await readIntegratorEvidence(fixture.input)).status).toBe(
+          "available",
+        );
+      },
+    );
+
+    it.each([-tolerance - 1, tolerance + 1])(
+      "rejects a first mint whose stored clock is %i s from the block time",
+      async (offset) => {
+        const fixture = await createEvidenceFixture({
+          kind: "mint",
+          blockTime,
+          creationTimestamp: blockTime + offset,
+          lastVerificationTimestamp: blockTime + offset,
+        });
+        expect((await readIntegratorEvidence(fixture.input)).status).toBe(
+          "invalid",
+        );
+      },
+    );
+
+    it("accepts a rebaseline whose stored clock trails the block time by one second", async () => {
+      const fixture = await createEvidenceFixture({
+        kind: "rebaseline",
+        blockTime,
+        lastVerificationTimestamp: blockTime - 1,
+        lastRebaselineTimestamp: blockTime - 1,
+      });
+      expect((await readIntegratorEvidence(fixture.input)).status).toBe(
+        "available",
+      );
+    });
+
+    it("rejects a reset that could fall at or after the transaction's clock", async () => {
+      const fixture = await createEvidenceFixture({
+        blockTime,
+        lastResetTimestamp: blockTime - tolerance,
+      });
+      expect(await readIntegratorEvidence(fixture.input)).toEqual({
+        status: "invalid",
+        reason: "transaction_invalid",
+      });
+    });
   });
 });
