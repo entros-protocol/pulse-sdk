@@ -29,6 +29,14 @@ export const INTEGRATOR_PROGRAM_IDS = {
  */
 export const BLOCK_TIME_TOLERANCE_SECONDS = 2;
 
+/**
+ * Seconds a reader waits in total for a device clock that trails the chain.
+ * Devices that sync time automatically have been measured several seconds slow.
+ */
+export const CLOCK_CATCH_UP_SECONDS = 15;
+
+type ChainTimeSource = "transaction" | "identity" | "attestation";
+
 /** Rejects after three seconds so one stalled RPC call cannot hold a reader open. */
 export async function boundedRpc<T>(operation: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -59,7 +67,6 @@ async function strictIdentity(
   account: AccountInfo<Uint8Array>,
   wallet: PublicKey,
   identityPda: PublicKey,
-  now: number,
 ): Promise<IntegratorIdentityEvidence | null> {
   const { PublicKey } = await import("@solana/web3.js");
   if (
@@ -80,8 +87,8 @@ async function strictIdentity(
   )
     return null;
   if (
-    !integer(state.creationTimestamp, 1, now) ||
-    !integer(state.lastVerificationTimestamp, state.creationTimestamp, now)
+    !integer(state.creationTimestamp, 1) ||
+    !integer(state.lastVerificationTimestamp, state.creationTimestamp)
   )
     return null;
   if (
@@ -191,7 +198,7 @@ async function strictAttestation(
 async function readOnce(
   input: ReadIntegratorEvidenceInput,
   readNow: () => number | null,
-  onFutureAttestation: (verifiedAt: number) => void,
+  onFutureTime: (source: ChainTimeSource, time: number) => void,
 ): Promise<IntegratorEvidenceReadResult> {
   const { PublicKey } = await import("@solana/web3.js");
   const { connection, transactionSignature: signature } = input;
@@ -246,7 +253,7 @@ async function readOnce(
     return { status: "invalid", reason: "transaction_invalid" };
   if (parsed.blockTime == null)
     return { status: "unavailable", reason: "transaction_unavailable" };
-  if (!integer(parsed.blockTime, 1, now) || !integer(parsed.slot, 1))
+  if (!integer(parsed.blockTime, 1) || !integer(parsed.slot, 1))
     return { status: "invalid", reason: "transaction_invalid" };
   const qualifying = await qualifyingTransaction(
     parsed,
@@ -255,6 +262,10 @@ async function readOnce(
     identityPda,
   );
   if (!qualifying) return { status: "invalid", reason: "transaction_invalid" };
+  if (parsed.blockTime > now) {
+    onFutureTime("transaction", parsed.blockTime);
+    return { status: "invalid", reason: "transaction_invalid" };
+  }
   const { projectionVersion: transactionProjection, ...transaction } =
     qualifying;
   const snapshot = await boundedRpc(
@@ -268,12 +279,7 @@ async function readOnce(
   if (!integer(snapshot.context.slot, transaction.slot))
     return { status: "unavailable", reason: "snapshot_unavailable" };
   if (!snapshot.value) return { status: "invalid", reason: "identity_missing" };
-  const identity = await strictIdentity(
-    snapshot.value,
-    wallet,
-    identityPda,
-    now,
-  );
+  const identity = await strictIdentity(snapshot.value, wallet, identityPda);
   if (!identity) return { status: "invalid", reason: "identity_invalid" };
   // The program stores its own clock, which can trail or lead the RPC block
   // time. A time that must precede the transaction is checked against the
@@ -304,6 +310,10 @@ async function readOnce(
     )
   )
     return { status: "invalid", reason: "identity_invalid" };
+  if (identity.lastVerificationTimestamp > now) {
+    onFutureTime("identity", identity.lastVerificationTimestamp);
+    return { status: "invalid", reason: "identity_invalid" };
+  }
   const [attestationPda] = PublicKey.findProgramAddressSync(
     [
       new TextEncoder().encode("attestation"),
@@ -330,7 +340,7 @@ async function readOnce(
           attestationPda,
           account.context.slot,
           now,
-          onFutureAttestation,
+          (verifiedAt) => onFutureTime("attestation", verifiedAt),
         )
       : { status: "unavailable" };
   } catch {
@@ -354,23 +364,22 @@ async function readOnce(
   };
 }
 
-async function waitForAttestationClock(
-  verifiedAt: number,
+/** Waits for the device clock to reach a chain time, within one budget shared by every wait of a read. */
+async function waitForChainClock(
+  target: number,
   readNow: () => number | null,
+  startedAt: number,
 ): Promise<"ready" | "timeout" | "invalid"> {
-  const budgetMs = 3000;
-  const startedAt = performance.now();
+  const budgetMs = CLOCK_CATCH_UP_SECONDS * 1000;
   while (true) {
     const now = readNow();
     if (now === null) return "invalid";
-    const elapsedMs = performance.now() - startedAt;
-    if (elapsedMs > budgetMs || verifiedAt - now > budgetMs / 1000)
+    const remainingMs = budgetMs - (performance.now() - startedAt);
+    if (remainingMs < 0 || (target - now) * 1000 > remainingMs)
       return "timeout";
-    if (now >= verifiedAt) return "ready";
-    const remainingMs = budgetMs - elapsedMs;
-    if (remainingMs <= 0) return "timeout";
+    if (now >= target) return "ready";
     await new Promise<void>((resolve) => {
-      setTimeout(resolve, Math.min(remainingMs, (verifiedAt - now) * 1000));
+      setTimeout(resolve, Math.min(remainingMs, (target - now) * 1000));
     });
   }
 }
@@ -399,29 +408,35 @@ export async function readIntegratorEvidence(
     }
   };
   let propagationRetried = false;
-  let clockReconciled = false;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  // A device clock behind the chain makes fresh evidence look future-dated.
+  // Each chain time gets one wait, so a moving target cannot extend the read.
+  const waited = new Set<ChainTimeSource>();
+  let clockStartedAt: number | null = null;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
-      const pending: { verifiedAt: number | null } = { verifiedAt: null };
-      const result = await readOnce(input, readNow, (verifiedAt) => {
-        pending.verifiedAt = verifiedAt;
+      const pending: { source: ChainTimeSource; time: number }[] = [];
+      const result = await readOnce(input, readNow, (source, time) => {
+        pending.push({ source, time });
       });
-      if (result.status === "invalid") return result;
+      const future = pending[0];
       if (
-        pending.verifiedAt !== null &&
+        future !== undefined &&
         typeof input.nowSeconds === "function" &&
-        !clockReconciled
+        !waited.has(future.source)
       ) {
-        clockReconciled = true;
-        const clock = await waitForAttestationClock(
-          pending.verifiedAt,
+        waited.add(future.source);
+        clockStartedAt ??= performance.now();
+        const clock = await waitForChainClock(
+          future.time,
           readNow,
+          clockStartedAt,
         );
         if (clock === "invalid")
           return { status: "invalid", reason: "invalid_request" };
         if (clock === "ready") continue;
         return result;
       }
+      if (result.status === "invalid") return result;
       if (result.status !== "unavailable" || propagationRetried) return result;
       propagationRetried = true;
     } catch {
