@@ -9,6 +9,12 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+<!-- generated-release:4.16.3 -->
+## [4.16.3] - 2026-10-30
+
+- Wait for a device clock that trails the chain before checking integrator evidence (dcd4463).
+<!-- /generated-release:4.16.3 -->
+
 <!-- generated-release:4.16.2 -->
 ## [4.16.2] - 2026-10-28
 
