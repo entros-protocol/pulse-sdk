@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readIntegratorEvidence } from "../src/identity/integrator";
+import {
+  CLOCK_CATCH_UP_SECONDS,
+  readIntegratorEvidence,
+} from "../src/identity/integrator";
 import { createEvidenceFixture } from "./fixtures/integrator-evidence";
 
 afterEach(() => {
@@ -48,7 +51,7 @@ async function finishRead(
 }
 
 describe("attestation clock reconciliation", () => {
-  it.each([1, 3])(
+  it.each([1, 3, CLOCK_CATCH_UP_SECONDS])(
     "re-reads after the real clock reaches +%i seconds",
     async (offset) => {
       const fixture = await futureFixture(offset);
@@ -72,8 +75,8 @@ describe("attestation clock reconciliation", () => {
     },
   );
 
-  it("rejects +4 seconds without waiting or re-reading", async () => {
-    const fixture = await futureFixture(4);
+  it("rejects a gap beyond the limit without waiting or re-reading", async () => {
+    const fixture = await futureFixture(CLOCK_CATCH_UP_SECONDS + 1);
     const result = await finishRead(fixture);
     expect(result).toMatchObject({
       status: "available",
@@ -86,7 +89,9 @@ describe("attestation clock reconciliation", () => {
   it("rejects a clock that catches up after the monotonic deadline", async () => {
     const fixture = await futureFixture();
     vi.spyOn(performance, "now").mockImplementation(() =>
-      liveClock() === fixture.input.nowSeconds ? 0 : 4000,
+      liveClock() === fixture.input.nowSeconds
+        ? 0
+        : (CLOCK_CATCH_UP_SECONDS + 1) * 1000,
     );
     const result = await finishRead(fixture);
     expect(result).toMatchObject({
@@ -115,7 +120,7 @@ describe("attestation clock reconciliation", () => {
       evidence: { attestation: { status: "invalid" } },
     });
     expect(fixture.calls).toHaveLength(5);
-    expect(performance.now()).toBe(3000);
+    expect(performance.now()).toBe(CLOCK_CATCH_UP_SECONDS * 1000);
   });
 
   it.each(["backwards", "throws", "fractional", "nan"])(
@@ -263,5 +268,121 @@ describe("attestation clock reconciliation", () => {
       reason: "transaction_unavailable",
     });
     expect(reads).toBe(3);
+  });
+}, 10000);
+
+async function slowClockFixture(
+  options: Parameters<typeof createEvidenceFixture>[0],
+) {
+  const fixture = await createEvidenceFixture(options);
+  await readIntegratorEvidence(fixture.input);
+  fixture.calls.length = 0;
+  vi.useFakeTimers({
+    toFake: ["setTimeout", "clearTimeout", "Date", "performance"],
+  });
+  vi.setSystemTime(fixture.input.nowSeconds * 1000);
+  return fixture;
+}
+
+const NOW = 1_800_000_000;
+const firstRead = ["genesis", "status", "transaction"];
+const fullRead = [...firstRead, "identity", "attestation"];
+
+describe("device clock behind the chain", () => {
+  it("waits for a block time four seconds ahead of the device clock", async () => {
+    const fixture = await slowClockFixture({ blockTime: NOW + 4 });
+    const result = await finishRead(fixture);
+    expect(result).toMatchObject({
+      status: "available",
+      evidence: {
+        transaction: { blockTime: NOW + 4 },
+        attestation: { status: "present" },
+      },
+    });
+    expect(fixture.calls).toEqual([...firstRead, ...fullRead]);
+    expect(performance.now()).toBe(4000);
+  });
+
+  it("waits for an identity time stored ahead of the block time", async () => {
+    const fixture = await slowClockFixture({
+      blockTime: NOW,
+      lastVerificationTimestamp: NOW + 1,
+    });
+    const result = await finishRead(fixture);
+    expect(result.status).toBe("available");
+    expect(fixture.calls).toEqual([...firstRead, "identity", ...fullRead]);
+    expect(performance.now()).toBe(1000);
+  });
+
+  it("waits for the block and then a later attestation within one limit", async () => {
+    const fixture = await slowClockFixture({ blockTime: NOW + 4 });
+    fixture.sasAccount.data.writeBigInt64LE(BigInt(NOW + 6), 104);
+    const result = await finishRead(fixture);
+    expect(result).toMatchObject({
+      status: "available",
+      evidence: { attestation: { status: "present" } },
+    });
+    expect(fixture.calls).toEqual([...firstRead, ...fullRead, ...fullRead]);
+    expect(performance.now()).toBe(6000);
+  });
+
+  it("shares the limit across waits", async () => {
+    const fixture = await slowClockFixture({ blockTime: NOW + 10 });
+    fixture.sasAccount.data.writeBigInt64LE(
+      BigInt(NOW + CLOCK_CATCH_UP_SECONDS + 1),
+      104,
+    );
+    const result = await finishRead(fixture);
+    expect(result).toMatchObject({
+      status: "available",
+      evidence: { attestation: { status: "invalid" } },
+    });
+    expect(fixture.calls).toEqual([...firstRead, ...fullRead]);
+    expect(performance.now()).toBe(10000);
+  });
+
+  it("rejects a block time beyond the limit without waiting", async () => {
+    const fixture = await slowClockFixture({
+      blockTime: NOW + CLOCK_CATCH_UP_SECONDS + 1,
+    });
+    const result = await finishRead(fixture);
+    expect(result).toEqual({ status: "invalid", reason: "transaction_invalid" });
+    expect(fixture.calls).toEqual(firstRead);
+    expect(performance.now()).toBe(0);
+  });
+
+  it("rejects a future block time at once with a fixed snapshot clock", async () => {
+    const fixture = await slowClockFixture({ blockTime: NOW + 4 });
+    const result = await finishRead(fixture, NOW);
+    expect(result).toEqual({ status: "invalid", reason: "transaction_invalid" });
+    expect(fixture.calls).toEqual(firstRead);
+    expect(performance.now()).toBe(0);
+  });
+
+  it("never waits for an identity that fails another check", async () => {
+    const fixture = await slowClockFixture({
+      blockTime: NOW,
+      lastVerificationTimestamp: NOW + 1,
+    });
+    fixture.identityAccount.data[62] = 4;
+    const result = await finishRead(fixture);
+    expect(result).toEqual({ status: "invalid", reason: "transaction_invalid" });
+    expect(fixture.calls).toEqual([...firstRead, "identity"]);
+    expect(performance.now()).toBe(0);
+  });
+
+  it("does not wait again for a block time that moves after waiting", async () => {
+    const fixture = await slowClockFixture({ blockTime: NOW + 1 });
+    const getTransaction = fixture.connection.getParsedTransaction;
+    fixture.connection.getParsedTransaction = async (...args) => {
+      const transaction = await getTransaction(...args);
+      return performance.now() > 0 && transaction
+        ? { ...transaction, blockTime: NOW + 2 }
+        : transaction;
+    };
+    const result = await finishRead(fixture);
+    expect(result).toEqual({ status: "invalid", reason: "transaction_invalid" });
+    expect(fixture.calls).toEqual([...firstRead, ...firstRead]);
+    expect(performance.now()).toBe(1000);
   });
 }, 10000);
