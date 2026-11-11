@@ -105,6 +105,9 @@ Late timer wakeups can exceed the waiting budget and still cause rejection.
 The result uses `status: "available"`, `"invalid"`, or `"unavailable"`.
 An available result contains identity and transaction evidence, plus a separate attestation status.
 A missing or unavailable SAS account does not prevent the reader from returning available identity evidence.
+An attestation that no longer stands for the wallet's current identity reads as `missing`.
+That covers an expired attestation, one issued before the last reset or before the identity was created,
+and one issued at or before the identity migrated to the wallet. `invalid` means an account the reader cannot accept.
 Your application decides whether its policy requires an attestation.
 
 Pair the observation with `evaluatePolicy` from `@entros/verify/policy` in Verify `0.2.0` or later.
@@ -135,6 +138,12 @@ The agent wallet counts only while the cached owner matches the Core owner. Othe
 
 `buildSetAgentWalletInstructions` builds the registry's Ed25519 check and `set_agent_wallet` instructions for one binding request.
 `findLatestVerificationTransaction` finds a wallet's newest qualifying verification transaction for `readIntegratorEvidence`.
+Pass `verifiedAt`, the identity account's last verification time. The search then pages back to that time.
+Without it, the search reads the newest signatures alone, and later transactions that name the identity can hide the verification.
+The search stops at its bounds, so a flood of later transactions can still hide the verification.
+Pass `candidateSignatures` with `verifiedAt` when you already hold likely signatures, such as the one the verifying client reported.
+The SDK checks each candidate as it checks a found transaction and returns the first that is the verification `verifiedAt` names.
+It runs the search when no candidate counts.
 Evaluate permits with `@entros/verify/agent-permit` in Verify `0.3.0` or later.
 The [integration guide](https://entros.io/docs/integrate/agent-permit) covers the complete flow.
 
@@ -166,6 +175,7 @@ const result = await pulse.verify(touchElement, walletAdapter, connection, {
 ```
 
 For staged capture, call `session.bindValidationChallenge(challenge.nonce, challenge.expiresAtMs)` before `complete()`.
+Bind the challenge under earlier projections as well. The unsigned request then names its nonce as `challenge_nonce`.
 
 The touch element defines the projection 2 coordinate surface by default. Use `startTouch({ eventTarget, coordinateSurface })` when those elements differ.
 
@@ -193,6 +203,14 @@ const session = pulse.createPairedSession({
   onFailure: (error) => startOver(error.reason),
 });
 
+// When the wallet connects.
+await pulse.preparePairedAuthorization(walletAdapter.publicKey.toBase58());
+
+// Call from a tap of its own, before the tap that begins verification.
+if (!pulse.pairedAuthorization(walletAdapter.publicKey.toBase58())) {
+  await pulse.authorizePairedSession(walletAdapter);
+}
+
 // Call from the tap that begins verification.
 await session.start(walletAdapter.publicKey.toBase58(), traceSurface, connection);
 
@@ -200,6 +218,21 @@ async function finish() {
   const result = await session.complete(walletAdapter, connection);
 }
 ```
+
+The relayer serves a paired session only for the wallet's owner. `authorizePairedSession` has the
+wallet sign one message, and the SDK sends that authorization with each open and finalize.
+One signature serves every paired session of the wallet until the authorization expires, within the hour.
+`pairedAuthorization(wallet)` returns null when the wallet must sign again.
+`session.start` cannot ask the wallet: its tap belongs to the microphone and motion permissions.
+Call `preparePairedAuthorization(address)` when the wallet connects. It fetches the grant ahead of
+time, so `authorizePairedSession` opens the wallet prompt without waiting on the network.
+Some browsers drop a tap's permission to open the prompt once a request runs first.
+`authorizePairedSession` rejects without holding anything when the wallet's key changed after the
+grant was requested, when the signature does not verify, or when the prompt stayed open too long.
+`authorization_required` and `authorization_invalid` mean the authorization was refused or ran out.
+Call `authorizePairedSession` again before you retry: a retry with the same authorization fails the same way.
+A host that opens sessions through its own server passes `requestGrant` to both methods,
+and its `openSession` option receives the authorization as a second argument.
 
 The current source uses paired protocol version 2 and requires a compatible executor.
 Speech and tracing may occur in either order. The controller requests a final cue after speech
@@ -214,7 +247,8 @@ refuses a receipt that does not bind this session before it asks the wallet to s
 
 ### Walletless (liveness-check tier)
 
-For liveness checking without wallet onboarding. The integrator can fund verification through the relayer API. This path submits protocol transactions through the relayer. It does not issue SAS attestations.
+For liveness checking without wallet onboarding. This path submits protocol transactions through a relayer that the integrator funds. It does not issue SAS attestations.
+The Entros executor does not serve this path. `relayerUrl` must name a relayer that accepts the walletless proof request.
 
 ```typescript
 import { PulseSDK } from '@entros/pulse-sdk';

@@ -491,6 +491,32 @@
               ]
             }
           }
+        },
+        {
+          "name": "migration_record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  103,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -2158,6 +2184,19 @@
       ]
     },
     {
+      "name": "MigrationRecord",
+      "discriminator": [
+        16,
+        36,
+        116,
+        243,
+        192,
+        61,
+        40,
+        1
+      ]
+    },
+    {
       "name": "ProofRequestState",
       "discriminator": [
         213,
@@ -2469,6 +2508,11 @@
       "code": 6040,
       "name": "ReceiptAlreadyUsed",
       "msg": "Receipt validated_at precedes the identity's last verification timestamp"
+    },
+    {
+      "code": 6041,
+      "name": "DerivedAccountInUse",
+      "msg": "The derived account address already holds an account"
     }
   ],
   "types": [
@@ -2767,6 +2811,58 @@
           },
           {
             "name": "identity_new",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MigrationRecord",
+      "docs": [
+        "Written at PDA seeds `[b\"migration\", wallet.key().as_ref()]` each time an",
+        "identity moves to `wallet`. A migrated identity keeps its trust score and",
+        "verification times, so a consumer that counts one action per identity needs",
+        "to know when the identity arrived. The slot orders the migration against",
+        "other on-chain events. The time compares with the verification timestamps.",
+        "",
+        "The record also names the wallet the identity came from. That wallet keeps",
+        "whatever was issued to it for the identity, such as an attestation, so a",
+        "consumer follows this link to find what the identity left behind.",
+        "",
+        "A wallet that never received a migration has no record. Nothing closes a",
+        "record, and a later migration to the same wallet overwrites it.",
+        "",
+        "Other programs read the first three fields by offset. New fields go last."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "migrated_at",
+            "docs": [
+              "Cluster time of the most recent migration to this wallet"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "migrated_slot",
+            "docs": [
+              "Slot of the most recent migration to this wallet"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "previous_wallet",
+            "docs": [
+              "Wallet that held the identity before the most recent migration"
+            ],
             "type": "pubkey"
           }
         ]
