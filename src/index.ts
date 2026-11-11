@@ -8,6 +8,14 @@ export type {
   PairedVerificationResult,
 } from "./paired/session";
 export { PairedProtocolError } from "./paired/client";
+export {
+  PAIRED_AUTHORIZATION_MARGIN_MS,
+  pairedAuthorizationMessage,
+} from "./paired/authorization";
+export type {
+  PairedAuthorization,
+  PairedAuthorizationWallet,
+} from "./paired/authorization";
 /** Paired waypoints and paths live on a square grid from 0 to this value. */
 export { COORDINATE_MAX as PAIRED_GRID_MAX } from "./paired/transcript";
 /** A trace reaches a waypoint within this grid distance. */

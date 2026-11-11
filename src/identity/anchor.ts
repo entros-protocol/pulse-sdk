@@ -3,6 +3,7 @@ import { checkDeploymentChain, resolveDeployment } from "../protocol/deployment"
 import type { Idl } from "@coral-xyz/anchor";
 import type { PublicKey } from "@solana/web3.js";
 import { CLIENT_PROJECTION_VERSION, PROGRAM_IDS } from "../config";
+import { computeCommitment } from "../hashing/poseidon";
 import { sdkLog, sdkWarn } from "../log";
 import { entrosAnchorIdl } from "../protocol/idl";
 import type { IdentityState, StoredVerificationData } from "./types";
@@ -249,6 +250,48 @@ export async function fetchIdentityState(
   } catch {
     return null;
   }
+}
+
+/** The account fields the identity read uses. A `Connection` provides them. */
+export interface IdentityAccountInfo {
+  data: Uint8Array;
+  executable?: boolean;
+  owner?: { equals(other: PublicKey): boolean };
+}
+
+export interface IdentityAccountConnection {
+  getAccountInfo(address: PublicKey): Promise<IdentityAccountInfo | null>;
+}
+
+/** What the chain holds at a wallet's identity address when a verification starts. */
+export type OnChainIdentity =
+  | { status: "absent" }
+  | { status: "undecodable" }
+  | { status: "present"; identity: IdentityState };
+
+/**
+ * Reads the identity account at `identityPda` for a verification that is about to start.
+ * `absent` means the wallet has no identity and the next step is a mint.
+ */
+export async function readOnChainIdentity(
+  connection: IdentityAccountConnection,
+  identityPda: PublicKey,
+): Promise<OnChainIdentity> {
+  const accountInfo = await connection.getAccountInfo(identityPda);
+  if (!accountInfo) return { status: "absent" };
+  // Anyone can send lamports to this address. That creates an account the System
+  // Program owns, with no data. The program creates the identity there on the first
+  // mint, so such an address holds no identity yet.
+  const { SystemProgram } = await import("@solana/web3.js");
+  if (
+    accountInfo.executable === false &&
+    accountInfo.data.length === 0 &&
+    accountInfo.owner?.equals(SystemProgram.programId) === true
+  ) {
+    return { status: "absent" };
+  }
+  const identity = await decodeIdentityState(accountInfo.data);
+  return identity ? { status: "present", identity } : { status: "undecodable" };
 }
 
 /** Read the active projection policy from the registry config account. */
@@ -531,6 +574,7 @@ export interface BaselineRecoveryResult {
  *   - The wallet lacks `signMessage` (some Ledger firmware versions).
  *   - The blob's auth tag doesn't verify under the current on-chain
  *     commitment (stale blob from a prior reset cycle).
+ *   - The blob's fingerprint and salt do not open the on-chain commitment.
  */
 export async function recoverBaselineFromChain(
   wallet: BaselineWallet,
@@ -595,6 +639,18 @@ export async function recoverBaselineFromChain(
     const fingerprint = bytesToFingerprint(plaintext.simhash);
     const saltBigint = bytes32ToBigint(plaintext.salt);
     const commitmentBigint = bytes32ToBigint(identity.currentCommitment);
+
+    // The blob authenticates under the current commitment, which shows when it
+    // was sealed and by which wallet. It does not show that its contents open
+    // that commitment. A baseline that does not open it can never produce a
+    // proof, so it must not replace whatever this device holds.
+    if ((await computeCommitment(fingerprint, saltBigint)) !== commitmentBigint) {
+      return {
+        recovered: false,
+        reason: "stale-baseline",
+        detail: "The encrypted baseline does not open the on-chain commitment.",
+      };
+    }
 
     await storeVerificationData({
       fingerprint,

@@ -24,6 +24,12 @@ import type { VerificationResult } from "../submit/types";
 import { postJson, type PostJsonResponse } from "../transport/post-json";
 import type { ValidationTarget } from "../pulse";
 import {
+  isPairedAuthorizationRefusal,
+  type PairedAuthorization,
+  pairedAuthorizationBody,
+  pairedAuthorizationUsable,
+} from "./authorization";
+import {
   buildCommit,
   buildCueRequest,
   parseCueResponse,
@@ -90,8 +96,11 @@ export interface PairedSessionOptions {
    * Report a refusal by throwing a `PairedProtocolError` with the server's
    * reason, status and `retry_after`. A 408, 429 or 5xx status, or any error
    * that is not a `PairedProtocolError`, is retried for up to 15 s.
+   *
+   * `authorization` is the wallet's authorization for this session, when the
+   * host holds one. Send it as the `authorization` field of the open request.
    */
-  openSession?: (wallet: string) => Promise<unknown>;
+  openSession?: (wallet: string, authorization?: Record<string, unknown>) => Promise<unknown>;
   /** A round was revealed. Show its word and path. */
   onReveal?: (round: PairedRoundView) => void;
   onCue?: (cue: {roundIndex: number; point: GridPoint; expiresAtMs: number}) => void;
@@ -132,6 +141,14 @@ export interface PairedPipeline {
   ): Promise<VerificationResult>;
   relayerUrl?: string;
   relayerApiKey?: string;
+  /** The wallet's authorization for paired sessions, when one is still usable. */
+  pairedAuthorization?(wallet: string): PairedAuthorization | null;
+  /**
+   * The relayer refused the authorization, or the session found it spent before
+   * the open. `challenge` names the authorization the session sent, and is
+   * undefined when it sent none. Only that authorization needs a new signature.
+   */
+  onAuthorizationRefused?(wallet: string, challenge: string | undefined): void;
 }
 
 /** The paired result carries the tier the validator signed into the receipt. */
@@ -178,6 +195,8 @@ export class PairedSession {
   private cueReached = false;
   private walletId = "";
   private wallet: Uint8Array | null = null;
+  /** Read once at start. The open and the finalize of this session both send it. */
+  private authorization: PairedAuthorization | null = null;
   private surface: HTMLElement | null = null;
   private detachPointer: (() => void) | null = null;
   private readonly touch: TouchSample[] = [];
@@ -253,6 +272,15 @@ export class PairedSession {
    * with the browser's `DOMException` when the microphone is refused or
    * missing. After `abort()`, it releases every sensor it had started and
    * resolves without revealing a round.
+   *
+   * A relayer that requires the wallet's authorization refuses the open with
+   * `authorization_required` or `authorization_invalid`. Have the wallet sign
+   * one with `PulseSDK.authorizePairedSession` before this call. This call
+   * cannot ask the wallet itself: a wallet prompt here would spend the gesture
+   * that the microphone and motion permissions need. The authorization is read
+   * once, here, and checked again before the open request. One that has less
+   * than `PAIRED_AUTHORIZATION_MARGIN_MS` left by then fails the call with
+   * `authorization_required` without a request.
    */
   async start(wallet: string, surface: HTMLElement, connection?: unknown): Promise<void> {
     if (this.phase !== "idle") throw new Error("This paired session has already started.");
@@ -262,6 +290,7 @@ export class PairedSession {
     this.surface = surface;
     try {
       if (!this.wallet) throw new PairedProtocolError("invalid_request");
+      this.authorization = this.pipeline.pairedAuthorization?.(wallet) ?? null;
       // Motion permission and the audio context both need the user's gesture,
       // so they come before anything that waits on the network.
       const motionGranted = await requestMotionPermission();
@@ -298,14 +327,28 @@ export class PairedSession {
     } catch (error) {
       if (this.closed) return;
       const failure = this.fail(error, false);
+      this.reportAuthorizationRefusal(failure.reason);
       // A refused or missing microphone keeps its own error, so a host can explain it.
       throw error instanceof DOMException ? error : failure;
+    }
+  }
+
+  private reportAuthorizationRefusal(reason: string | undefined): void {
+    if (isPairedAuthorizationRefusal(reason)) {
+      this.pipeline.onAuthorizationRefused?.(this.walletId, this.authorization?.challenge);
     }
   }
 
   private openWithRetry(wallet: string): Promise<{body: unknown; startedAtMs: number}> {
     return retryUntil<{body: unknown; startedAtMs: number}>(
       async () => {
+        // Read at start, the authorization can run out while the microphone,
+        // motion and policy are set up or while the open is retried. The
+        // relayer would refuse it, so the session fails here and the host
+        // asks the wallet again.
+        if (this.authorization && !pairedAuthorizationUsable(this.authorization, wallet)) {
+          throw new PairedProtocolError("authorization_required");
+        }
         try {
           const startedAtMs = performance.now();
           return { value: {body: await this.openSession(wallet), startedAtMs} };
@@ -325,8 +368,11 @@ export class PairedSession {
   }
 
   private async openSession(wallet: string): Promise<unknown> {
-    if (this.options.openSession) return this.options.openSession(wallet);
-    const response = await this.post("/challenge/paired", { wallet, tier: "trace", protocol_version: PAIRED_PROTOCOL_VERSION }, OPEN_REQUEST_MS);
+    const authorization = this.authorization ? pairedAuthorizationBody(this.authorization) : undefined;
+    if (this.options.openSession) return this.options.openSession(wallet, authorization);
+    const payload: Record<string, unknown> = { wallet, tier: "trace", protocol_version: PAIRED_PROTOCOL_VERSION };
+    if (authorization) payload.authorization = authorization;
+    const response = await this.post("/challenge/paired", payload, OPEN_REQUEST_MS);
     if (response.status < 200 || response.status >= 300) throw refusalOf(response);
     return response.body;
   }
@@ -744,6 +790,8 @@ export class PairedSession {
           captureTiming: evidence.captureTiming,
           clientSignals: evidence.clientSignals,
           baselineReset: reset,
+          compatibilityEvidence: evidence.compatibilityEvidence,
+          authorization: this.authorization ? pairedAuthorizationBody(this.authorization) : undefined,
         });
       },
       accept: (body) => {
@@ -766,6 +814,7 @@ export class PairedSession {
       : await this.pipeline.process(sensorData, protectedWallet, connection, onProgress, policy, target);
     if (this.closed) return failure("technical_failure", "The verification was cancelled.");
     this.setPhase(result.success ? "done" : "failed");
+    if (!result.success) this.reportAuthorizationRefusal(result.reason);
     return { ...result, assuranceTier };
     } catch (error) {
       throw this.fail(error,false);

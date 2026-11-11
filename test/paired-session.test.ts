@@ -1,3 +1,4 @@
+import { ed25519 } from "@noble/curves/ed25519";
 import { PublicKey } from "@solana/web3.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PROGRAM_IDS } from "../src/config";
@@ -59,6 +60,7 @@ const server = vi.hoisted(() => ({
   holdCue: false,
   cueRelease: null as null | (() => void),
   opens: 0,
+  openBodies: [] as Record<string, unknown>[],
   openFailures: [] as { status: number; body: Record<string, unknown> }[],
   revealExpiresMs: 12_000,
   readyExpiresMs: 120_000,
@@ -100,6 +102,7 @@ vi.mock("../src/transport/post-json", async () => {
     postJson: async (url: string, payload: Record<string, unknown>) => {
       if (url.endsWith("/challenge/paired")) {
         server.opens++;
+        server.openBodies.push(payload);
         const failure = server.openFailures.shift();
         if (failure) return reply(failure.status, failure.body);
         return reply(200, {
@@ -256,6 +259,7 @@ afterEach(() => {
   server.holdCue = false;
   server.cueRelease = null;
   server.opens = 0;
+  server.openBodies = [];
   server.openFailures = [];
   server.revealExpiresMs = 12_000;
   server.readyExpiresMs = 120_000;
@@ -875,5 +879,219 @@ describe("paired session through the verification pipeline", () => {
     const result = await session.complete({ publicKey: new PublicKey(WALLET) }, connection);
     expect(result).toMatchObject({ success: false, reason: "anchor_retry", failedAt: "validation" });
     expect(server.finalizes).toHaveLength(1);
+  });
+});
+
+describe("paired session authorization", () => {
+  const authorization = {
+    wallet: WALLET,
+    challenge: "22".repeat(32),
+    expiresAt: 1_800_000_000,
+    origin: "33".repeat(16),
+    mac: "44".repeat(32),
+    signatureHex: "55".repeat(64),
+    requestedAtMs: 0,
+    requestedAtWallMs: Date.now(),
+    lifetimeMs: 900_000,
+  };
+  const wire = {
+    challenge: authorization.challenge,
+    expires_at: authorization.expiresAt,
+    origin: authorization.origin,
+    mac: authorization.mac,
+    signature_hex: authorization.signatureHex,
+  };
+
+  it("sends the wallet's authorization with the open and with the finalize", async () => {
+    const capture: { body?: Record<string, unknown> } = {};
+    const session = new PairedSession({
+      ...pipeline(capture),
+      pairedAuthorization: (wallet: string) => (wallet === WALLET ? authorization : null),
+    });
+    const trace = surface();
+    await playSession(session, trace);
+    expect(server.openBodies).toHaveLength(1);
+    expect(server.openBodies[0]!.authorization).toEqual(wire);
+
+    await session.complete({}, {});
+    expect(capture.body!.authorization).toEqual(wire);
+    // The lifetime the client counts is its own. It never goes on the wire.
+    for (const field of ["requestedAtMs", "requestedAtWallMs", "lifetimeMs"]) {
+      expect(JSON.stringify(capture.body)).not.toContain(field);
+      expect(JSON.stringify(server.openBodies[0])).not.toContain(field);
+    }
+  });
+
+  it("sends no authorization field when the host holds none", async () => {
+    const capture: { body?: Record<string, unknown> } = {};
+    const session = new PairedSession(pipeline(capture));
+    const trace = surface();
+    await playSession(session, trace);
+    expect(server.openBodies[0]).not.toHaveProperty("authorization");
+    await session.complete({}, {});
+    expect(capture.body).not.toHaveProperty("authorization");
+  });
+
+  it("hands the authorization to a host that opens the session itself", async () => {
+    const seen: unknown[] = [];
+    const session = new PairedSession(
+      { ...pipeline({}), pairedAuthorization: () => authorization },
+      {
+        openSession: async (wallet, sent) => {
+          seen.push(wallet, sent);
+          throw new PairedProtocolError("session_active", 409);
+        },
+      },
+    );
+    await expect(session.start(WALLET, surface().element)).rejects.toMatchObject({
+      reason: "session_active",
+    });
+    expect(seen).toEqual([WALLET, wire]);
+  });
+
+  it("reports a refused authorization once, so the host signs a new one", async () => {
+    for (const reason of ["authorization_required", "authorization_invalid"]) {
+      const refused: (string | undefined)[][] = [];
+      server.openFailures = [{ status: 401, body: { reason } }];
+      const session = new PairedSession({
+        ...pipeline({}),
+        pairedAuthorization: () => authorization,
+        onAuthorizationRefused: (wallet: string, challenge?: string) => refused.push([wallet, challenge]),
+      });
+      await expect(session.start(WALLET, surface().element)).rejects.toMatchObject({
+        reason,
+        status: 401,
+      });
+      // A 401 is final. The open is not retried.
+      expect(server.opens).toBe(1);
+      expect(refused).toEqual([[WALLET, authorization.challenge]]);
+      server.opens = 0;
+    }
+  });
+
+  it("fails before the open when the authorization it read is no longer usable", async () => {
+    const refused: (string | undefined)[][] = [];
+    // Read at start, then spent while the microphone and policy were set up.
+    const spent = { ...authorization, requestedAtWallMs: Date.now() - 900_000 };
+    const session = new PairedSession({
+      ...pipeline({}),
+      pairedAuthorization: () => spent,
+      onAuthorizationRefused: (wallet: string, challenge?: string) => refused.push([wallet, challenge]),
+    });
+    await expect(session.start(WALLET, surface().element)).rejects.toMatchObject({
+      reason: "authorization_required",
+    });
+    expect(server.opens).toBe(0);
+    expect(refused).toEqual([[WALLET, spent.challenge]]);
+  });
+
+  it("reports an authorization the finalize refused", async () => {
+    const refused: (string | undefined)[][] = [];
+    const session = new PairedSession({
+      ...pipeline({}),
+      process: async () => ({
+        success: false,
+        commitment: new Uint8Array(32),
+        isFirstVerification: false,
+        reason: "authorization_invalid",
+        failedAt: "validation" as const,
+      }),
+      pairedAuthorization: () => authorization,
+      onAuthorizationRefused: (wallet: string, challenge?: string) => refused.push([wallet, challenge]),
+    });
+    const trace = surface();
+    await playSession(session, trace);
+    const result = await session.complete({}, {});
+    expect(result.success).toBe(false);
+    expect(refused).toEqual([[WALLET, authorization.challenge]]);
+  });
+
+  it("carries compatibility evidence into the finalize body", async () => {
+    const evidence = { projection_version: 1, feature_schema_version: 4, features: [0.25] };
+    let body: Record<string, unknown> | undefined;
+    const session = new PairedSession({
+      ...pipeline({}),
+      process: async (_data, _wallet, _connection, _progress, _policy, target: ValidationTarget) => {
+        body = target.body({
+          walletAddress: WALLET,
+          features: [0.5],
+          f0Contour: [],
+          accelMagnitude: [],
+          captureTiming: undefined,
+          clientSignals: { v: 1 } as never,
+          receiptPurpose: "mint",
+          compatibilityEvidence: evidence,
+        });
+        return { success: true, commitment: new Uint8Array(32), isFirstVerification: true };
+      },
+    });
+    const trace = surface();
+    await playSession(session, trace);
+    await session.complete({}, {});
+    expect(body!.compatibility_evidence).toEqual(evidence);
+  });
+});
+
+describe("PulseSDK paired authorization through a session", () => {
+  const seed = new Uint8Array(32).fill(7);
+  const signer = new PublicKey(ed25519.getPublicKey(seed)).toBase58();
+  const wallet = {
+    publicKey: { toBase58: () => signer },
+    signMessage: async (message: Uint8Array) => ed25519.sign(message, seed),
+  };
+  const grant = (challenge: string) => async () => ({
+    challenge,
+    expires_at: 1_800_000_000,
+    expires_in: 900,
+    origin: "33".repeat(16),
+    mac: "44".repeat(32),
+  });
+  const sdk = () =>
+    new PulseSDK({ cluster: "devnet", relayerUrl: "https://executor.example", relayerApiKey: "key" });
+  const registryProgramId = new PublicKey(PROGRAM_IDS.entrosRegistry);
+  const [protocolConfigPda] = PublicKey.findProgramAddressSync(
+    [new TextEncoder().encode("protocol_config")],
+    registryProgramId,
+  );
+  const connection = {
+    getAccountInfo: async (address: PublicKey) => {
+      if (!address.equals(protocolConfigPda)) return null;
+      const data = Buffer.alloc(113);
+      data.writeUInt16LE(1, 109);
+      return { data, owner: registryProgramId };
+    },
+  };
+
+  it("sends the held authorization, and a 401 refusal of it clears it", async () => {
+    const pulse = sdk();
+    const held = await pulse.authorizePairedSession(wallet, { requestGrant: grant("22".repeat(32)) });
+    server.openFailures = [{ status: 401, body: { reason: "authorization_invalid" } }];
+    await expect(pulse.createPairedSession().start(signer, surface().element, connection)).rejects.toMatchObject({
+      reason: "authorization_invalid",
+      status: 401,
+    });
+    expect(server.openBodies[0]!.authorization).toEqual({
+      challenge: held.challenge,
+      expires_at: held.expiresAt,
+      origin: held.origin,
+      mac: held.mac,
+      signature_hex: held.signatureHex,
+    });
+    expect(pulse.pairedAuthorization(signer)).toBeNull();
+  });
+
+  it("keeps an authorization signed after the one the refused session sent", async () => {
+    const pulse = sdk();
+    await pulse.authorizePairedSession(wallet, { requestGrant: grant("22".repeat(32)) });
+    let release!: () => void;
+    recorderState.gate = new Promise<void>((resolve) => (release = resolve));
+    server.openFailures = [{ status: 401, body: { reason: "authorization_invalid" } }];
+    const started = pulse.createPairedSession().start(signer, surface().element, connection);
+    // The session read the first authorization. The wallet signs a second one meanwhile.
+    const second = await pulse.authorizePairedSession(wallet, { requestGrant: grant("66".repeat(32)) });
+    release();
+    await expect(started).rejects.toMatchObject({ reason: "authorization_invalid" });
+    expect((server.openBodies[0]!.authorization as Record<string, unknown>).challenge).toBe("22".repeat(32));
+    expect(pulse.pairedAuthorization(signer)).toBe(second);
   });
 });

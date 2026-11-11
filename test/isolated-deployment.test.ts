@@ -3,10 +3,12 @@ import { ed25519 } from "@noble/curves/ed25519";
 import { PublicKey, type Transaction } from "@solana/web3.js";
 import { BorshAccountsCoder, type Idl } from "@coral-xyz/anchor";
 import { PROGRAM_IDS } from "../src/config";
+import { bigintToBytes32, computeCommitment } from "../src/hashing/poseidon";
 import type { RequestBoundManifest } from "../src/proof/request";
 import { resolveDeployment, deploymentIdl } from "../src/protocol/deployment";
 import { entrosAnchorIdl, entrosVerifierIdl } from "../src/protocol/idl";
 import {
+  bytes32ToBigint,
   deriveEncryptedBaselinePda,
   encryptBaselineBlob,
   decryptBaselineBlob,
@@ -266,15 +268,19 @@ describe("trusted isolated deployment", () => {
       "IdentityState",
       f.identityAccount.data,
     );
+    // Recovery stores a baseline only when it opens the on-chain commitment.
+    const salt = new Uint8Array(32).fill(1);
+    const opening = await computeCommitment(new Array<number>(256).fill(0), bytes32ToBigint(salt));
+    const commitment = bigintToBytes32(opening);
     const identityData = await coder.encode("IdentityState", {
       ...decoded,
       owner: signer.publicKey,
       bump,
+      current_commitment: Array.from(commitment),
     });
-    const commitment = new Uint8Array(32).fill(3);
     const blob = await encryptBaselineBlob(
       new Uint8Array(32),
-      new Uint8Array(32).fill(1),
+      salt,
       await getOrDeriveBaselineKey(signer),
       signer.publicKey,
       baseline,
@@ -306,7 +312,7 @@ describe("trusted isolated deployment", () => {
     expect(
       (await loadVerificationData(signer.publicKey.toBase58(), manifest))
         ?.commitment,
-    ).toBe(BigInt(`0x${"03".repeat(32)}`).toString());
+    ).toBe(opening.toString());
     expect(read).toHaveBeenCalledTimes(2);
   });
   it("upgrades only the selected identity layout", async () => {

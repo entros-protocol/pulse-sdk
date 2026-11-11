@@ -90,13 +90,28 @@ import {
   loadVerificationData,
   setPrivacyFallback,
   recoverBaselineFromChain,
-  decodeIdentityState,
+  readOnChainIdentity,
   fetchProjectionPolicy,
   localCommitmentMatchesChain,
 } from "./identity/anchor";
 import type { ProjectionPolicy } from "./identity/anchor";
 import type { ProjectionPolicyConnection } from "./identity/anchor";
 import { PairedSession, type PairedSessionOptions } from "./paired/session";
+import {
+  PAIRED_GRANT_REUSE_MS,
+  type PairedAuthorization,
+  type PairedAuthorizationGrant,
+  type PairedAuthorizationWallet,
+  type PairedClockReading,
+  pairedAuthorizationUsable,
+  pairedLifetimeRemainingMs,
+  parsePairedAuthorizationGrant,
+  readPairedClock,
+  requestPairedAuthorizationGrant,
+  signPairedAuthorization,
+} from "./paired/authorization";
+import { PairedProtocolError } from "./paired/client";
+import { canonicalKeyBytes } from "./agent/base58";
 import { getProjectionDefinition } from "./projection";
 import type { ClientSignals } from "./client-signals/automation";
 import {
@@ -155,6 +170,11 @@ interface ValidateFeaturesRequestBody extends ValidationDigestRequest {
   wallet_id: string;
   projection_version: number;
   wallet_authorization?: WalletAuthorization;
+  /**
+   * The 32-byte `/challenge` nonce whose phrase and curve this capture used.
+   * Sent only on a request without `wallet_authorization`, which carries it.
+   */
+  challenge_nonce?: number[];
   commitment_new_hex: string;
   request_receipt: boolean;
   receipt_purpose?: "mint" | "rebaseline" | "reset" | "update";
@@ -550,6 +570,8 @@ export interface ValidationEvidence {
   captureTiming: unknown;
   clientSignals: ReturnType<typeof collectClientSignals>;
   receiptPurpose?: "mint" | "rebaseline" | "reset" | "update";
+  /** The projection 1 feature summary that a projection 2 baseline write carries. */
+  compatibilityEvidence?: ProjectionCompatibilityEvidence;
 }
 
 /**
@@ -791,6 +813,7 @@ async function extractFingerprintAndValidate(
         captureTiming,
         clientSignals,
         receiptPurpose,
+        compatibilityEvidence,
       });
       const requestBody: ValidateFeaturesRequestBody = {
         features,
@@ -841,6 +864,11 @@ async function extractFingerprintAndValidate(
           };
         }
         onProgress?.("Validating...");
+      }
+      // An unsigned request names the challenge its phrase and curve came from,
+      // so the server checks the capture against that challenge alone.
+      if (!target && !requestBody.wallet_authorization && validationChallenge) {
+        requestBody.challenge_nonce = Array.from(validationChallenge.nonce);
       }
       const body = targetBody ?? requestBody;
 
@@ -1181,12 +1209,10 @@ async function processSensorData(
           [new TextEncoder().encode("identity"), walletPubkey.toBuffer()],
           programId
         );
-        const accountInfo = await connection.getAccountInfo(identityPda);
-        isFirstVerification = !accountInfo;
-        const identity = accountInfo
-          ? await decodeIdentityState(accountInfo.data)
-          : null;
-        if (accountInfo && !identity) {
+        const onChain = await readOnChainIdentity(connection, identityPda);
+        isFirstVerification = onChain.status === "absent";
+        const identity = onChain.status === "present" ? onChain.identity : null;
+        if (onChain.status === "undecodable") {
           return {
             success: false,
             commitment: new Uint8Array(32),
@@ -1905,7 +1931,8 @@ type SessionStageState = StageState | "failed";
  *
  * Gives the caller control over when each sensor stage starts and stops.
  * After all stages complete, call complete() to run the processing pipeline.
- * Bind the `fetchChallenge()` nonce and deadline when projection 2 is active.
+ * Bind the `fetchChallenge()` nonce and deadline. Projection 2 requires them,
+ * and under earlier projections the request names the nonce.
  *
  * Usage:
  *   const session = pulse.createSession(touchElement);
@@ -2430,9 +2457,7 @@ export class PulseSession {
         onProgress,
         this.studyContext,
         projectionPolicy,
-        projectionPolicy.current === 2
-          ? this.consumeValidationChallenge()
-          : undefined,
+        this.consumeValidationChallenge(),
       );
     });
   }
@@ -2522,9 +2547,7 @@ export class PulseSession {
         connection,
         onProgress,
         projectionPolicy,
-        projectionPolicy.current === 2
-          ? this.consumeValidationChallenge()
-          : undefined,
+        this.consumeValidationChallenge(),
       );
     });
   }
@@ -2542,6 +2565,14 @@ export class PulseSession {
 export class PulseSDK {
   static readonly supportsRequestBoundProofs = true;
   private config: ResolvedConfig;
+  /** The authorization the wallet last signed for paired sessions. Memory only. */
+  private heldPairedAuthorization: PairedAuthorization | null = null;
+  /** A grant fetched ahead of the wallet prompt, not yet signed. Memory only. */
+  private heldPairedGrant: {
+    wallet: string;
+    grant: PairedAuthorizationGrant;
+    requestedAt: PairedClockReading;
+  } | null = null;
 
   constructor(config: PulseConfig) {
     if (config.requestBoundManifest) validateRequestBoundManifest(config.requestBoundManifest);
@@ -2604,15 +2635,127 @@ export class PulseSDK {
           ),
         relayerUrl: config.relayerUrl,
         relayerApiKey: config.relayerApiKey,
+        pairedAuthorization: (wallet) => this.pairedAuthorization(wallet),
+        onAuthorizationRefused: (wallet, challenge) => {
+          // Only the authorization the session sent. One signed since then is still good.
+          const held = this.heldPairedAuthorization;
+          if (held?.wallet === wallet && held.challenge === challenge) {
+            this.heldPairedAuthorization = null;
+          }
+        },
       },
       options,
     );
   }
 
   /**
+   * Has the wallet sign the authorization that paired sessions need, and keeps
+   * it for this SDK instance. One signature serves every paired session of the
+   * wallet until the authorization expires, at most an hour after the grant.
+   *
+   * Call it from a user gesture of its own, before the gesture that starts a
+   * session. `PairedSession.start` needs its gesture for the microphone and
+   * motion permissions, so it cannot also show a wallet prompt.
+   *
+   * The grant is requested for the address `wallet` reports at the call, and
+   * the call rejects without a prompt when the wallet reports another key by the
+   * time it would sign. It also rejects when the signature does not verify under
+   * that key, when the prompt does not settle while the grant is usable, and when
+   * the prompt stayed open until the authorization had less than
+   * `PAIRED_AUTHORIZATION_MARGIN_MS` left. Nothing is held after a rejection.
+   *
+   * A grant held by `preparePairedAuthorization` for the same address, with at
+   * least the margin plus one minute left, is signed at once: the wallet prompt
+   * opens before the call awaits anything, which some browsers require to keep
+   * the gesture. Otherwise the call requests a grant first.
+   *
+   * `requestGrant` replaces the request to the relayer's
+   * `/paired/authorization`, for a host that reaches the relayer through its
+   * own server. It returns the relayer's JSON for a served request, and it
+   * reports a refusal by throwing a `PairedProtocolError`.
+   */
+  async authorizePairedSession(
+    wallet: PairedAuthorizationWallet,
+    options: { requestGrant?: (wallet: string) => Promise<unknown> } = {},
+  ): Promise<PairedAuthorization> {
+    const address = wallet.publicKey.toBase58();
+    const held = this.takePairedGrant(address);
+    const { grant, requestedAt } = held ?? (await this.fetchPairedGrant(address, options));
+    const authorization = await signPairedAuthorization(wallet, grant, requestedAt, address);
+    this.heldPairedAuthorization = authorization;
+    return authorization;
+  }
+
+  /**
+   * Requests a grant for `walletAddress` and holds it, so that a later
+   * `authorizePairedSession` for that address can open the wallet prompt
+   * without waiting on the network. Call it when the wallet connects or when
+   * the sign step appears, outside the gesture that signs.
+   *
+   * The SDK holds one grant, and a new call replaces it. A held grant serves
+   * one authorization. Resolves once the grant is held. Rejects with a
+   * `PairedProtocolError` when the address is not a wallet or the relayer
+   * refuses. `requestGrant` works as it does for `authorizePairedSession`.
+   */
+  async preparePairedAuthorization(
+    walletAddress: string,
+    options: { requestGrant?: (wallet: string) => Promise<unknown> } = {},
+  ): Promise<void> {
+    if (!canonicalKeyBytes(walletAddress)) throw new PairedProtocolError("invalid_request");
+    const fetched = await this.fetchPairedGrant(walletAddress, options);
+    this.heldPairedGrant = { wallet: walletAddress, ...fetched };
+  }
+
+  /** The held grant for `address` when it has enough left to sign, removed from the holder. */
+  private takePairedGrant(
+    address: string,
+  ): { grant: PairedAuthorizationGrant; requestedAt: PairedClockReading } | null {
+    const held = this.heldPairedGrant;
+    if (!held || held.wallet !== address) return null;
+    this.heldPairedGrant = null;
+    const remainingMs = pairedLifetimeRemainingMs({
+      requestedAtMs: held.requestedAt.monotonicMs,
+      requestedAtWallMs: held.requestedAt.wallMs,
+      lifetimeMs: held.grant.expiresInSecs * 1_000,
+    });
+    return remainingMs >= PAIRED_GRANT_REUSE_MS ? held : null;
+  }
+
+  private async fetchPairedGrant(
+    address: string,
+    options: { requestGrant?: (wallet: string) => Promise<unknown> },
+  ): Promise<{ grant: PairedAuthorizationGrant; requestedAt: PairedClockReading }> {
+    const requestedAt = readPairedClock();
+    let response: unknown;
+    if (options.requestGrant) {
+      response = await options.requestGrant(address);
+    } else {
+      if (!this.config.relayerUrl) throw new PairedProtocolError("validation_unavailable");
+      response = await requestPairedAuthorizationGrant(
+        this.config.relayerUrl,
+        address,
+        this.config.relayerApiKey,
+      );
+    }
+    return { grant: parsePairedAuthorizationGrant(response), requestedAt };
+  }
+
+  /**
+   * The authorization this instance holds for `wallet`, or null when it holds
+   * none or the one it holds is about to expire. A host shows its sign step
+   * while this is null.
+   */
+  pairedAuthorization(wallet: string): PairedAuthorization | null {
+    return pairedAuthorizationUsable(this.heldPairedAuthorization, wallet)
+      ? this.heldPairedAuthorization
+      : null;
+  }
+
+  /**
    * Run a full verification with automatic timed capture (backward-compatible).
    * Captures all sensors in parallel for DEFAULT_CAPTURE_MS, then processes.
-   * Pass the `fetchChallenge()` nonce and deadline when projection 2 is active.
+   * Pass the `fetchChallenge()` nonce and deadline. Projection 2 requires them,
+   * and under earlier projections the request names the nonce.
    */
   async verify(
     touchElement?: HTMLElement,
@@ -2702,7 +2845,8 @@ export class PulseSDK {
    *
    * For fine-grained control, call `createSession()` and `completeReset()`
    * directly. The session API exposes per-stage start and stop hooks.
-   * Pass the `fetchChallenge()` nonce and deadline when projection 2 is active.
+   * Pass the `fetchChallenge()` nonce and deadline. Projection 2 requires them,
+   * and under earlier projections the request names the nonce.
    */
   async resetBaseline(
     touchElement: HTMLElement | undefined,

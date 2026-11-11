@@ -963,6 +963,57 @@ describe("/validate-features body - projection 2 authorization", () => {
   );
 });
 
+describe("/validate-features body - challenge nonce", () => {
+  it.skipIf(!isInternalTestBuild).each([
+    ["projection 0", fakeConnection],
+    ["projection 1", versionOneConnection],
+  ])("names the bound challenge nonce on the unsigned %s request", async (_, connection) => {
+    const session = newSession();
+    session.__injectSensorData({ audio: validAudio(), motion: validMotion(), touch: validTouch() });
+    session.bindValidationChallenge(new Uint8Array(32).fill(0x51), performance.now() + 180_000);
+    const getBody = stubFetchCapturing();
+
+    await session.complete(fakeWallet, connection);
+
+    const body = getBody();
+    expect(body).not.toHaveProperty("wallet_authorization");
+    expect(body?.challenge_nonce).toEqual(Array.from(new Uint8Array(32).fill(0x51)));
+  });
+
+  it.skipIf(!isInternalTestBuild)("sends no challenge nonce when none is bound", async () => {
+    const session = newSession();
+    session.__injectSensorData({ audio: validAudio(), motion: validMotion(), touch: validTouch() });
+    const getBody = stubFetchCapturing();
+
+    await session.complete(fakeWallet, versionOneConnection);
+
+    expect(getBody()).not.toHaveProperty("challenge_nonce");
+  });
+
+  it.skipIf(!isInternalTestBuild)(
+    "sends no separate challenge nonce beside the wallet authorization",
+    async () => {
+      const session = newSession();
+      session.__injectSensorData({
+        audio: validAudio(),
+        motion: validMotion(),
+        touch: validNormalizedTouch(),
+        compatibilityTouch: validTouch(),
+      });
+      session.bindValidationChallenge(new Uint8Array(32).fill(0x52), performance.now() + 180_000);
+      const getBody = stubFetchCapturing();
+
+      await session.complete(projectionTwoWallet, versionTwoConnection);
+
+      const body = getBody();
+      expect(body?.wallet_authorization).toMatchObject({
+        nonce: Array.from(new Uint8Array(32).fill(0x52)),
+      });
+      expect(body).not.toHaveProperty("challenge_nonce");
+    },
+  );
+});
+
 describe("/validate-features body - mobile modality selection", () => {
   it.skipIf(!isInternalTestBuild)(
     "uses accelerometer features when a complete capture also has touch",

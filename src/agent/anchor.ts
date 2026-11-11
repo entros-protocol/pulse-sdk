@@ -298,7 +298,14 @@ export async function attestAgentOperator(
       skipPreflight: false,
       preflightCommitment: "confirmed",
     });
-    await options.connection.confirmTransaction(sig, "confirmed");
+    const confirmation = await options.connection.confirmTransaction(sig, "confirmed");
+    // A confirmed transaction can still have failed. Its error is in the result.
+    if (confirmation.value.err !== null) {
+      return {
+        success: false,
+        error: `The transaction failed on chain: ${JSON.stringify(confirmation.value.err)}`,
+      };
+    }
     return { success: true, signature: sig };
   } catch (err: unknown) {
     return {

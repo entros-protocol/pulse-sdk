@@ -4,6 +4,11 @@ import { BN254_SCALAR_FIELD, PROGRAM_IDS, SAS_CONFIG } from "../config";
 import { HIGHEST_SUPPORTED_PROJECTION_VERSION } from "../projection";
 import { decodeIdentityState } from "./anchor";
 import { commitmentHex, qualifyingTransaction } from "./integrator-transaction";
+import {
+  migrationRecordSeeds,
+  readMigrationRecord,
+  type MigrationRecordRead,
+} from "./migration";
 import type {
   IntegratorAttestationEvidence,
   IntegratorEvidenceReadResult,
@@ -132,17 +137,33 @@ async function strictIdentity(
   };
 }
 
+/** What the attestation must postdate for it to stand for the identity the wallet holds now. */
+interface AttestationContext {
+  creationTimestamp: number;
+  lastResetTimestamp: number;
+  migration: MigrationRecordRead;
+}
+
 async function strictAttestation(
   account: AccountInfo<Uint8Array> | null,
   wallet: PublicKey,
   address: PublicKey,
   slot: number,
   now: number,
+  context: AttestationContext,
   onFutureAttestation: (verifiedAt: number) => void,
 ): Promise<IntegratorAttestationEvidence> {
   if (!account) return { status: "missing" };
   const invalid = { status: "invalid" } as const;
-  const { PublicKey } = await import("@solana/web3.js");
+  const { PublicKey, SystemProgram } = await import("@solana/web3.js");
+  // Anyone can send lamports to this address. That creates an account the
+  // System Program owns, with no data, and no attestation exists there.
+  if (
+    !account.executable &&
+    account.owner.equals(SystemProgram.programId) &&
+    account.data.length === 0
+  )
+    return { status: "missing" };
   if (
     account.executable ||
     !account.owner.equals(new PublicKey(SAS_CONFIG.programId))
@@ -179,14 +200,35 @@ async function strictAttestation(
   const verifiedAt = Number(view.getBigInt64(104, true));
   const expiry = Number(view.getBigInt64(133 + length, true));
   if (!integer(verifiedAt, 1) || !integer(expiry)) return invalid;
-  if (expiry !== 0 && (expiry <= now || expiry <= verifiedAt)) return invalid;
+  if (expiry !== 0 && expiry <= verifiedAt) return invalid;
   if (raw.subarray(101 + length, 133 + length).every((byte) => byte === 0))
     return invalid;
   if (!raw.subarray(141 + length).every((byte) => byte === 0)) return invalid;
+  if (context.migration.status === "invalid") return invalid;
   if (verifiedAt > now) {
     onFutureAttestation(verifiedAt);
     return invalid;
   }
+  // The cases below are well-formed attestations that no longer stand for the
+  // identity this wallet holds, so each reads as no attestation. A policy that
+  // does not require one can still allow. All times come from the program's
+  // clock: the issuer writes the identity's verification time into the attestation.
+  //
+  // An expired attestation lapsed.
+  if (expiry !== 0 && expiry <= now) return { status: "missing" };
+  // A reset replaces the baseline, so an attestation from before it stands for
+  // a capture the identity no longer holds.
+  if (verifiedAt < context.lastResetTimestamp) return { status: "missing" };
+  // The wallet closed an earlier identity and created this one afterwards.
+  if (verifiedAt < context.creationTimestamp) return { status: "missing" };
+  // The identity arrived from another wallet, and the attestation was issued
+  // to this wallet for what it held before. A migration in the same second as
+  // the verification counts as later, since the program clock cannot order them.
+  if (
+    context.migration.status === "migrated" &&
+    verifiedAt <= context.migration.migratedAt
+  )
+    return { status: "missing" };
   return {
     status: "present",
     address: address.toBase58(),
@@ -323,26 +365,48 @@ async function readOnce(
     ],
     new PublicKey(SAS_CONFIG.programId),
   );
+  const anchorProgram = new PublicKey(PROGRAM_IDS.entrosAnchor);
+  const [migrationPda] = PublicKey.findProgramAddressSync(
+    migrationRecordSeeds(wallet),
+    anchorProgram,
+  );
   let attestation: IntegratorAttestationEvidence;
   try {
-    const account = await boundedRpc(
-      connection.getAccountInfoAndContext(attestationPda, {
-        commitment: "confirmed",
-        minContextSlot: snapshot.context.slot,
-      }),
-    );
+    // The migration record is read beside the attestation, in parallel and at
+    // or after the identity's slot, so the read takes no longer than before.
+    const [account, migration] = await Promise.all([
+      boundedRpc(
+        connection.getAccountInfoAndContext(attestationPda, {
+          commitment: "confirmed",
+          minContextSlot: snapshot.context.slot,
+        }),
+      ),
+      boundedRpc(
+        connection.getAccountInfoAndContext(migrationPda, {
+          commitment: "confirmed",
+          minContextSlot: snapshot.context.slot,
+        }),
+      ),
+    ]);
     now = readNow();
     if (now === null) return { status: "invalid", reason: "invalid_request" };
-    attestation = integer(account.context.slot, snapshot.context.slot)
-      ? await strictAttestation(
-          account.value,
-          wallet,
-          attestationPda,
-          account.context.slot,
-          now,
-          (verifiedAt) => onFutureTime("attestation", verifiedAt),
-        )
-      : { status: "unavailable" };
+    attestation =
+      integer(account.context.slot, snapshot.context.slot) &&
+      integer(migration.context.slot, snapshot.context.slot)
+        ? await strictAttestation(
+            account.value,
+            wallet,
+            attestationPda,
+            account.context.slot,
+            now,
+            {
+              creationTimestamp: identity.creationTimestamp,
+              lastResetTimestamp: identity.lastResetTimestamp,
+              migration: readMigrationRecord(migration.value, anchorProgram),
+            },
+            (verifiedAt) => onFutureTime("attestation", verifiedAt),
+          )
+        : { status: "unavailable" };
   } catch {
     attestation = { status: "unavailable" };
   }
@@ -450,18 +514,61 @@ export type VerificationTransactionSearchResult =
   | { status: "found"; signature: string }
   | { status: "none" | "invalid" | "unavailable" };
 
+/** Signatures one page of the history holds. The RPC serves no more. */
+const SEARCH_PAGE_SIZE = 1_000;
+/** Pages a search reads before it reports that it could not finish. */
+const SEARCH_MAX_PAGES = 5;
+/** Transactions a search fetches inside the window of the verification time. */
+const SEARCH_MAX_CANDIDATES = 50;
+/** Candidate signatures a search checks before it reads the history. */
+const MAX_CANDIDATE_SIGNATURES = 10;
+const SIGNATURE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
+
 /**
  * Finds the newest confirmed Entros transaction that qualifies as verification evidence for a
  * wallet. Pass the signature to `readIntegratorEvidence`, which checks it against current state.
+ *
+ * Pass `verifiedAt`, the identity account's last verification time. The history of an identity
+ * account lists every transaction that names it, and any party can send such a transaction.
+ * Without the time, the search reads the newest `limit` signatures alone, so later
+ * transactions can push the verification out of reach.
+ *
+ * The search stops at its bounds, so enough later transactions can still hide the verification
+ * from it. Pass `candidateSignatures` with `verifiedAt` when the signature may already be known,
+ * for example from the client that submitted the verification. Each candidate is checked first,
+ * with the checks the search applies to a transaction it finds, and the first that is the
+ * verification `verifiedAt` names is returned. The search runs when none is.
  */
 export async function findLatestVerificationTransaction(input: {
   walletPubkey: string;
   connection: Pick<Connection, "getSignaturesForAddress" | "getParsedTransaction">;
-  /** Signatures to inspect, newest first. From 1 to 25, default 10. */
+  /** Without `verifiedAt`: signatures to inspect, newest first. From 1 to 25, default 10. */
   limit?: number;
+  /**
+   * The identity's last verification time in seconds. The search pages back to it and
+   * fetches only the transactions whose block time lies within the tolerance of it.
+   */
+  verifiedAt?: number;
+  /**
+   * Signatures to check before the search, up to 10. Needs `verifiedAt`. A candidate counts
+   * only when it is a qualifying transaction whose block time lies within the tolerance of
+   * `verifiedAt`. Candidates are untrusted, so one that does not count changes nothing.
+   */
+  candidateSignatures?: readonly string[];
 }): Promise<VerificationTransactionSearchResult> {
   const limit = input.limit ?? 10;
   if (!integer(limit, 1, 25)) return { status: "invalid" };
+  const { verifiedAt, candidateSignatures = [] } = input;
+  if (verifiedAt !== undefined && !integer(verifiedAt, 1)) return { status: "invalid" };
+  if (
+    !Array.isArray(candidateSignatures) ||
+    candidateSignatures.length > MAX_CANDIDATE_SIGNATURES ||
+    (candidateSignatures.length > 0 && verifiedAt === undefined) ||
+    !candidateSignatures.every(
+      (signature) => typeof signature === "string" && SIGNATURE_PATTERN.test(signature),
+    )
+  )
+    return { status: "invalid" };
   const { PublicKey } = await import("@solana/web3.js");
   let wallet: PublicKey;
   try {
@@ -474,23 +581,74 @@ export async function findLatestVerificationTransaction(input: {
     [new TextEncoder().encode("identity"), wallet.toBytes()],
     new PublicKey(PROGRAM_IDS.entrosAnchor),
   );
-  try {
-    const signatures = await boundedRpc(
-      input.connection.getSignaturesForAddress(identityPda, { limit }, "confirmed"),
+  // A qualifying transaction has succeeded and has a block time.
+  const qualifyingAt = async (signature: string): Promise<number | null> => {
+    const parsed = await boundedRpc(
+      input.connection.getParsedTransaction(signature, {
+        commitment: "confirmed",
+        maxSupportedTransactionVersion: 0,
+      }),
     );
-    for (const entry of signatures.slice(0, limit)) {
-      if (entry.err !== null) continue;
-      const parsed = await boundedRpc(
-        input.connection.getParsedTransaction(entry.signature, {
-          commitment: "confirmed",
-          maxSupportedTransactionVersion: 0,
-        }),
-      );
-      if (!parsed) continue;
-      if (await qualifyingTransaction(parsed, entry.signature, wallet, identityPda))
-        return { status: "found", signature: entry.signature };
+    if (parsed === null) return null;
+    const qualifying = await qualifyingTransaction(parsed, signature, wallet, identityPda);
+    return qualifying === null ? null : qualifying.blockTime;
+  };
+  const qualifies = async (signature: string): Promise<boolean> =>
+    (await qualifyingAt(signature)) !== null;
+  if (verifiedAt !== undefined) {
+    for (const signature of candidateSignatures) {
+      try {
+        const blockTime = await qualifyingAt(signature);
+        if (
+          blockTime !== null &&
+          Math.abs(blockTime - verifiedAt) <= BLOCK_TIME_TOLERANCE_SECONDS
+        )
+          return { status: "found", signature };
+      } catch {
+        // A candidate that cannot be read is not evidence. The search decides.
+      }
     }
-    return { status: "none" };
+  }
+  try {
+    if (verifiedAt === undefined) {
+      const signatures = await boundedRpc(
+        input.connection.getSignaturesForAddress(identityPda, { limit }, "confirmed"),
+      );
+      for (const entry of signatures.slice(0, limit)) {
+        if (entry.err === null && (await qualifies(entry.signature)))
+          return { status: "found", signature: entry.signature };
+      }
+      return { status: "none" };
+    }
+    // The program wrote its clock into the identity. The block time of that
+    // transaction lies within the tolerance of it, so nothing else is fetched.
+    const earliest = verifiedAt - BLOCK_TIME_TOLERANCE_SECONDS;
+    const latest = verifiedAt + BLOCK_TIME_TOLERANCE_SECONDS;
+    let before: string | undefined;
+    let candidates = 0;
+    for (let page = 0; page < SEARCH_MAX_PAGES; page += 1) {
+      const signatures = await boundedRpc(
+        input.connection.getSignaturesForAddress(
+          identityPda,
+          { limit: SEARCH_PAGE_SIZE, before },
+          "confirmed",
+        ),
+      );
+      for (const entry of signatures) {
+        if (entry.blockTime == null) continue;
+        // The history runs newest first, so everything after this entry is older still.
+        if (entry.blockTime < earliest) return { status: "none" };
+        if (entry.blockTime > latest || entry.err !== null) continue;
+        if (candidates >= SEARCH_MAX_CANDIDATES) return { status: "unavailable" };
+        candidates += 1;
+        if (await qualifies(entry.signature))
+          return { status: "found", signature: entry.signature };
+      }
+      const last = signatures[signatures.length - 1];
+      if (signatures.length < SEARCH_PAGE_SIZE || last === undefined) return { status: "none" };
+      before = last.signature;
+    }
+    return { status: "unavailable" };
   } catch {
     return { status: "unavailable" };
   }
