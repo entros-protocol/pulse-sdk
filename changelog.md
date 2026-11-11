@@ -9,6 +9,16 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+<!-- generated-release:4.17.0 -->
+## [4.17.0] - 2026-11-11
+
+- Report a transaction that confirmed with an error as a failed agent anchor. (6e04b89).
+- Read the migration record with the attestation and the identity, and report a superseded, expired or pre-reset attestation as missing. Check account owners in both readers and read 64-bit fields exactly. Start the verification search from the identity's verification time, and read an identity address that holds lamports alone as no identity. (50ebb1c).
+- Add the wallet-signed paired authorization: fetch a grant, sign it, verify the signature locally and send it with the session open and finalize. Name the challenge nonce on an unsigned capture, forward compatibility evidence at finalize and check the opening of a recovered baseline. (42db153).
+- Audit production dependencies in CI. (160429e).
+- Document the paired authorization step, the attestation statuses and the verification search options. (f2a8e3b).
+<!-- /generated-release:4.17.0 -->
+
 <!-- generated-release:4.16.3 -->
 ## [4.16.3] - 2026-10-30
 
