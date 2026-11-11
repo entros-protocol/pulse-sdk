@@ -14,3 +14,14 @@ describe("baseline capture reasons", () => {
     expect(isClientOriginReason("paired_required")).toBe(false);
   });
 });
+
+describe("paired authorization reasons", () => {
+  it("offers a new attempt after the wallet signs again, and charges nothing", () => {
+    for (const reason of ["authorization_required", "authorization_invalid"]) {
+      expect(isVerificationReason(reason), reason).toBe(true);
+      expect(reasonDisposition(reason), reason).toBe("retry");
+      // The relayer refuses the request before it judges anything.
+      expect(isClientOriginReason(reason), reason).toBe(true);
+    }
+  });
+});

@@ -445,6 +445,18 @@ export interface FinalizeInput {
   captureTiming?: unknown;
   clientSignals?: unknown;
   baselineReset: boolean;
+  /**
+   * The projection 1 feature summary of the same capture. A projection 2
+   * baseline write carries it for the uniqueness check that projection 1
+   * baselines are held to.
+   */
+  compatibilityEvidence?: {
+    projection_version: number;
+    feature_schema_version: number;
+    features: number[];
+  };
+  /** The wallet's authorization, as `pairedAuthorizationBody` builds it. */
+  authorization?: Json;
 }
 
 export function buildFinalizeBody(input: FinalizeInput): Json {
@@ -467,6 +479,8 @@ export function buildFinalizeBody(input: FinalizeInput): Json {
   if (input.accelMagnitude) body.accel_magnitude = input.accelMagnitude;
   if (input.captureTiming !== undefined) body.capture_timing = input.captureTiming;
   if (input.clientSignals !== undefined) body.client_signals = input.clientSignals;
+  if (input.compatibilityEvidence) body.compatibility_evidence = input.compatibilityEvidence;
+  if (input.authorization) body.authorization = input.authorization;
   return body;
 }
 
