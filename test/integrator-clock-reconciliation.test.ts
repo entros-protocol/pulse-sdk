@@ -65,11 +65,13 @@ describe("attestation clock reconciliation", () => {
         "transaction",
         "identity",
         "attestation",
+        "migration",
         "genesis",
         "status",
         "transaction",
         "identity",
         "attestation",
+        "migration",
       ]);
       expect(performance.now()).toBe(offset * 1000);
     },
@@ -82,7 +84,7 @@ describe("attestation clock reconciliation", () => {
       status: "available",
       evidence: { attestation: { status: "invalid" } },
     });
-    expect(fixture.calls).toHaveLength(5);
+    expect(fixture.calls).toHaveLength(6);
     expect(performance.now()).toBe(0);
   });
 
@@ -98,7 +100,7 @@ describe("attestation clock reconciliation", () => {
       status: "available",
       evidence: { attestation: { status: "invalid" } },
     });
-    expect(fixture.calls).toHaveLength(5);
+    expect(fixture.calls).toHaveLength(6);
   });
 
   it("preserves immediate rejection with a fixed snapshot clock", async () => {
@@ -108,7 +110,7 @@ describe("attestation clock reconciliation", () => {
       status: "available",
       evidence: { attestation: { status: "invalid" } },
     });
-    expect(fixture.calls).toHaveLength(5);
+    expect(fixture.calls).toHaveLength(6);
     expect(performance.now()).toBe(0);
   });
 
@@ -119,7 +121,7 @@ describe("attestation clock reconciliation", () => {
       status: "available",
       evidence: { attestation: { status: "invalid" } },
     });
-    expect(fixture.calls).toHaveLength(5);
+    expect(fixture.calls).toHaveLength(6);
     expect(performance.now()).toBe(CLOCK_CATCH_UP_SECONDS * 1000);
   });
 
@@ -134,7 +136,7 @@ describe("attestation clock reconciliation", () => {
         return failure === "fractional" ? fixture.input.nowSeconds + 0.5 : NaN;
       });
       expect(result).toEqual({ status: "invalid", reason: "invalid_request" });
-      expect(fixture.calls).toHaveLength(5);
+      expect(fixture.calls).toHaveLength(6);
     },
   );
 
@@ -154,7 +156,7 @@ describe("attestation clock reconciliation", () => {
         status: "available",
         evidence: { attestation: { status: "invalid" } },
       });
-      expect(fixture.calls).toHaveLength(5);
+      expect(fixture.calls).toHaveLength(6);
       expect(performance.now()).toBe(0);
     },
   );
@@ -223,7 +225,7 @@ describe("attestation clock reconciliation", () => {
       status: "available",
       evidence: { attestation: { status: "invalid" } },
     });
-    expect(fixture.calls).toHaveLength(10);
+    expect(fixture.calls).toHaveLength(12);
     expect(performance.now()).toBe(1000);
   });
 
@@ -286,7 +288,7 @@ async function slowClockFixture(
 
 const NOW = 1_800_000_000;
 const firstRead = ["genesis", "status", "transaction"];
-const fullRead = [...firstRead, "identity", "attestation"];
+const fullRead = [...firstRead, "identity", "attestation", "migration"];
 
 describe("device clock behind the chain", () => {
   it("waits for a block time four seconds ahead of the device clock", async () => {

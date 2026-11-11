@@ -28,6 +28,20 @@ export interface EvidenceFixtureOptions {
   attestation?: "present" | "missing" | "unavailable";
   identity?: "present" | "missing" | "unavailable";
   expiry?: number;
+  /** The time the identity arrived at the wallet by migration. Absent: no record. */
+  migratedAt?: number;
+  migration?: "unavailable";
+}
+
+/** The Entros Anchor migration record for one wallet, as the program writes it. */
+export function migrationRecordData(migratedAt: number, previousWallet: PublicKey): Buffer {
+  const data = Buffer.alloc(57);
+  Buffer.from([16, 36, 116, 243, 192, 61, 40, 1]).copy(data, 0);
+  data.writeBigInt64LE(BigInt(migratedAt), 8);
+  data.writeBigUInt64LE(90n, 16);
+  data[24] = 254;
+  previousWallet.toBuffer().copy(data, 25);
+  return data;
 }
 
 export async function createEvidenceFixture(
@@ -53,6 +67,10 @@ export async function createEvidenceFixture(
       wallet.toBuffer(),
     ],
     new PublicKey(SAS_CONFIG.programId),
+  );
+  const [migrationPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("migration"), wallet.toBuffer()],
+    program,
   );
   const signature = utils.bytes.bs58.encode(Buffer.alloc(64, 8));
   const commitment = Array<number>(32).fill(3);
@@ -183,6 +201,16 @@ export async function createEvidenceFixture(
       ),
     });
   }
+  const migrationAccount: AccountInfo<Buffer> | null =
+    options.migratedAt === undefined
+      ? null
+      : {
+          data: migrationRecordData(options.migratedAt, new PublicKey(new Uint8Array(32).fill(9))),
+          executable: false,
+          lamports: 1,
+          owner: program,
+          rentEpoch: 0,
+        };
   const status = {
     slot: 100,
     confirmations: 1,
@@ -204,6 +232,11 @@ export async function createEvidenceFixture(
       return transaction;
     },
     async getAccountInfoAndContext(address) {
+      if (address.equals(migrationPda)) {
+        calls.push("migration");
+        if (options.migration === "unavailable") throw new Error("Synthetic RPC failure");
+        return { context: { slot: 102 }, value: fixture.migrationAccount };
+      }
       const isIdentity = address.equals(identityPda);
       calls.push(isIdentity ? "identity" : "attestation");
       const mode = isIdentity ? options.identity : options.attestation;
@@ -215,7 +248,7 @@ export async function createEvidenceFixture(
       };
     },
   };
-  return {
+  const fixture = {
     input: {
       walletPubkey: wallet.toBase58(),
       transactionSignature: signature,
@@ -230,6 +263,9 @@ export async function createEvidenceFixture(
     wallet,
     identityPda,
     attestationPda,
+    migrationPda,
+    migrationAccount,
     calls,
   };
+  return fixture;
 }

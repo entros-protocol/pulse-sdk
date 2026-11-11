@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BorshInstructionCoder, utils, type Idl } from "@coral-xyz/anchor";
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, SystemProgram } from "@solana/web3.js";
 import {
   BLOCK_TIME_TOLERANCE_SECONDS,
   INTEGRATOR_DEVNET_GENESIS_HASH,
   readIntegratorEvidence,
 } from "../src/identity/integrator";
 import { entrosAnchorIdl } from "../src/protocol/idl";
-import { createEvidenceFixture } from "./fixtures/integrator-evidence";
+import { createEvidenceFixture, migrationRecordData } from "./fixtures/integrator-evidence";
 import sasGolden from "./fixtures/sas-attestation-golden.json";
 
 afterEach(() => vi.useRealTimers());
@@ -315,9 +315,9 @@ describe("strict integrator evidence", () => {
       },
     ],
     [
-      "expired",
+      "expiry at its own verification time",
       (f) => {
-        f.sasAccount.data.writeBigInt64LE(BigInt(f.input.nowSeconds), 164);
+        f.sasAccount.data.writeBigInt64LE(f.sasAccount.data.readBigInt64LE(104), 164);
       },
     ],
     [
@@ -340,6 +340,194 @@ describe("strict integrator evidence", () => {
     expect(result.status).toBe("available");
     if (result.status === "available")
       expect(result.evidence.attestation).toEqual({ status: "invalid" });
+  });
+
+  it("reads an attestation address that holds lamports alone as no attestation", async () => {
+    // A transfer to the address creates an account the System Program owns, with no data.
+    const fixture = await createEvidenceFixture();
+    fixture.sasAccount.owner = SystemProgram.programId;
+    fixture.sasAccount.data = Buffer.alloc(0);
+    const result = await readIntegratorEvidence(fixture.input);
+    if (result.status !== "available")
+      throw new Error("Fixture did not decode");
+    expect(result.evidence.attestation).toEqual({ status: "missing" });
+  });
+
+  it("keeps an account of another shape at the attestation address invalid", async () => {
+    for (const mutate of [
+      (f: Awaited<ReturnType<typeof createEvidenceFixture>>) => {
+        f.sasAccount.owner = SystemProgram.programId;
+      },
+      (f: Awaited<ReturnType<typeof createEvidenceFixture>>) => {
+        f.sasAccount.data = Buffer.alloc(0);
+      },
+      (f: Awaited<ReturnType<typeof createEvidenceFixture>>) => {
+        f.sasAccount.owner = SystemProgram.programId;
+        f.sasAccount.data = Buffer.alloc(0);
+        f.sasAccount.executable = true;
+      },
+    ]) {
+      const fixture = await createEvidenceFixture();
+      mutate(fixture);
+      const result = await readIntegratorEvidence(fixture.input);
+      if (result.status !== "available")
+        throw new Error("Fixture did not decode");
+      expect(result.evidence.attestation).toEqual({ status: "invalid" });
+    }
+  });
+
+  it("reads an attestation issued before the last reset as no attestation", async () => {
+    const blockTime = 1_799_999_990;
+    const fixture = await createEvidenceFixture({
+      lastResetTimestamp: blockTime - 100,
+    });
+    // Issued before the reset. The wallet has verified again since, without a new attestation.
+    fixture.sasAccount.data.writeBigInt64LE(BigInt(blockTime - 200), 104);
+    const result = await readIntegratorEvidence(fixture.input);
+    if (result.status !== "available")
+      throw new Error("Fixture did not decode");
+    expect(result.evidence.attestation).toEqual({ status: "missing" });
+
+    // An attestation issued at the reset itself stands for the reset capture.
+    const atReset = await createEvidenceFixture({
+      lastResetTimestamp: blockTime - 100,
+    });
+    atReset.sasAccount.data.writeBigInt64LE(BigInt(blockTime - 100), 104);
+    const kept = await readIntegratorEvidence(atReset.input);
+    if (kept.status !== "available") throw new Error("Fixture did not decode");
+    expect(kept.evidence.attestation.status).toBe("present");
+  });
+
+  it("reads an expired attestation as no attestation", async () => {
+    // Issued ten seconds before the clock, and lapsed since.
+    for (const expiry of [-5, 0]) {
+      const fixture = await createEvidenceFixture();
+      fixture.sasAccount.data.writeBigInt64LE(BigInt(fixture.input.nowSeconds + expiry), 164);
+      const result = await readIntegratorEvidence(fixture.input);
+      if (result.status !== "available") throw new Error("Fixture did not decode");
+      expect(result.evidence.attestation).toEqual({ status: "missing" });
+    }
+  });
+
+  it("reads an attestation issued before the identity was created as no attestation", async () => {
+    const blockTime = 1_799_999_990;
+    const fixture = await createEvidenceFixture({ creationTimestamp: blockTime - 100 });
+    // The wallet closed an earlier identity and minted this one after the attestation.
+    fixture.sasAccount.data.writeBigInt64LE(BigInt(blockTime - 101), 104);
+    const result = await readIntegratorEvidence(fixture.input);
+    if (result.status !== "available") throw new Error("Fixture did not decode");
+    expect(result.evidence.attestation).toEqual({ status: "missing" });
+
+    const atCreation = await createEvidenceFixture({ creationTimestamp: blockTime - 100 });
+    atCreation.sasAccount.data.writeBigInt64LE(BigInt(blockTime - 100), 104);
+    const kept = await readIntegratorEvidence(atCreation.input);
+    if (kept.status !== "available") throw new Error("Fixture did not decode");
+    expect(kept.evidence.attestation.status).toBe("present");
+  });
+
+  it("reads an attestation issued at or before the identity's migration to the wallet as no attestation", async () => {
+    const verifiedAt = 1_799_999_990;
+    for (const [migratedAt, status] of [
+      [verifiedAt + 5, "missing"],
+      [verifiedAt, "missing"],
+      [verifiedAt - 1, "present"],
+    ] as const) {
+      const fixture = await createEvidenceFixture({ migratedAt });
+      const result = await readIntegratorEvidence(fixture.input);
+      if (result.status !== "available") throw new Error("Fixture did not decode");
+      expect(result.evidence.attestation.status).toBe(status);
+    }
+  });
+
+  it("reads a migration address another program owns as no migration", async () => {
+    const verifiedAt = 1_799_999_990;
+    for (const owner of [SystemProgram.programId, new PublicKey(new Uint8Array(32).fill(3))]) {
+      const fixture = await createEvidenceFixture({ migratedAt: verifiedAt });
+      fixture.migrationAccount!.owner = owner;
+      const result = await readIntegratorEvidence(fixture.input);
+      if (result.status !== "available") throw new Error("Fixture did not decode");
+      expect(result.evidence.attestation.status).toBe("present");
+    }
+  });
+
+  it("reads a migration record that carries fields after the ones it knows", async () => {
+    const verifiedAt = 1_799_999_990;
+    const previous = new PublicKey(new Uint8Array(32).fill(9));
+    const plain = await readIntegratorEvidence(
+      (await createEvidenceFixture({ migratedAt: verifiedAt - 1 })).input,
+    );
+    const fixture = await createEvidenceFixture({ migratedAt: verifiedAt - 1 });
+    fixture.migrationAccount!.data = Buffer.concat([
+      migrationRecordData(verifiedAt - 1, previous),
+      Buffer.alloc(8),
+    ]);
+    const longer = await readIntegratorEvidence(fixture.input);
+    if (plain.status !== "available" || longer.status !== "available") {
+      throw new Error("Fixture did not decode");
+    }
+    expect(longer.evidence.attestation).toEqual(plain.evidence.attestation);
+    expect(longer.evidence.attestation.status).not.toBe("invalid");
+  });
+
+  it("keeps an attestation invalid beside a migration record that does not parse", async () => {
+    const verifiedAt = 1_799_999_990;
+    const previous = new PublicKey(new Uint8Array(32).fill(9));
+    const mutations: ((data: Buffer) => Buffer)[] = [
+      (data) => data.subarray(0, 56),
+      (data) => {
+        data[0] = 0;
+        return data;
+      },
+      (data) => {
+        data.writeBigInt64LE(0n, 8);
+        return data;
+      },
+      (data) => {
+        data.writeBigInt64LE(9007199254740992n, 8);
+        return data;
+      },
+    ];
+    for (const mutate of mutations) {
+      const fixture = await createEvidenceFixture({ migratedAt: verifiedAt - 1 });
+      fixture.migrationAccount!.data = mutate(migrationRecordData(verifiedAt - 1, previous));
+      const result = await readIntegratorEvidence(fixture.input);
+      if (result.status !== "available") throw new Error("Fixture did not decode");
+      expect(result.evidence.attestation).toEqual({ status: "invalid" });
+    }
+    const executable = await createEvidenceFixture({ migratedAt: verifiedAt - 1 });
+    executable.migrationAccount!.executable = true;
+    const result = await readIntegratorEvidence(executable.input);
+    if (result.status !== "available") throw new Error("Fixture did not decode");
+    expect(result.evidence.attestation).toEqual({ status: "invalid" });
+  });
+
+  it("reports the attestation unavailable when the migration record cannot be read", async () => {
+    const fixture = await createEvidenceFixture({ migration: "unavailable" });
+    const result = await readIntegratorEvidence(fixture.input);
+    if (result.status !== "available") throw new Error("Fixture did not decode");
+    expect(result.evidence.attestation).toEqual({ status: "unavailable" });
+  });
+
+  it("returns the evidence in the shape that older readers require", async () => {
+    const fixture = await createEvidenceFixture({ migratedAt: 1_799_999_000 });
+    const result = await readIntegratorEvidence(fixture.input);
+    if (result.status !== "available") throw new Error("Fixture did not decode");
+    expect(Object.keys(result.evidence).sort()).toEqual(
+      [
+        "assuranceTier",
+        "attestation",
+        "cluster",
+        "genesisHash",
+        "identity",
+        "programIds",
+        "readContextSlot",
+        "transaction",
+        "uniquenessStatus",
+      ].sort(),
+    );
+    expect(Object.keys(result.evidence.attestation).sort()).toEqual(
+      ["address", "expiresAt", "readContextSlot", "status"].sort(),
+    );
   });
 
   it("accepts exactly the issuer's zero expiry sentinel", async () => {
@@ -584,6 +772,7 @@ describe("strict integrator evidence", () => {
       "transaction",
       "identity",
       "attestation",
+      "migration",
     ]);
     const fixed = await readIntegratorEvidence(fixture.input);
     expect(fixed.status).toBe("available");
@@ -592,7 +781,7 @@ describe("strict integrator evidence", () => {
   });
 
   it.each(["future", "expired"] as const)(
-    "rejects an attestation that is %s at response time",
+    "judges an attestation that is %s at response time against that time",
     async (condition) => {
       const fixture = await createEvidenceFixture();
       const startedAt = fixture.input.nowSeconds;
@@ -612,8 +801,10 @@ describe("strict integrator evidence", () => {
       });
       expect(result.status).toBe("available");
       if (result.status === "available")
-        expect(result.evidence.attestation.status).toBe("invalid");
-      expect(fixture.calls).toHaveLength(5);
+        expect(result.evidence.attestation.status).toBe(
+          condition === "future" ? "invalid" : "missing",
+        );
+      expect(fixture.calls).toHaveLength(6);
     },
   );
 
@@ -642,7 +833,7 @@ describe("strict integrator evidence", () => {
       nowSeconds: () => now,
     });
     expect(result.status).toBe("available");
-    expect(fixture.calls).toHaveLength(5);
+    expect(fixture.calls).toHaveLength(6);
   });
 
   it("refreshes the clock on the existing propagation retry", async () => {
@@ -675,6 +866,7 @@ describe("strict integrator evidence", () => {
       "transaction",
       "identity",
       "attestation",
+      "migration",
     ]);
   });
 
@@ -735,7 +927,7 @@ describe("strict integrator evidence", () => {
         fixture.calls.filter((call) => call === "transaction"),
       ).toHaveLength(1);
       expect(fixture.calls).toHaveLength(
-        stage === "transaction" ? 3 : stage === "identity" ? 4 : 5,
+        stage === "transaction" ? 3 : stage === "identity" ? 4 : 6,
       );
     },
   );
