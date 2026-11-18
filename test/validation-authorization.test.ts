@@ -120,4 +120,21 @@ describe("projection 2 validation authorization", () => {
     );
     expect(ed25519.verify(signature, replayed, publicKey)).toBe(false);
   });
+
+  it("keeps the authorization digest invariant when client_signals.input is attached", () => {
+    const base = goldenRequest();
+    const withInput = goldenRequest();
+    withInput.client_signals = {
+      ...withInput.client_signals!,
+      input: {
+        touch_events_observed: false,
+        pointer_pressure_observed: false,
+        motion_events_observed: false,
+      },
+    };
+
+    expect(buildValidationRequestDigest(withInput)).toEqual(
+      buildValidationRequestDigest(base),
+    );
+  });
 });

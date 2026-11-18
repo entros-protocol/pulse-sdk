@@ -1,4 +1,5 @@
 import type { TouchSample, CaptureOptions } from "./types";
+import { PointerObservationTracker } from "../client-signals/automation";
 import { MIN_CAPTURE_MS, MAX_CAPTURE_MS } from "../config";
 import { sdkLog } from "../log";
 import { getProjectionDefinition } from "../projection";
@@ -183,6 +184,10 @@ export function captureTouch(
 export interface TouchCaptureResult {
   samples: TouchSample[];
   compatibilitySamples?: TouchSample[];
+  inputObservations?: {
+    touchEventsObserved: boolean;
+    pointerPressureObserved: boolean;
+  };
 }
 
 export function captureTouchWithCompatibility(
@@ -215,6 +220,7 @@ export function captureTouchWithCompatibility(
   }
 
   const samples: TouchSample[] = [];
+  const observations = new PointerObservationTracker();
   const startTime = performance.now();
 
   return new Promise((resolve) => {
@@ -224,6 +230,7 @@ export function captureTouchWithCompatibility(
     let abortTimer: ReturnType<typeof setTimeout> | null = null;
 
     const handler = (e: PointerEvent) => {
+      observations.observe(e.pointerType, e.pressure);
       samples.push({
         timestamp: performance.now(),
         x: e.clientX,
@@ -242,7 +249,7 @@ export function captureTouchWithCompatibility(
       element.removeEventListener("pointermove", handler);
       element.removeEventListener("pointerdown", handler);
       sdkLog(`[Entros SDK] Touch capture stopped: ${samples.length} samples collected`);
-      resolve({ samples });
+      resolve({ samples, inputObservations: observations.snapshot() });
     }
 
     element.addEventListener("pointermove", handler);
@@ -290,6 +297,7 @@ function captureNormalizedTouch(
   }
   const samples: TouchSample[] = [];
   const compatibilitySamples: TouchSample[] = [];
+  const observations = new PointerObservationTracker();
   const startTime = performance.now();
   const sourceSampleLimit =
     Math.ceil((maxDurationMs * TOUCH_CAPTURE_RATE_HZ) / 1_000) + 2;
@@ -319,6 +327,7 @@ function captureNormalizedTouch(
     };
 
     const updateLatest = (event: PointerEvent): boolean => {
+      observations.observe(event.pointerType, event.pressure);
       if (
         ![
           event.clientX,
@@ -541,6 +550,7 @@ function captureNormalizedTouch(
         resolve({
           samples: canonicalizeTouchSamples(samples, projectionVersion),
           compatibilitySamples,
+          inputObservations: observations.snapshot(),
         });
       } catch (error) {
         reject(error);

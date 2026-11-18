@@ -59,7 +59,11 @@ import {
 import { fuseFeatures, fuseRawFeatures } from "./extraction/statistics";
 import { fuseFeaturesForProjection } from "./extraction/projection-scaling";
 import { yieldToMainThread } from "./yield";
-import { collectClientSignals } from "./client-signals/automation";
+import {
+  buildInputCapabilitySignals,
+  collectClientSignals,
+  type ClientSignals,
+} from "./client-signals/automation";
 import { simhash, hammingDistance } from "./hashing/simhash";
 import {
   generateTBH,
@@ -113,7 +117,6 @@ import {
 import { PairedProtocolError } from "./paired/client";
 import { canonicalKeyBytes } from "./agent/base58";
 import { getProjectionDefinition } from "./projection";
-import type { ClientSignals } from "./client-signals/automation";
 import {
   buildValidationAuthorizationMessage,
   buildValidationRequestDigest,
@@ -794,7 +797,15 @@ async function extractFingerprintAndValidate(
       // automation labels in its risk decision. Capture-realism fields remain
       // telemetry only. These fields do not prove sensor provenance.
       // Non-browser runtimes return a clean marker.
-      const clientSignals = collectClientSignals();
+      const clientSignals = collectClientSignals(
+        sensorData.inputObservations
+          ? buildInputCapabilitySignals({
+              touchEventsObserved: sensorData.inputObservations.touchEventsObserved,
+              pointerPressureObserved: sensorData.inputObservations.pointerPressureObserved,
+              motionEventsObserved: sensorData.motion.length >= MIN_MOTION_SAMPLES,
+            })
+          : undefined,
+      );
       if (sensorData.audio) {
         const acoustic = analyzeAcousticRealism(sensorData.audio.samples, sensorData.audio.sampleRate);
         clientSignals.capture = {
@@ -1970,6 +1981,9 @@ export class PulseSession {
   private motionData: MotionSample[] = [];
   private touchData: TouchSample[] = [];
   private compatibilityTouchData: TouchSample[] = [];
+  private touchInputObservations:
+    | { touchEventsObserved: boolean; pointerPressureObserved: boolean }
+    | undefined = undefined;
   private touchCaptureError: Error | null = null;
   private pinnedProjectionPolicyPromise: Promise<ProjectionPolicy> | null = null;
   private validationChallenge: BoundValidationChallenge | null = null;
@@ -2313,6 +2327,7 @@ export class PulseSession {
       const capture = await this.touchPromise!;
       this.touchData = capture.samples;
       this.compatibilityTouchData = capture.compatibilitySamples ?? [];
+      this.touchInputObservations = capture.inputObservations;
       if (this.touchCaptureError) throw this.touchCaptureError;
       this.touchCaptureError = null;
       this.touchStageState = "captured";
@@ -2322,6 +2337,7 @@ export class PulseSession {
         error instanceof Error ? error : new Error(String(error));
       this.touchData = [];
       this.compatibilityTouchData = [];
+      this.touchInputObservations = undefined;
       this.touchCaptureError = captureError;
       this.touchStageState = "failed";
       sdkWarn(`[Entros SDK] Touch capture failed: ${captureError.message}`);
@@ -2337,6 +2353,7 @@ export class PulseSession {
       throw new Error(
         "Cannot skip touch: capture already started. skipTouch() must be called before startTouch().",
       );
+    this.touchInputObservations = { touchEventsObserved: false, pointerPressureObserved: false };
     this.touchStageState = "skipped";
   }
 
@@ -2390,6 +2407,7 @@ export class PulseSession {
     this.motionData = data.motion;
     this.touchData = data.touch;
     this.compatibilityTouchData = data.compatibilityTouch ?? [];
+    this.touchInputObservations = undefined;
     this.audioStageState = "captured";
     this.motionStageState = "captured";
     this.touchStageState = "captured";
@@ -2428,6 +2446,7 @@ export class PulseSession {
             ? this.compatibilityTouchData
             : undefined,
         curveTrace: outline,
+        inputObservations: this.touchInputObservations,
         modalities: {
           audio: this.audioData !== null,
           motion: this.motionData.length > 0,
@@ -2519,6 +2538,7 @@ export class PulseSession {
           this.compatibilityTouchData.length > 0
             ? this.compatibilityTouchData
             : undefined,
+        inputObservations: this.touchInputObservations,
         modalities: {
           audio: this.audioData !== null,
           motion: this.motionData.length > 0,

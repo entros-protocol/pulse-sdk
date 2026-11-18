@@ -55,6 +55,78 @@ export interface AutomationSignals {
   tells: string[];
 }
 
+/** Boolean capability observations for the active capture session. */
+export interface InputCapabilitySignals {
+  /** True when any captured pointer event had `pointerType === "touch"`. */
+  touch_events_observed: boolean;
+  /** True when pointer pressure varied or differed from fixed hardware defaults. */
+  pointer_pressure_observed: boolean;
+  /** True when inertial motion samples met the capture threshold. */
+  motion_events_observed: boolean;
+}
+
+/**
+ * Tracks pointer-modality and pressure variability across a capture without
+ * storing raw events or device descriptors.
+ */
+export class PointerObservationTracker {
+  private touchEventsObserved = false;
+  private pressureObserved = false;
+  private firstPositivePressure: number | null = null;
+
+  observe(pointerType: string | undefined, pressure: number): void {
+    if (pointerType === "touch") {
+      this.touchEventsObserved = true;
+    }
+    this.observePressure(pressure);
+  }
+
+  observePressure(pressure: number): void {
+    if (!Number.isFinite(pressure) || pressure <= 0 || pressure > 1) return;
+    if (pressure !== 0.5 && pressure !== 1) {
+      this.pressureObserved = true;
+      return;
+    }
+    if (this.firstPositivePressure === null) {
+      this.firstPositivePressure = pressure;
+    } else if (Math.abs(pressure - this.firstPositivePressure) > 1e-6) {
+      this.pressureObserved = true;
+    }
+  }
+
+  snapshot(): { touchEventsObserved: boolean; pointerPressureObserved: boolean } {
+    return {
+      touchEventsObserved: this.touchEventsObserved,
+      pointerPressureObserved: this.pressureObserved,
+    };
+  }
+}
+
+/** Check whether a pre-collected sample array carries variable pointer pressure. */
+export function hasVariablePointerPressure(
+  samples: ReadonlyArray<{ pressure: number }> | undefined,
+): boolean {
+  if (!samples || samples.length === 0) return false;
+  const tracker = new PointerObservationTracker();
+  for (const sample of samples) {
+    tracker.observePressure(sample.pressure);
+  }
+  return tracker.snapshot().pointerPressureObserved;
+}
+
+/** Build the serialized `ClientSignals.input` capability object. */
+export function buildInputCapabilitySignals(options: {
+  touchEventsObserved: boolean;
+  pointerPressureObserved: boolean;
+  motionEventsObserved: boolean;
+}): InputCapabilitySignals {
+  return {
+    touch_events_observed: options.touchEventsObserved,
+    pointer_pressure_observed: options.pointerPressureObserved,
+    motion_events_observed: options.motionEventsObserved,
+  };
+}
+
 /** The `client_signals` envelope. Namespaced for future signal groups. */
 export interface ClientSignals {
   /** Envelope schema version. */
@@ -73,6 +145,8 @@ export interface ClientSignals {
     flatness?: number;
     centroid?: number;
   };
+  /** Observed input capabilities for the session. */
+  input?: InputCapabilitySignals;
 }
 
 /**
@@ -118,8 +192,13 @@ const WINDOW_TELLS: ReadonlyArray<readonly [string, string]> = [
 const CDC_PATTERN = /^[$]?cdc_/;
 
 /** A clean envelope for runtimes with no browser-automation surface. */
-function nonBrowserSignals(): ClientSignals {
-  return { v: SCHEMA_VERSION, env: "non-browser", automation: { webdriver: false, tells: [] } };
+function nonBrowserSignals(input?: InputCapabilitySignals): ClientSignals {
+  return {
+    v: SCHEMA_VERSION,
+    env: "non-browser",
+    automation: { webdriver: false, tells: [] },
+    ...(input ? { input } : {}),
+  };
 }
 
 /**
@@ -128,7 +207,7 @@ function nonBrowserSignals(): ClientSignals {
  * individually guarded so a hostile or unusual environment can never break
  * verification submission.
  */
-export function collectClientSignals(): ClientSignals {
+export function collectClientSignals(input?: InputCapabilitySignals): ClientSignals {
   // React Native exposes `navigator` (and often a polyfilled `window`) but has
   // no browser-automation surface — classify it as non-browser so it never
   // pollutes the browser calibration baseline. (`navigator.product` is a fixed
@@ -137,12 +216,12 @@ export function collectClientSignals(): ClientSignals {
     typeof navigator !== "undefined" &&
     (navigator as { product?: string }).product === "ReactNative"
   ) {
-    return nonBrowserSignals();
+    return nonBrowserSignals(input);
   }
 
   // Node / SSR / any runtime without a DOM.
   if (typeof window === "undefined" || typeof navigator === "undefined") {
-    return nonBrowserSignals();
+    return nonBrowserSignals(input);
   }
 
   const found = new Set<string>();
@@ -203,5 +282,6 @@ export function collectClientSignals(): ClientSignals {
     v: SCHEMA_VERSION,
     env: "browser",
     automation: { webdriver, tells: Array.from(found) },
+    ...(input ? { input } : {}),
   };
 }
