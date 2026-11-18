@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { collectClientSignals } from "../src/client-signals/automation";
+import {
+  PointerObservationTracker,
+  buildInputCapabilitySignals,
+  collectClientSignals,
+  hasVariablePointerPressure,
+} from "../src/client-signals/automation";
 
 /**
  * Client-signals collector. These tests pin the privacy contract
@@ -166,5 +171,69 @@ describe("collectClientSignals", () => {
     stubBrowser({ webdriver: false, documentOverride: "absent" });
     expect(() => collectClientSignals()).not.toThrow();
     expect(collectClientSignals().env).toBe("browser");
+  });
+
+  it("attaches explicit input capability booleans without dropping non-browser env", () => {
+    const input = buildInputCapabilitySignals({
+      touchEventsObserved: false,
+      pointerPressureObserved: false,
+      motionEventsObserved: false,
+    });
+    const nonBrowser = collectClientSignals(input);
+    expect(nonBrowser.env).toBe("non-browser");
+    expect(nonBrowser.input).toEqual(input);
+
+    stubBrowser({ webdriver: false });
+    const browser = collectClientSignals(
+      buildInputCapabilitySignals({
+        touchEventsObserved: true,
+        pointerPressureObserved: true,
+        motionEventsObserved: true,
+      }),
+    );
+    expect(browser.env).toBe("browser");
+    expect(browser.input).toEqual({
+      touch_events_observed: true,
+      pointer_pressure_observed: true,
+      motion_events_observed: true,
+    });
+  });
+});
+
+describe("PointerObservationTracker", () => {
+  it("reports desktop mouse input with fixed 0.5 pressure as non-touch and unpressured", () => {
+    const tracker = new PointerObservationTracker();
+    tracker.observe("mouse", 0.5);
+    tracker.observe("mouse", 0.5);
+    expect(tracker.snapshot()).toEqual({
+      touchEventsObserved: false,
+      pointerPressureObserved: false,
+    });
+  });
+
+  it("reports mobile fixed-pressure touch as touch without variable pressure", () => {
+    const tracker = new PointerObservationTracker();
+    tracker.observe("touch", 1);
+    tracker.observe("touch", 1);
+    expect(tracker.snapshot()).toEqual({
+      touchEventsObserved: true,
+      pointerPressureObserved: false,
+    });
+    expect(hasVariablePointerPressure([{ pressure: 1 }, { pressure: 1 }])).toBe(false);
+  });
+
+  it("detects variable pointer pressure from fractional or changing readings", () => {
+    const fractional = new PointerObservationTracker();
+    fractional.observe("touch", 0.34);
+    expect(fractional.snapshot()).toEqual({
+      touchEventsObserved: true,
+      pointerPressureObserved: true,
+    });
+
+    const transition = new PointerObservationTracker();
+    transition.observe("touch", 0.5);
+    transition.observe("touch", 1);
+    expect(transition.snapshot().pointerPressureObserved).toBe(true);
+    expect(hasVariablePointerPressure([{ pressure: 0.5 }, { pressure: 0.72 }])).toBe(true);
   });
 });

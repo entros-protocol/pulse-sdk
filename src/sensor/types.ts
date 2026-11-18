@@ -168,6 +168,11 @@ export interface SensorData {
    * send time. Absent for reset and walletless flows.
    */
   curveTrace?: CurveTracePoint[];
+  /** Observed pointer capability booleans collected during event listeners. */
+  inputObservations?: {
+    touchEventsObserved: boolean;
+    pointerPressureObserved: boolean;
+  };
   modalities: {
     audio: boolean;
     motion: boolean;
