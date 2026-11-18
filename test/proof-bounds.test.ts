@@ -49,18 +49,21 @@ describe("classifyHammingDistance: circuit accept band [minDistance, threshold)"
 });
 
 describe("drift-too-high error copy: stable detection sentinel", () => {
-  // entros.io step-views.tsx `categorizeFailure` and the embed
-  // popup-content.tsx `categorizeError` both route the drift-too-high failure
-  // by matching the substring "closely match your usual pattern". This guards
-  // against silent copy drift in pulse.ts that would break that routing.
-  it("pulse.ts emits the 'closely match your usual pattern' substring", async () => {
+  // Hosts route the drift-too-high failure by matching the substring
+  // "did not match your stored baseline". This guards against silent copy
+  // drift in pulse.ts or accidentally leaking numeric bounds or haste blame.
+  it("pulse.ts emits honest baseline-mismatch copy with reset cooldown", async () => {
     const fs = await import("node:fs");
     const path = await import("node:path");
     const pulseSource = fs.readFileSync(
       path.resolve(__dirname, "../src/pulse.ts"),
       "utf-8",
     );
-    expect(pulseSource).toContain("closely match your usual pattern");
+    expect(pulseSource).toContain("did not match your stored baseline");
+    expect(pulseSource).toContain("Baseline resets carry a 7-day cooldown.");
+    expect(pulseSource).not.toContain("closely match your usual pattern");
+    expect(pulseSource).not.toContain("movements are rushed");
+    expect(pulseSource).not.toContain("steady, uninterrupted capture");
   });
 
   it("pulse.ts no longer returns raw proof diagnostics to the caller", async () => {

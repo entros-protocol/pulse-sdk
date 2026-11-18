@@ -1448,7 +1448,7 @@ async function processSensorData(
         commitment: tbh.commitmentBytes,
         isFirstVerification: false,
         error:
-          "This capture didn't closely match your usual pattern. That can happen when the recording is interrupted or your movements are rushed. Please try again with a steady, uninterrupted capture.",
+          "This verification did not match your stored baseline. Try another capture, or reset your baseline if this repeats. Baseline resets carry a 7-day cooldown.",
         failedAt: "proving",
       };
     }
