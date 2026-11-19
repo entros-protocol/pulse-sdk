@@ -23,6 +23,7 @@ import { checkDeploymentChain, resolveDeployment } from "../protocol/deployment"
 import type { PublicKey } from "@solana/web3.js";
 import { ed25519 } from "@noble/curves/ed25519";
 import { SIGNATURE_TIMEOUT_MS } from "../config";
+import { computeCommitment } from "../hashing/poseidon";
 import { withTimeout } from "../submit/errors";
 
 // --- Constants ---
@@ -289,6 +290,11 @@ export function clearBaselineKeyCache(): void {
   baselineKeyCache.clear();
 }
 
+/** True when a non-extractable AES key is already cached in memory for this wallet. */
+export function hasCachedBaselineKey(walletPubkey: PublicKey): boolean {
+  return baselineKeyCache.has(walletPubkey.toBase58());
+}
+
 // --- AAD ---
 
 /**
@@ -487,4 +493,125 @@ export async function fetchEncryptedBaseline(
     return null;
   }
   return raw.slice(8, 8 + ENCRYPTED_BASELINE_BLOB_BYTES);
+}
+
+/**
+ * True when `blob` carries the version 1 AES-256-GCM envelope header and a
+ * non-empty ciphertext payload.
+ */
+export function hasValidEncryptedBaselineEnvelope(
+  blob: Uint8Array | null | undefined,
+): blob is Uint8Array {
+  if (!blob || blob.length !== ENCRYPTED_BASELINE_BLOB_BYTES) return false;
+  if (blob[0] !== BLOB_VERSION || blob[1] !== ALGORITHM_AES_256_GCM) return false;
+  for (let index = HEADER_BYTES; index < ENCRYPTED_BASELINE_BLOB_BYTES; index += 1) {
+    if (blob[index] !== 0) return true;
+  }
+  return false;
+}
+
+export type EncryptedBaselineWriteReason =
+  | "commitment-advancing"
+  | "missing-on-chain-blob"
+  | "malformed-on-chain-blob"
+  | "stale-on-chain-blob"
+  | "rpc-check-failed"
+  | "already-current";
+
+export interface EncryptedBaselineWriteDecision {
+  shouldWrite: boolean;
+  reason: EncryptedBaselineWriteReason;
+}
+
+export interface EncryptedBaselineWriteCheck {
+  walletPubkey: PublicKey;
+  connection: {
+    getAccountInfo: (k: PublicKey) => Promise<unknown>;
+    getGenesisHash?(): Promise<string>;
+  };
+  targetCommitment: Uint8Array;
+  onChainCommitment: Uint8Array | null;
+  /** True for transitions that always rotate or create the on-chain commitment. */
+  commitmentAdvancing?: boolean;
+  deployment?: RequestBoundDeployment;
+}
+
+function commitmentsEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== 32 || right.length !== 32) return false;
+  for (let index = 0; index < 32; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+/**
+ * Decide whether a submission must derive the baseline key and append
+ * `set_encrypted_baseline` based on on-chain blob staleness for the commitment
+ * being anchored.
+ *
+ * A commitment-advancing write always requires a fresh blob sealed under the
+ * new commitment in AES-GCM AAD so cross-device recovery stays intact. Only a
+ * non-advancing path whose on-chain `EncryptedBaseline` PDA already holds a
+ * valid envelope for the same commitment may skip key derivation and the no-op
+ * write; RPC or decryption uncertainty fails safe toward writing the blob.
+ */
+export async function shouldWriteEncryptedBaseline(
+  check: EncryptedBaselineWriteCheck,
+): Promise<EncryptedBaselineWriteDecision> {
+  if (
+    check.commitmentAdvancing === true ||
+    !check.onChainCommitment ||
+    !commitmentsEqual(check.onChainCommitment, check.targetCommitment)
+  ) {
+    return { shouldWrite: true, reason: "commitment-advancing" };
+  }
+
+  let blob: Uint8Array | null;
+  try {
+    blob = await fetchEncryptedBaseline(
+      check.walletPubkey,
+      check.connection,
+      check.deployment,
+    );
+  } catch {
+    return { shouldWrite: true, reason: "rpc-check-failed" };
+  }
+
+  if (!blob) {
+    return { shouldWrite: true, reason: "missing-on-chain-blob" };
+  }
+  if (!hasValidEncryptedBaselineEnvelope(blob)) {
+    return { shouldWrite: true, reason: "malformed-on-chain-blob" };
+  }
+
+  // When the in-memory session cache already holds the derived AES key, verify
+  // the blob's auth tag and commitment opening with zero wallet prompts.
+  const cachedKeyPromise = baselineKeyCache.get(check.walletPubkey.toBase58());
+  if (cachedKeyPromise) {
+    try {
+      const key = await cachedKeyPromise;
+      const [baselinePda] = await deriveEncryptedBaselinePda(
+        check.walletPubkey,
+        check.deployment,
+      );
+      const plaintext = await decryptBaselineBlob(
+        blob,
+        key,
+        check.walletPubkey,
+        baselinePda,
+        check.targetCommitment,
+      );
+      const opened = await computeCommitment(
+        bytesToFingerprint(plaintext.simhash),
+        bytes32ToBigint(plaintext.salt),
+      );
+      if (opened !== bytes32ToBigint(check.targetCommitment)) {
+        return { shouldWrite: true, reason: "stale-on-chain-blob" };
+      }
+    } catch {
+      return { shouldWrite: true, reason: "stale-on-chain-blob" };
+    }
+  }
+
+  return { shouldWrite: false, reason: "already-current" };
 }

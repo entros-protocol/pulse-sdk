@@ -1,8 +1,13 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { Keypair } from "@solana/web3.js";
-import { submitViaWallet } from "../src/submit/wallet";
+import { Keypair, type Transaction } from "@solana/web3.js";
+import {
+  submitRebaselineViaWallet,
+  submitResetViaWallet,
+  submitViaWallet,
+} from "../src/submit/wallet";
 import { ATTESTATION_SIGNATURE_TIMEOUT_MS } from "../src/config";
 import { toBigEndian32 } from "../src/proof/serializer";
+import type { SignedReceiptDto } from "../src/submit/types";
 import { fundedPreflightConnection } from "./helpers/funding";
 
 /**
@@ -108,4 +113,181 @@ describe("a hanging attestation signature", () => {
     expect(result.attestationTx).toBeUndefined();
     expect(result.failedAt).toBeUndefined();
   }, 60_000);
+});
+
+function buildV2Receipt(purpose: number, commitment: Uint8Array): SignedReceiptDto {
+  const message = Buffer.alloc(103);
+  Buffer.from("entros-validator-receipt-v2\0", "ascii").copy(message, 0);
+  message[28] = purpose;
+  message.writeUInt16LE(1, 29);
+  message.set(AUTHORITY.toBytes(), 31);
+  message.set(commitment, 63);
+  message.writeBigInt64LE(1_790_000_000n, 95);
+  return {
+    validator_pubkey_hex: "11".repeat(32),
+    signature_hex: "22".repeat(64),
+    message_hex: message.toString("hex"),
+  };
+}
+
+function buildV4UpdateReceipt(commitment: Uint8Array): SignedReceiptDto {
+  const message = Buffer.alloc(136);
+  Buffer.from("entros-validator-receipt-v4\0", "ascii").copy(message, 0);
+  message[28] = 4;
+  message.writeUInt16LE(1, 29);
+  message.set(AUTHORITY.toBytes(), 31);
+  message.set(commitment, 63);
+  message.writeBigInt64LE(1_790_000_000n, 95);
+  message[135] = 0;
+  return {
+    validator_pubkey_hex: "11".repeat(32),
+    signature_hex: "22".repeat(64),
+    message_hex: message.toString("hex"),
+  };
+}
+
+describe("best-effort SAS attestation isolation", () => {
+  it("preserves confirmed Anchor success when the wallet rejects the SAS signMessage", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ nonce: Array.from({ length: 32 }, (_, i) => i + 1) }),
+      })),
+    );
+
+    const commitment = new Uint8Array(32).fill(17);
+    const rejectingWallet = {
+      publicKey: AUTHORITY,
+      sendTransaction: async () => "sig-confirmed-anchor",
+      signTransaction: async (tx: Transaction) => tx,
+      signAllTransactions: async (txs: Transaction[]) => txs,
+      signMessage: async () => {
+        throw new Error("User rejected the request.");
+      },
+    };
+
+    const updateResult = await submitViaWallet(
+      {
+        proofBytes: new Uint8Array(256),
+        publicInputs: [
+          commitment,
+          new Uint8Array(32).fill(34),
+          toBigEndian32("30"),
+          toBigEndian32("3"),
+        ],
+      },
+      commitment,
+      {
+        wallet: rejectingWallet,
+        connection: fakeConnection(),
+        isFirstVerification: false,
+        signedReceipt: buildV4UpdateReceipt(commitment),
+        relayerUrl: "https://relayer.example/verify",
+      },
+    );
+
+    expect(updateResult).toEqual({
+      success: true,
+      txSignature: "sig-confirmed-anchor",
+      attestationTx: undefined,
+    });
+
+    const mintResult = await submitViaWallet(
+      { proofBytes: new Uint8Array(0), publicInputs: [] },
+      commitment,
+      {
+        wallet: rejectingWallet,
+        connection: fakeConnection(),
+        isFirstVerification: true,
+        signedReceipt: buildV2Receipt(1, commitment),
+        relayerUrl: "https://relayer.example/verify",
+      },
+    );
+
+    expect(mintResult).toEqual({
+      success: true,
+      txSignature: "sig-confirmed-anchor",
+      attestationTx: undefined,
+    });
+
+    const resetResult = await submitResetViaWallet(commitment, {
+      wallet: rejectingWallet,
+      connection: fakeConnection(),
+      projectionVersion: 1,
+      signedReceipt: buildV2Receipt(3, commitment),
+      relayerUrl: "https://relayer.example/verify",
+    });
+
+    expect(resetResult).toEqual({
+      success: true,
+      txSignature: "sig-confirmed-anchor",
+      attestationTx: undefined,
+    });
+
+    const rebaselineResult = await submitRebaselineViaWallet(commitment, 1, {
+      wallet: rejectingWallet,
+      connection: fakeConnection(),
+      signedReceipt: buildV2Receipt(2, commitment),
+      encryptedBaselineBlob: new Uint8Array(96).fill(4),
+      relayerUrl: "https://relayer.example/verify",
+    });
+
+    expect(rebaselineResult).toEqual({
+      success: true,
+      txSignature: "sig-confirmed-anchor",
+      attestationTx: undefined,
+    });
+  });
+
+  it("preserves confirmed Anchor success when /attest returns HTTP 500", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/attest")) {
+          return { ok: false, status: 500, json: async () => ({ error: "internal" }) };
+        }
+        return {
+          ok: true,
+          json: async () => ({ nonce: Array.from({ length: 32 }, (_, i) => i + 1) }),
+        };
+      }),
+    );
+
+    const commitment = new Uint8Array(32).fill(17);
+    const wallet = {
+      publicKey: AUTHORITY,
+      sendTransaction: async () => "sig-confirmed-http500",
+      signTransaction: async (tx: unknown) => tx,
+      signAllTransactions: async (txs: unknown) => txs,
+      signMessage: async () => new Uint8Array(64).fill(9),
+    };
+
+    const result = await submitViaWallet(
+      {
+        proofBytes: new Uint8Array(256),
+        publicInputs: [
+          commitment,
+          new Uint8Array(32).fill(34),
+          toBigEndian32("30"),
+          toBigEndian32("3"),
+        ],
+      },
+      commitment,
+      {
+        wallet,
+        connection: fakeConnection(),
+        isFirstVerification: false,
+        signedReceipt: buildV4UpdateReceipt(commitment),
+        relayerUrl: "https://relayer.example/verify",
+      },
+    );
+
+    expect(result).toEqual({
+      success: true,
+      txSignature: "sig-confirmed-http500",
+      attestationTx: undefined,
+    });
+  });
 });

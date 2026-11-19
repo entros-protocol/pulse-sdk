@@ -130,6 +130,7 @@ import {
   encryptBaselineBlob,
   fingerprintToBytes,
   getOrDeriveBaselineKey,
+  shouldWriteEncryptedBaseline,
 } from "./identity/baseline";
 
 // Build-time constant, replaced by tsup and vitest `define`. It is `false` in
@@ -1592,19 +1593,38 @@ async function processSensorData(
   let portableBaseline: boolean | undefined;
 
   if (wallet && connection) {
-    // Best-effort: build the encrypted-baseline blob bound to the NEW
-    // commitment so `submitViaWallet` can bundle a `set_encrypted_baseline`
-    // ix into the same atomic transaction. Returns undefined when the
-    // wallet adapter lacks `signMessage` (e.g., some Ledger firmware) —
-    // the user falls back to local-only baseline storage gracefully.
-    const encryptedBaselineBlob = await buildEncryptedBaselineBlobBestEffort(
-      wallet,
-      tbh.fingerprint,
-      tbh.salt,
-      tbh.commitmentBytes,
-      config.requestBoundManifest,
-    );
-    portableBaseline = encryptedBaselineBlob !== undefined;
+    // Gate the AES-key signMessage and `set_encrypted_baseline` write strictly
+    // on on-chain blob staleness for the commitment being anchored (never on
+    // local baseline presence). Any commitment-advancing transition (`mint`,
+    // `rebaseline`, or a normal returning `update` that rotates the commitment)
+    // requires a fresh blob sealed under the new commitment in AES-GCM AAD so
+    // cross-device recovery stays intact. Only a non-advancing path whose
+    // on-chain EncryptedBaseline PDA already holds a valid blob skips the write.
+    const walletPubkey = wallet.adapter?.publicKey ?? wallet.publicKey;
+    const writeDecision = walletPubkey
+      ? await shouldWriteEncryptedBaseline({
+          walletPubkey,
+          connection,
+          targetCommitment: tbh.commitmentBytes,
+          onChainCommitment,
+          commitmentAdvancing: isFirstVerification || needsProjectionMigration,
+          deployment: config.requestBoundManifest,
+        })
+      : { shouldWrite: true as const, reason: "commitment-advancing" as const };
+
+    let encryptedBaselineBlob: Uint8Array | undefined;
+    if (writeDecision.shouldWrite) {
+      encryptedBaselineBlob = await buildEncryptedBaselineBlobBestEffort(
+        wallet,
+        tbh.fingerprint,
+        tbh.salt,
+        tbh.commitmentBytes,
+        config.requestBoundManifest,
+      );
+      portableBaseline = encryptedBaselineBlob !== undefined;
+    } else {
+      portableBaseline = true;
+    }
 
     if (needsProjectionMigration) {
       if (!signedReceipt) {
