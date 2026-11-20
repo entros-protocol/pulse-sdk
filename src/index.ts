@@ -145,15 +145,23 @@ export {
 
 // Wallet-keyed encrypted SimHash and salt persist in each wallet's
 // EncryptedBaseline PDA. A deterministic wallet signature derives the key.
-export type { BaselineWallet } from "./identity/baseline";
+export type {
+  BaselineWallet,
+  EncryptedBaselineWriteCheck,
+  EncryptedBaselineWriteDecision,
+  EncryptedBaselineWriteReason,
+} from "./identity/baseline";
 export {
   deriveBaselineKey,
   getOrDeriveBaselineKey,
   clearBaselineKeyCache,
+  hasCachedBaselineKey,
   deriveEncryptedBaselinePda,
   encryptBaselineBlob,
   decryptBaselineBlob,
   fetchEncryptedBaseline,
+  hasValidEncryptedBaselineEnvelope,
+  shouldWriteEncryptedBaseline,
   StaleEncryptedBaselineError,
   WalletSignatureMismatchError,
   ENCRYPTED_BASELINE_BLOB_BYTES,

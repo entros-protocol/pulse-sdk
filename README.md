@@ -289,7 +289,15 @@ on the current repository at `github.com/entros-protocol/pulse-sdk`.
 
 ## License
 
-MIT
+`LICENSE` applies the MIT License to Entros-authored source in this package.
+
+### Third-party runtime dependencies
+
+The `tsup` build keeps `snarkjs` (`^0.7.6`, `GPL-3.0`) and `pitchfinder` (`^2.3.4`, declared `GNU v3` / `GPL-3.0`) external through runtime dynamic `import()` calls in `dist/`. The published `dist/` tarball contains no bundled code from either package.
+
+Static downstream bundlers that resolve declared runtime dependencies pull `snarkjs` and `pitchfinder` into the application bundle graph unless configured to keep them external. The remaining runtime dependencies in `package.json` (`@noble/curves`, `@noble/hashes`, `meyda`, and `poseidon-lite`) declare `MIT`.
+
+Server and policy integrators that require a zero-`GPL-3.0` dependency tree can use [`@entros/verify`](https://github.com/entros-protocol/entros-verify) (`MIT`), which depends only on `@noble/curves` and `@noble/hashes` (`MIT`).
 
 ### Isolated devnet deployments
 

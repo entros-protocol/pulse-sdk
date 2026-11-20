@@ -455,11 +455,18 @@ async function requestSasAttestation(
 
 /**
  * Submit a proof on-chain via a connected wallet (wallet-connected mode).
- * Uses Anchor SDK to construct and send the transaction.
+ * Uses Anchor SDK to construct and send one atomic transaction.
  *
- * Flow for re-verification: single batched transaction containing
- *   ComputeBudget → create_challenge → verify_proof → update_anchor
- * Flow for first verification: mint_anchor (already 1 transaction)
+ * Returning verification (compact v4 update):
+ *   ComputeBudget -> verify_proof_compact -> Ed25519::verify (v4 update receipt digest)
+ *   -> update_anchor_compact [-> set_encrypted_baseline]
+ * Request-bound returning verification:
+ *   [ComputeBudget ->] prepare_proof_request -> verify_proof_bound
+ *   -> Ed25519::verify (v4 update receipt digest) -> update_anchor_bound
+ *   [-> set_encrypted_baseline]
+ * First verification (mint):
+ *   ComputeBudget -> Ed25519::verify (mint receipt) -> mint_anchor
+ *   [-> set_encrypted_baseline]
  */
 export async function submitViaWallet(
   proof: SolanaProof,
@@ -485,9 +492,10 @@ export async function submitViaWallet(
      * Encrypted baseline blob. When present, the SDK
      * appends a `set_encrypted_baseline` instruction at the end of the
      * atomic transaction so the wallet's on-chain baseline is rewritten
-     * to reflect the new fingerprint in the same wallet prompt as the
-     * mint / re-verify. Omitted when the wallet adapter lacks
-     * `signMessage` (the SDK can't derive the AES key without it).
+     * to reflect the new fingerprint in the same transaction as the
+     * mint or returning update. Omitted when the wallet adapter lacks
+     * `signMessage` or when the on-chain blob is already current for the
+     * commitment being anchored.
      */
     encryptedBaselineBlob?: Uint8Array;
     /**
@@ -676,11 +684,15 @@ export async function submitViaWallet(
         })
         .instruction();
 
-      // Request more compute when the transaction also creates or updates the
-      // encrypted baseline account, unless a request-bound update also carries
-      // a 32-byte paired session digest and encrypted baseline blob (5 non-budget
-      // instructions grant 1,000,000 default CUs and omitting the 40-byte budget
-      // instruction keeps the legacy packet at 1,202 bytes <= 1,232 bytes).
+      // Verified compute measurements: 148,033-151,033 CU simulated on devnet
+      // (112,733 CU inside verify_proof) and 145,047 CU on a live devnet
+      // five-instruction compact v4 update with set_encrypted_baseline.
+      // Request 300,000 CU when creating or updating the encrypted baseline
+      // account (250,000 CU without it), unless a request-bound update also
+      // carries a 32-byte paired session digest and encrypted baseline blob
+      // (5 non-budget instructions grant 1,000,000 default CUs and omitting
+      // the 40-byte budget instruction keeps the legacy packet at 1,202 bytes
+      // <= 1,232 bytes).
       const tx = new Transaction();
       const omitComputeBudgetForPacketLimit =
         Boolean(request) &&

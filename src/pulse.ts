@@ -59,7 +59,11 @@ import {
 import { fuseFeatures, fuseRawFeatures } from "./extraction/statistics";
 import { fuseFeaturesForProjection } from "./extraction/projection-scaling";
 import { yieldToMainThread } from "./yield";
-import { collectClientSignals } from "./client-signals/automation";
+import {
+  buildInputCapabilitySignals,
+  collectClientSignals,
+  type ClientSignals,
+} from "./client-signals/automation";
 import { simhash, hammingDistance } from "./hashing/simhash";
 import {
   generateTBH,
@@ -113,7 +117,6 @@ import {
 import { PairedProtocolError } from "./paired/client";
 import { canonicalKeyBytes } from "./agent/base58";
 import { getProjectionDefinition } from "./projection";
-import type { ClientSignals } from "./client-signals/automation";
 import {
   buildValidationAuthorizationMessage,
   buildValidationRequestDigest,
@@ -127,6 +130,7 @@ import {
   encryptBaselineBlob,
   fingerprintToBytes,
   getOrDeriveBaselineKey,
+  shouldWriteEncryptedBaseline,
 } from "./identity/baseline";
 
 // Build-time constant, replaced by tsup and vitest `define`. It is `false` in
@@ -794,7 +798,15 @@ async function extractFingerprintAndValidate(
       // automation labels in its risk decision. Capture-realism fields remain
       // telemetry only. These fields do not prove sensor provenance.
       // Non-browser runtimes return a clean marker.
-      const clientSignals = collectClientSignals();
+      const clientSignals = collectClientSignals(
+        sensorData.inputObservations
+          ? buildInputCapabilitySignals({
+              touchEventsObserved: sensorData.inputObservations.touchEventsObserved,
+              pointerPressureObserved: sensorData.inputObservations.pointerPressureObserved,
+              motionEventsObserved: sensorData.motion.length >= MIN_MOTION_SAMPLES,
+            })
+          : undefined,
+      );
       if (sensorData.audio) {
         const acoustic = analyzeAcousticRealism(sensorData.audio.samples, sensorData.audio.sampleRate);
         clientSignals.capture = {
@@ -1437,7 +1449,7 @@ async function processSensorData(
         commitment: tbh.commitmentBytes,
         isFirstVerification: false,
         error:
-          "This capture didn't closely match your usual pattern. That can happen when the recording is interrupted or your movements are rushed. Please try again with a steady, uninterrupted capture.",
+          "This verification did not match your stored baseline. Try another capture, or reset your baseline if this repeats. Baseline resets carry a 7-day cooldown.",
         failedAt: "proving",
       };
     }
@@ -1581,19 +1593,38 @@ async function processSensorData(
   let portableBaseline: boolean | undefined;
 
   if (wallet && connection) {
-    // Best-effort: build the encrypted-baseline blob bound to the NEW
-    // commitment so `submitViaWallet` can bundle a `set_encrypted_baseline`
-    // ix into the same atomic transaction. Returns undefined when the
-    // wallet adapter lacks `signMessage` (e.g., some Ledger firmware) —
-    // the user falls back to local-only baseline storage gracefully.
-    const encryptedBaselineBlob = await buildEncryptedBaselineBlobBestEffort(
-      wallet,
-      tbh.fingerprint,
-      tbh.salt,
-      tbh.commitmentBytes,
-      config.requestBoundManifest,
-    );
-    portableBaseline = encryptedBaselineBlob !== undefined;
+    // Gate the AES-key signMessage and `set_encrypted_baseline` write strictly
+    // on on-chain blob staleness for the commitment being anchored (never on
+    // local baseline presence). Any commitment-advancing transition (`mint`,
+    // `rebaseline`, or a normal returning `update` that rotates the commitment)
+    // requires a fresh blob sealed under the new commitment in AES-GCM AAD so
+    // cross-device recovery stays intact. Only a non-advancing path whose
+    // on-chain EncryptedBaseline PDA already holds a valid blob skips the write.
+    const walletPubkey = wallet.adapter?.publicKey ?? wallet.publicKey;
+    const writeDecision = walletPubkey
+      ? await shouldWriteEncryptedBaseline({
+          walletPubkey,
+          connection,
+          targetCommitment: tbh.commitmentBytes,
+          onChainCommitment,
+          commitmentAdvancing: isFirstVerification || needsProjectionMigration,
+          deployment: config.requestBoundManifest,
+        })
+      : { shouldWrite: true as const, reason: "commitment-advancing" as const };
+
+    let encryptedBaselineBlob: Uint8Array | undefined;
+    if (writeDecision.shouldWrite) {
+      encryptedBaselineBlob = await buildEncryptedBaselineBlobBestEffort(
+        wallet,
+        tbh.fingerprint,
+        tbh.salt,
+        tbh.commitmentBytes,
+        config.requestBoundManifest,
+      );
+      portableBaseline = encryptedBaselineBlob !== undefined;
+    } else {
+      portableBaseline = true;
+    }
 
     if (needsProjectionMigration) {
       if (!signedReceipt) {
@@ -1970,6 +2001,9 @@ export class PulseSession {
   private motionData: MotionSample[] = [];
   private touchData: TouchSample[] = [];
   private compatibilityTouchData: TouchSample[] = [];
+  private touchInputObservations:
+    | { touchEventsObserved: boolean; pointerPressureObserved: boolean }
+    | undefined = undefined;
   private touchCaptureError: Error | null = null;
   private pinnedProjectionPolicyPromise: Promise<ProjectionPolicy> | null = null;
   private validationChallenge: BoundValidationChallenge | null = null;
@@ -2313,6 +2347,7 @@ export class PulseSession {
       const capture = await this.touchPromise!;
       this.touchData = capture.samples;
       this.compatibilityTouchData = capture.compatibilitySamples ?? [];
+      this.touchInputObservations = capture.inputObservations;
       if (this.touchCaptureError) throw this.touchCaptureError;
       this.touchCaptureError = null;
       this.touchStageState = "captured";
@@ -2322,6 +2357,7 @@ export class PulseSession {
         error instanceof Error ? error : new Error(String(error));
       this.touchData = [];
       this.compatibilityTouchData = [];
+      this.touchInputObservations = undefined;
       this.touchCaptureError = captureError;
       this.touchStageState = "failed";
       sdkWarn(`[Entros SDK] Touch capture failed: ${captureError.message}`);
@@ -2337,6 +2373,7 @@ export class PulseSession {
       throw new Error(
         "Cannot skip touch: capture already started. skipTouch() must be called before startTouch().",
       );
+    this.touchInputObservations = { touchEventsObserved: false, pointerPressureObserved: false };
     this.touchStageState = "skipped";
   }
 
@@ -2390,6 +2427,7 @@ export class PulseSession {
     this.motionData = data.motion;
     this.touchData = data.touch;
     this.compatibilityTouchData = data.compatibilityTouch ?? [];
+    this.touchInputObservations = undefined;
     this.audioStageState = "captured";
     this.motionStageState = "captured";
     this.touchStageState = "captured";
@@ -2428,6 +2466,7 @@ export class PulseSession {
             ? this.compatibilityTouchData
             : undefined,
         curveTrace: outline,
+        inputObservations: this.touchInputObservations,
         modalities: {
           audio: this.audioData !== null,
           motion: this.motionData.length > 0,
@@ -2519,6 +2558,7 @@ export class PulseSession {
           this.compatibilityTouchData.length > 0
             ? this.compatibilityTouchData
             : undefined,
+        inputObservations: this.touchInputObservations,
         modalities: {
           audio: this.audioData !== null,
           motion: this.motionData.length > 0,

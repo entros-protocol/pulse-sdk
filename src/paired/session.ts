@@ -15,6 +15,7 @@
  */
 
 import { canonicalKeyBytes } from "../agent/base58";
+import { PointerObservationTracker } from "../client-signals/automation";
 import type { ProjectionPolicy } from "../identity/anchor";
 import { describeInputLevel, normalizeCaptureRMS } from "../sensor/audio";
 import { encodePcm16 } from "../sensor/encode";
@@ -200,6 +201,7 @@ export class PairedSession {
   private surface: HTMLElement | null = null;
   private detachPointer: (() => void) | null = null;
   private readonly touch: TouchSample[] = [];
+  private pointerObservations = new PointerObservationTracker();
   private motionController: AbortController | null = null;
   private motionPromise: Promise<MotionSample[]> | null = null;
   private released: Promise<MotionSample[]> | null = null;
@@ -590,8 +592,10 @@ export class PairedSession {
   }
 
   private attachPointer(surface: HTMLElement): void {
+    this.pointerObservations = new PointerObservationTracker();
     const record = (event: PointerEvent) => {
       const now = performance.now();
+      this.pointerObservations.observe(event.pointerType, event.pressure);
       this.touch.push({
         timestamp: now,
         x: event.clientX,
@@ -633,6 +637,7 @@ export class PairedSession {
     for (const round of this.committed) round.segment.fill(0);
     this.committed.length = 0;
     this.touch.length = 0;
+    this.pointerObservations = new PointerObservationTracker();
     this.roundTrace = [];
     this.pendingReaches = [];
     this.motionPromise = null;
@@ -757,6 +762,7 @@ export class PairedSession {
       },
       motion,
       touch: this.touch,
+      inputObservations: this.pointerObservations.snapshot(),
       modalities: { audio: true, motion: motion.length > 0, touch: this.touch.length > 0 },
     };
 
