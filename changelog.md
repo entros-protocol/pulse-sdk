@@ -9,6 +9,16 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+<!-- generated-release:4.18.0 -->
+## [4.18.0] - 2026-11-19
+
+- Record observed input capabilities in client signals (fbb2895).
+- Use neutral baseline mismatch copy with reset cooldown guidance (c90a094).
+- Gate encrypted baseline writes on on-chain blob staleness (61aab41).
+- Document verified compute measurements and test SAS isolation (a7825d8).
+- Document runtime GPL-3.0 dynamic imports and pure-MIT verify boundary (cbddd8a).
+<!-- /generated-release:4.18.0 -->
+
 <!-- generated-release:4.17.0 -->
 ## [4.17.0] - 2026-11-11
 
