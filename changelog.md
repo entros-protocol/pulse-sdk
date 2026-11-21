@@ -9,6 +9,12 @@ All notable changes to the `@entros/pulse-sdk` package will be documented in thi
 > that error propagated into master-list #186, where it made a pre-feature
 > anchor read as a post-feature anchor that had mysteriously lost its baseline.
 
+<!-- generated-release:4.18.1 -->
+## [4.18.1] - 2026-11-21
+
+- Add canonical shared-vector parity tests for Solana readers (c409d5a).
+<!-- /generated-release:4.18.1 -->
+
 <!-- generated-release:4.18.0 -->
 ## [4.18.0] - 2026-11-19
 
