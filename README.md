@@ -3,6 +3,8 @@
 [![npm version](https://img.shields.io/npm/v/@entros/pulse-sdk.svg)](https://www.npmjs.com/package/@entros/pulse-sdk)
 [![npm downloads](https://img.shields.io/npm/dm/@entros/pulse-sdk.svg)](https://www.npmjs.com/package/@entros/pulse-sdk)
 
+> **Status:** This package serves as a secondary R&D browser paired-liveness and Solana devnet SDK. It isolates `GPL-3.0` dependencies (`snarkjs` and `pitchfinder`) away from pure-MIT [`@entros/verify`](https://github.com/entros-protocol/entros-verify). Active Entros engineering focuses on real-time voice liveness and AI agent consent checks at [entros.io/roadmap](https://entros.io/roadmap).
+
 Client SDK for Entros capture, feature extraction, fingerprinting, proof generation, and Solana submission.
 
 The SDK derives 308 features from phrase audio, motion, and touch. It generates a 256-bit SimHash fingerprint and Poseidon commitment. Re-verification also generates a Groth16 proof.
@@ -19,7 +21,7 @@ The SDK stores the fingerprint, salt, commitment, and timestamp as a baseline. W
 
 A host-approved fallback can store the local baseline without encryption. Integrators must treat that option as a lower-assurance recovery mode.
 
-> **Looking for a drop-in?** Most integrators want [`@entros/verify`](https://github.com/entros-protocol/entros-verify) — a popup-pattern React component that wraps this SDK and ships verification in five lines of JSX. Use this package directly when you need to own the verification UX (custom capture canvas, branded loading states, mobile-native).
+> **Looking for a drop-in?** Most integrators want [`@entros/verify`](https://github.com/entros-protocol/entros-verify), a popup-pattern React component that wraps this SDK and ships verification in five lines of JSX. Use this package when you need to own the verification UX (custom capture canvas, branded loading states, mobile-native).
 
 ## Install
 
@@ -265,7 +267,7 @@ const result = await pulse.verify(touchElement);
 
 ## Pipeline
 
-1. **Capture**: Audio (16kHz), IMU (accelerometer + gyroscope), touch (pressure + area) — event-driven, caller controls duration
+1. **Capture**: Audio (16kHz), IMU (accelerometer + gyroscope), and touch (pressure + area). Capture is event-driven, and the caller controls duration.
 2. **Extract**: 170 audio, 81 motion, and 57 touch features
 3. **Validate**: Feature summaries sent to Entros validation server for server-side analysis
 4. **Hash**: SimHash → 256-bit behavioral fingerprint → Poseidon commitment
